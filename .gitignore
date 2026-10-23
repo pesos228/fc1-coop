@@ -1,0 +1,20 @@
+# Local-only folders / Локальные папки
+/source/
+/sdk/
+/mcp/
+/external/
+/CLAUDE.local.md
+
+# Build / Сборка
+*.obj
+*.pdb
+*.ilk
+*.idb
+*.pch
+/mod/**/Debug/
+/mod/**/Release/
+bin/
+
+# Harness / Харнес
+/.harness/
+/tools/bin/
