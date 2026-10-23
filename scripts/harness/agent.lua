@@ -211,6 +211,15 @@ function Harness:WriteState()
 	rename(tmp, self:Path("state.txt"));
 end
 
+-- First player entity that is not this machine's own player (for scenario steps).
+function Harness:RemotePlayer()
+	for i, e in System:GetEntities() do
+		if (e.type == "Player" and not e.ai and e ~= _localplayer) then
+			return e;
+		end
+	end
+end
+
 -- Snapshot of every scripted entity for desync comparison (harness diff).
 -- Line: id \t class \t name \t x \t y \t z \t health
 function Harness:Snapshot(file)

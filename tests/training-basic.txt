@@ -21,4 +21,14 @@ sleep 4s
 expect client1 System:GetEntity(770).cnt.health => 0
 expect-diff max=0.5 class=^Pickup missing=0
 
+# A proximity trigger fires for the remote player on the server (FarCryCoop ASI area hook),
+# moved with CoopMovePlayer (the client owns its position; a raw server SetPos reaches it only
+# when the server copy moves again, measured 8-22 s).
+expect server System:GetEntityByName("HUDmessage2"):GetState() => Empty
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=316,y=988,z=21.5})
+sleep 3s
+expect server System:GetEntityByName("HUDmessage2"):GetState() => Occupied
+sleep 5s
+expect-diff max=0.5 class=^Player$ missing=0
+
 down
