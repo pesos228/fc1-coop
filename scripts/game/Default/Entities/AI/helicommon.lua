@@ -59,7 +59,12 @@ function HC:LoadModel()
 		local	loaded=1;
 		self.piecesId={};
 		while loaded==1 do
-			local piece=Server:SpawnEntity("Piece");
+			-- FC1Coop: Server is nil on MP clients; the error aborted the rest of
+			-- LoadModel/OnReset there. Explosion pieces are spawned by the server only.
+			local piece=nil;
+			if (Server) then
+				piece=Server:SpawnEntity("Piece");
+			end
 --			local piece=nil;
 			if(piece)then
 				

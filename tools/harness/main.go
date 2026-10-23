@@ -120,6 +120,11 @@ func cmdUp(args []string) error {
 		return err
 	}
 	home := filepath.Join(root, ".harness")
+	if isOurMod(*mod) {
+		if err := installMod(root, *gameDir); err != nil {
+			return fmt.Errorf("install mod: %w", err)
+		}
+	}
 	runDir := filepath.Join(home, "runs", time.Now().Format("20060102-150405"))
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		return err
