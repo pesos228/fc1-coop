@@ -32,6 +32,7 @@ const usage = `harness — FC1 co-op test harness
   log <inst> [-n 40] [-grep regex]
   events [-n 40]
   shot [inst|all]         save screenshot(s), print png paths
+  diff [-tol 0.5] [-n 20] snapshot all entities on every instance and compare clients with the server
   dump <inst>             write a minidump of the process
   down                    quit all instances, restore game configs
 `
@@ -66,6 +67,8 @@ func main() {
 		err = cmdEvents(args)
 	case "shot":
 		err = cmdShot(args)
+	case "diff":
+		err = cmdDiff(args)
 	case "dump":
 		err = cmdDump(args)
 	case "down":
@@ -312,22 +315,34 @@ func cmdCmd(args []string, prefix string) error {
 	if err != nil {
 		return err
 	}
-	seq := sendCommand(in, prefix+strings.Join(pos[1:], " "))
-	deadline := time.Now().Add(*timeout)
+	status, info, err := execWait(in, prefix+strings.Join(pos[1:], " "), *timeout)
+	if err != nil {
+		return err
+	}
+	fmt.Println(status, info)
+	if status != "ok" {
+		return fmt.Errorf("command failed, see `harness log %s`", in.Name)
+	}
+	return nil
+}
+
+// execWait sends a command to the agent and waits for its ack.
+func execWait(in *Instance, command string, timeout time.Duration) (status, info string, err error) {
+	seq := sendCommand(in, command)
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		for _, l := range readLines(filepath.Join(in.Dir, "ack.txt")) {
 			f := strings.SplitN(l, "\t", 3)
 			if len(f) >= 2 && f[0] == strconv.Itoa(seq) {
-				fmt.Println(strings.Join(f[1:], " "))
-				if f[1] != "ok" {
-					return fmt.Errorf("command failed, see `harness log %s`", in.Name)
+				if len(f) == 3 {
+					info = f[2]
 				}
-				return nil
+				return f[1], info, nil
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("no ack for #%d in %s (agent not ticking? check `harness status`)", seq, *timeout)
+	return "", "", fmt.Errorf("[%s] no ack for #%d in %s (agent not ticking? check `harness status`)", in.Name, seq, timeout)
 }
 
 var condRe = regexp.MustCompile(`^([\w.]+)(>=|<=|!=|=)(.*)$`)

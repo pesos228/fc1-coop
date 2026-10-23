@@ -211,6 +211,27 @@ function Harness:WriteState()
 	rename(tmp, self:Path("state.txt"));
 end
 
+-- Snapshot of every scripted entity for desync comparison (harness diff).
+-- Line: id \t class \t name \t x \t y \t z \t health
+function Harness:Snapshot(file)
+	local f = openfile(self:Path(file or "snap.txt"), "w");
+	if (not f) then
+		return "cannot open snap file";
+	end
+	local n = 0;
+	for i, e in System:GetEntities() do
+		local p = e:GetPos();
+		local hp = "-";
+		if (e.cnt and e.cnt.health) then
+			hp = format("%d", e.cnt.health);
+		end
+		write(f, format("%d\t%s\t%s\t%.2f\t%.2f\t%.2f\t%s\n", e.id, tostring(e.classname), tostring(e:GetName()), p.x, p.y, p.z, hp));
+		n = n + 1;
+	end
+	closefile(f);
+	return "snap "..n;
+end
+
 -- Hooks ----------------------------------------------------------------------
 
 -- Level loads (CXGame::LoadLevelCS) wipe script timers. They are synchronous and
