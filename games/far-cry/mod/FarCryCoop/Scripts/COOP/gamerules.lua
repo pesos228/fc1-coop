@@ -359,6 +359,7 @@ function CoopBot()
 	CoopMonEvent("S", "bot "..bot:GetName().." ("..class..")");
 end
 Game:AddCommand("coop_bot", "CoopBot()", "coop_bot: spawn a teammate bot that follows the nearest player");
+Game:AddCommand("coop_expect", "COOP_ExpectPlayers = tonumber(%%) or 1", "coop_expect <n>: hold the map intro until n players are in (90 s at most)");
 
 function CoopUpdateBots()
 	local keep = {};
@@ -512,10 +513,16 @@ end
 -- The level intro (Training first_cutscene, Steam val_leaves) is Mission:OnMapChange, which single
 -- player's engine calls after a map load and a listen server never does (g_MapChanged stayed 1).
 -- Call it once every player is alive: Movie:PlaySequence reaches the clients (SEQ).
+-- Players who join after the intro started never see it (a sequence is forwarded only when it
+-- starts). The launcher / lobby knows how many players come: COOP_ExpectPlayers (coop_expect N)
+-- holds the intro until that many are in, for at most COOP_ExpectTimeout seconds of the map.
+COOP_ExpectPlayers = COOP_ExpectPlayers or 1;
+COOP_ExpectTimeout = COOP_ExpectTimeout or 90;
 function CoopMapIntro()
 	if (not g_MapChanged or not _localplayer or COOP_PendingLoad or not Mission or not Mission.OnMapChange) then return; end
 	local list = CoopPlayers();
 	if (getn(list) == 0) then return; end
+	if (getn(list) < COOP_ExpectPlayers and _time < COOP_ExpectTimeout) then return; end
 	for i, P in list do
 		if (not BasicPlayer.IsAlive(P)) then return; end
 	end
