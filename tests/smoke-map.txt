@@ -1,0 +1,13 @@
+# Smoke test of one campaign map: MAP=<map> tools/bin/harness.exe test tests/smoke-map.txt
+# Listen host + 1 client with FarCryCoop; connect, no crashes, same entities, players exact.
+up -mode host -map ${MAP} -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("${MAP}")
+wait server players>=2 -t 90s
+wait client1 players>=2 -t 90s
+sleep 15s
+expect-no-events
+# Entity sets equal (no missing/extra), health equal; positions ignored here.
+expect-diff max=100000 missing=0
+expect-diff max=0.5 class=^Player$
+# Everything else within 1 m (informative: lists what drifts on this map).
+expect-diff max=1.0
+down

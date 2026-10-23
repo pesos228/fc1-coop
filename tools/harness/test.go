@@ -22,7 +22,10 @@ import (
 //	expect-diff max=<m> [class=<re>] [exclude=<re>] [missing=0]
 //	                                        clients vs server: no matching entity off by more
 //	                                        than m meters or with another health
+//	expect-no-events                        no crash, error dialog or stalled agent so far
 //	down
+//
+// ${VAR} is replaced from the environment (e.g. MAP=pier harness test tests/smoke-map.txt).
 //
 // Failed expectations are collected; a failed up/wait/lua stops the scenario.
 // The run is always shut down at the end unless -keep is given.
@@ -56,6 +59,7 @@ func cmdTest(args []string) error {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		line = os.Expand(line, func(k string) string { return os.Getenv(k) }) // ${MAP} etc.
 		verb, rest, _ := strings.Cut(line, " ")
 		rest = strings.TrimSpace(rest)
 		fmt.Printf("--- %d: %s\n", i+1, line)
@@ -99,6 +103,9 @@ func cmdTest(args []string) error {
 		case "expect-diff":
 			hard = false
 			stepErr = expectDiff(strings.Fields(rest))
+		case "expect-no-events":
+			hard = false
+			stepErr = expectNoEvents()
 		default:
 			stepErr = fmt.Errorf("unknown step %q", verb)
 		}
@@ -207,6 +214,25 @@ func expectLog(args []string) error {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
+}
+
+// expectNoEvents fails if the supervisor saw a crash, an error dialog or a stalled agent.
+func expectNoEvents() error {
+	r, err := currentRun()
+	if err != nil {
+		return err
+	}
+	var bad []string
+	for _, l := range readLines(filepath.Join(r.Dir, "events.log")) {
+		f := strings.Split(l, "\t")
+		if len(f) >= 3 && (f[2] == "crash" || f[2] == "dialog" || f[2] == "stall" || f[2] == "errorlog") {
+			bad = append(bad, l)
+		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("%s", strings.Join(bad, "\n"))
+	}
+	return nil
 }
 
 func expectDiff(args []string) error {
