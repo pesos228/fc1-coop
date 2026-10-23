@@ -513,6 +513,36 @@ end
 -- The level intro (Training first_cutscene, Steam val_leaves) is Mission:OnMapChange, which single
 -- player's engine calls after a map load and a listen server never does (g_MapChanged stayed 1).
 -- Call it once every player is alive: Movie:PlaySequence reaches the clients (SEQ).
+-- BasicAI:Drop spawns each dropped item with Server:SpawnEntity(name), i.e. at (0,0,0), and moves
+-- it with SetPos afterwards. The spawn reaches the clients, the move does not (pickups have no net
+-- presence): clients had every dropped weapon at the map origin (harness diff on Training:
+-- PickupM4 sv 708,720,18 / cl 0,0,0). During the original Drop, spawn by class name at the body.
+function CoopDrop(self, packname)
+	local p = self:GetPos();
+	local pos = {x = p.x, y = p.y, z = p.z + 1.2};
+	local orig = Server.SpawnEntity;
+	Server.SpawnEntity = function(srv, what)
+		if (type(what) == "string") then
+			local id = Game:GetEntityClassIDByClassName(what);
+			if (id) then return %orig(srv, {classid = id, pos = %pos}); end
+		end
+		return %orig(srv, what);
+	end
+	call(COOP_OrigDrop, {self, packname}, "x", function(msg) System:LogAlways("coop: drop error: "..tostring(msg)); end);
+	Server.SpawnEntity = orig;
+end
+
+-- AI classes copy BasicAI's functions when they are defined: replace Drop in every class table.
+function CoopWrapDrop()
+	if (not Server or not BasicAI or not BasicAI.Drop) then return; end
+	if (not COOP_OrigDrop) then COOP_OrigDrop = BasicAI.Drop; end
+	for name, t in globals() do
+		if (type(t) == "table" and t.Drop == COOP_OrigDrop) then
+			t.Drop = CoopDrop;
+		end
+	end
+end
+
 -- Players who join after the intro started never see it (a sequence is forwarded only when it
 -- starts). The launcher / lobby knows how many players come: COOP_ExpectPlayers (coop_expect N)
 -- holds the intro until that many are in, for at most COOP_ExpectTimeout seconds of the map.
@@ -563,6 +593,7 @@ function GameRules:OnUpdate(DeltaTime)
 	CoopRun("send veh out", CoopSendVehOut)
 	CoopRun("vehicle copies", CoopVehicleCopies)
 	CoopRun("wrap cutscene moves", CoopWrapCutsceneMoves)
+	CoopRun("wrap drop", CoopWrapDrop)
 	CoopRun("map intro", CoopMapIntro)
 	CoopRun("boat seats", CoopBoatSeats)
 	call(CoopApplyLoadouts, {}, "x", function(msg) System:LogAlways("coop: loadout error: "..tostring(msg)); end)
