@@ -205,6 +205,14 @@ static void netPresenceIfMoved(void *ent)
 	if (!syncedClass(cls))
 		return;
 	id = ((WORD(__fastcall *)(void *, void *))VFN(ent, 0xc4))(ent, 0);
+	// Helicopters: at once, not on the first move. A parked Gunship never moves on the
+	// server until its trigger, while the client's copy drifts on its own (measured on
+	// Training: up to 38 m off, the server copy did not move), so wait-for-move never fires.
+	if (heliClass(cls)) {
+		((void(__fastcall *)(void *, void *, int))VFN(ent, 0xd4))(ent, 0, 1);
+		logf("net presence on for helicopter %u (class %u)", id, cls);
+		return;
+	}
 	p = ((Vec3 * (__fastcall *)(void *, void *, int))VFN(ent, 0x04))(ent, 0, 1);
 	q = g_firstPos[id];
 	if (!g_posSeen[id]) {
