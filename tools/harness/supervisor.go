@@ -245,6 +245,8 @@ func (s *supervisor) waitLevel(in *Instance, timeout time.Duration) error {
 		s.checkDialogs(in)
 		if st, _, err := readState(in); err == nil && st.levelLoaded() {
 			appendEvent(s.run.Dir, in.Name, "level", st["level"])
+			// A level started from the console leaves the in-game menu open on top.
+			sendCommand(in, "lua Game:HideMenu()")
 			return nil
 		}
 		time.Sleep(time.Second)
