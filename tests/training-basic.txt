@@ -1,0 +1,24 @@
+# Training, listen host + 1 client, FarCryCoop mod + ASI (with our fixes in external/FarCryCoop).
+# Run from the repo root: tools/bin/harness.exe test tests/training-basic.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 30s
+wait client1 players>=2 -t 30s
+
+# The intro waits for the expected players, so the late-joining client gets it.
+expect-log client1 sequence.first_cutscene 40s
+
+# Same entities on both sides; players exact.
+expect-diff max=0.5 class=^Player$ missing=0
+# Mercenaries on foot exact. Known open issue: AI riding vehicles (Boat./Humvee.) is 1-5 m off.
+expect-diff max=0.5 class=^Merc exclude=(Boat|Humvee)\.
+# Helicopters: net presence at spawn; the client copy still drifts in Z between updates.
+expect-diff max=2.5 class=^Gunship$
+
+# Kill a mercenary on the server: death and the dropped weapon reach the client.
+lua server COOP_God=1
+lua server local t=System:GetEntity(770) local s=_localplayer local p=t:GetPos() t:Damage({shooter=s,target=t,weapon=s.cnt.weapon,damage=500,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 4s
+expect client1 System:GetEntity(770).cnt.health => 0
+expect-diff max=0.5 class=^Pickup missing=0
+
+down

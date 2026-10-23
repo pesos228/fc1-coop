@@ -44,17 +44,17 @@ type mismatch struct {
 	d    float64
 }
 
-// cmdDiff snapshots all instances at (nearly) the same moment and compares each
+// clientDiff is the comparison of one client with the server.
+type clientDiff struct {
+	Client        string
+	Server, Count int
+	Matched       int
+	Mismatches    []mismatch
+}
+
+// takeDiff snapshots all instances at (nearly) the same moment and compares each
 // client with the server: missing/extra entities, position delta, health.
-func cmdDiff(args []string) error {
-	fs := flag.NewFlagSet("diff", flag.ExitOnError)
-	tol := fs.Float64("tol", 0.5, "position tolerance, meters")
-	n := fs.Int("n", 20, "mismatches to print per client")
-	fs.Parse(args)
-	r, err := currentRun()
-	if err != nil {
-		return err
-	}
+func takeDiff(r *Run, tol float64) ([]clientDiff, error) {
 	// Send to all first so snapshots are taken within one agent tick of each other.
 	for _, in := range r.Instances {
 		os.Remove(filepath.Join(in.Dir, "snap.txt"))
@@ -67,7 +67,7 @@ func cmdDiff(args []string) error {
 				break
 			}
 			if time.Now().After(deadline) {
-				return fmt.Errorf("[%s] no snapshot in 10s", in.Name)
+				return nil, fmt.Errorf("[%s] no snapshot in 10s", in.Name)
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -82,56 +82,80 @@ func cmdDiff(args []string) error {
 	}
 	sv, err := loadSnap(filepath.Join(server.Dir, "snap.txt"))
 	if err != nil {
-		return err
+		return nil, err
 	}
-	report := &strings.Builder{}
+	var out []clientDiff
 	for _, in := range r.Instances {
 		if in == server {
 			continue
 		}
 		cl, err := loadSnap(filepath.Join(in.Dir, "snap.txt"))
 		if err != nil {
-			return err
+			return nil, err
 		}
-		var ms []mismatch
-		matched := 0
+		cd := clientDiff{Client: in.Name, Server: len(sv), Count: len(cl)}
 		for id, s := range sv {
 			c, ok := cl[id]
 			if !ok {
-				ms = append(ms, mismatch{s, "missing on client", math.Inf(1)})
+				cd.Mismatches = append(cd.Mismatches, mismatch{s, "missing on client", math.Inf(1)})
 				continue
 			}
-			matched++
+			cd.Matched++
 			d := math.Sqrt((s.X-c.X)*(s.X-c.X) + (s.Y-c.Y)*(s.Y-c.Y) + (s.Z-c.Z)*(s.Z-c.Z))
-			if d > *tol {
-				ms = append(ms, mismatch{s, fmt.Sprintf("pos Δ%.2fm (sv %.1f,%.1f,%.1f cl %.1f,%.1f,%.1f)", d, s.X, s.Y, s.Z, c.X, c.Y, c.Z), d})
+			if d > tol {
+				cd.Mismatches = append(cd.Mismatches, mismatch{s, fmt.Sprintf("pos Δ%.2fm (sv %.1f,%.1f,%.1f cl %.1f,%.1f,%.1f)", d, s.X, s.Y, s.Z, c.X, c.Y, c.Z), d})
 			}
 			if s.Health != c.Health {
-				ms = append(ms, mismatch{s, fmt.Sprintf("health sv=%s cl=%s", s.Health, c.Health), 0})
+				cd.Mismatches = append(cd.Mismatches, mismatch{s, fmt.Sprintf("health sv=%s cl=%s", s.Health, c.Health), 0})
 			}
 		}
 		for id, c := range cl {
 			if _, ok := sv[id]; !ok {
-				ms = append(ms, mismatch{c, "extra on client (client-only entity)", -1})
+				cd.Mismatches = append(cd.Mismatches, mismatch{c, "extra on client (client-only entity)", -1})
 			}
 		}
-		sort.Slice(ms, func(i, j int) bool { return ms[i].d > ms[j].d })
+		sort.Slice(cd.Mismatches, func(i, j int) bool { return cd.Mismatches[i].d > cd.Mismatches[j].d })
+		out = append(out, cd)
+	}
+	return out, nil
+}
+
+func formatDiff(diffs []clientDiff, n int) string {
+	report := &strings.Builder{}
+	for _, cd := range diffs {
 		counts := map[string]int{}
-		for _, m := range ms {
+		for _, m := range cd.Mismatches {
 			counts[strings.SplitN(m.what, " ", 2)[0]]++
 		}
-		fmt.Fprintf(report, "[%s vs server] server=%d client=%d matched=%d  mismatches: %v\n", in.Name, len(sv), len(cl), matched, counts)
-		for i, m := range ms {
-			if i >= *n {
-				fmt.Fprintf(report, "  ... %d more\n", len(ms)-*n)
+		fmt.Fprintf(report, "[%s vs server] server=%d client=%d matched=%d  mismatches: %v\n", cd.Client, cd.Server, cd.Count, cd.Matched, counts)
+		for i, m := range cd.Mismatches {
+			if i >= n {
+				fmt.Fprintf(report, "  ... %d more\n", len(cd.Mismatches)-n)
 				break
 			}
 			fmt.Fprintf(report, "  %s %s %q: %s\n", m.ent.ID, m.ent.Class, m.ent.Name, m.what)
 		}
 	}
+	return report.String()
+}
+
+func cmdDiff(args []string) error {
+	fs := flag.NewFlagSet("diff", flag.ExitOnError)
+	tol := fs.Float64("tol", 0.5, "position tolerance, meters")
+	n := fs.Int("n", 20, "mismatches to print per client")
+	fs.Parse(args)
+	r, err := currentRun()
+	if err != nil {
+		return err
+	}
+	diffs, err := takeDiff(r, *tol)
+	if err != nil {
+		return err
+	}
+	report := formatDiff(diffs, *n)
 	out := filepath.Join(r.Dir, "diff-"+time.Now().Format("150405")+".txt")
-	os.WriteFile(out, []byte(report.String()), 0o644)
-	fmt.Print(report.String())
+	os.WriteFile(out, []byte(report), 0o644)
+	fmt.Print(report)
 	fmt.Println("saved:", out)
 	return nil
 }

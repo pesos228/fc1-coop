@@ -33,6 +33,8 @@ const usage = `harness — FC1 co-op test harness
   events [-n 40]
   shot [inst|all]         save screenshot(s), print png paths
   diff [-tol 0.5] [-n 20] snapshot all entities on every instance and compare clients with the server
+  test <scenario> [-keep] run a scenario file (tests/*.txt), PASS/FAIL per step
+  test <scenario> [-keep] run a scenario file (tests/*.txt), PASS/FAIL per step
   dump <inst>             write a minidump of the process
   down                    quit all instances, restore game configs
 `
@@ -67,6 +69,8 @@ func main() {
 		err = cmdEvents(args)
 	case "shot":
 		err = cmdShot(args)
+	case "test":
+		err = cmdTest(args)
 	case "diff":
 		err = cmdDiff(args)
 	case "dump":
