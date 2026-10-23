@@ -70,6 +70,12 @@ func (s *supervisor) backupConfigs() error {
 			return err
 		}
 	}
+	// Plugins compute the game folder from their own path (<game>\Bin32\x.asi).
+	if s.run.ASI != "" {
+		if err := copyFile(s.run.ASI, s.asiInGame()); err != nil {
+			return err
+		}
+	}
 	// Windowed mode for every instance: loaded by CSystem::Init right after System.cfg.
 	// The user's system.cfg may have log_FileVerbosity = 0, which silences the log after init.
 	override := fmt.Sprintf("r_Fullscreen = \"0\"\r\nr_Width = \"%d\"\r\nr_Height = \"%d\"\r\n"+
@@ -77,7 +83,14 @@ func (s *supervisor) backupConfigs() error {
 	return os.WriteFile(filepath.Join(s.run.GameDir, "SystemCfgOverride.cfg"), []byte(override), 0o644)
 }
 
+func (s *supervisor) asiInGame() string {
+	return filepath.Join(s.run.GameDir, "Bin32", filepath.Base(s.run.ASI))
+}
+
 func (s *supervisor) restoreConfigs() {
+	if s.run.ASI != "" {
+		os.Remove(s.asiInGame())
+	}
 	bak := filepath.Join(s.run.Dir, "cfg-backup")
 	for _, f := range cfgFiles {
 		dst := filepath.Join(s.run.GameDir, f)
@@ -145,10 +158,24 @@ func (s *supervisor) start(in *Instance) error {
 	cmd := exec.Command(exe)
 	cmd.Dir = s.run.GameDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: quote(exe) + " " + strings.Join(args, " ")}
+	if s.run.ASI != "" {
+		cmd.SysProcAttr.CreationFlags = 0x4 // CREATE_SUSPENDED: inject before any game code runs
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	in.PID = cmd.Process.Pid
+	if s.run.ASI != "" {
+		if err := injectDLL(in.PID, s.asiInGame()); err != nil {
+			appendEvent(s.run.Dir, in.Name, "warn", "inject: "+err.Error())
+		} else {
+			appendEvent(s.run.Dir, in.Name, "inject", s.asiInGame())
+		}
+		if err := resumeProcess(in.PID); err != nil {
+			cmd.Process.Kill()
+			return err
+		}
+	}
 	s.run.Save()
 	appendEvent(s.run.Dir, in.Name, "start", fmt.Sprintf("pid=%d %s", in.PID, cmd.SysProcAttr.CmdLine))
 

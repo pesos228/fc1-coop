@@ -30,6 +30,7 @@ type Run struct {
 	Mode      string      `json:"mode"` // sp | host
 	Map       string      `json:"map"`
 	Mod       string      `json:"mod"`
+	ASI       string      `json:"asi,omitempty"` // injected into every instance; copied to Bin32 for the run
 	Width     int         `json:"width"`
 	Height    int         `json:"height"`
 	Instances []*Instance `json:"instances"`

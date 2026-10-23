@@ -9,27 +9,50 @@ import (
 	"strings"
 )
 
-const modName = "FC1Coop"
 
-// installMod builds Mods/FC1Coop in the game folder from the repo:
-// scripts/game/** -> FC1Coop.pak as Scripts/** (mod files override the game per file,
-// but only from a pak: sys_PakPriority=1 ignores loose mod files), plus ModDesc.txt.
-func installMod(root, gameDir string) error {
-	dst := filepath.Join(gameDir, "Mods", modName)
+
+// modSource says where a known mod's files live in the repo.
+// FC1Coop: scripts/game/** is packed as Scripts/**.
+// FarCryCoop (external, MIT): its mod folder already has Scripts/ and ModDesc.txt.
+func modSource(root, name string) (src, prefix, desc string, ok bool) {
+	switch strings.ToLower(name) {
+	case "fc1coop":
+		return filepath.Join(root, "scripts", "game"), "Scripts/", "", true
+	case "farcrycoop":
+		dir := filepath.Join(root, "external", "FarCryCoop", "games", "far-cry", "mod", "FarCryCoop")
+		return filepath.Join(dir, "Scripts"), "Scripts/", filepath.Join(dir, "ModDesc.txt"), true
+	}
+	return "", "", "", false
+}
+
+// installMod builds Mods/<name>/<name>.pak in the game folder. Mod files override the
+// game per file, but only from a pak: sys_PakPriority=1 ignores loose mod files.
+func installMod(root, gameDir, name string) error {
+	src, prefix, descFile, ok := modSource(root, name)
+	if !ok {
+		return nil // a mod installed by other means
+	}
+	dst := filepath.Join(gameDir, "Mods", name)
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		return err
 	}
-	desc := "_Title_=\"FC1 Co-op (dev)\"\r\n_Author_=\"fc1-coop\"\r\n_Description_=\"Development build of the FC1 co-op mod.\"\r\n"
-	if err := os.WriteFile(filepath.Join(dst, "ModDesc.txt"), []byte(desc), 0o644); err != nil {
+	desc := []byte("_Title_=\"FC1 Co-op (dev)\"\r\n_Author_=\"fc1-coop\"\r\n_Description_=\"Development build of the FC1 co-op mod.\"\r\n")
+	if descFile != "" {
+		b, err := os.ReadFile(descFile)
+		if err != nil {
+			return err
+		}
+		desc = b
+	}
+	if err := os.WriteFile(filepath.Join(dst, "ModDesc.txt"), desc, 0o644); err != nil {
 		return err
 	}
-	tmp := filepath.Join(dst, modName+".pak.tmp")
+	tmp := filepath.Join(dst, name+".pak.tmp")
 	f, err := os.Create(tmp)
 	if err != nil {
 		return err
 	}
 	zw := zip.NewWriter(f)
-	src := filepath.Join(root, "scripts", "game")
 	count := 0
 	err = filepath.Walk(src, func(p string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
@@ -43,7 +66,7 @@ func installMod(root, gameDir string) error {
 		// CryPak does not read entries written by zip.Writer.Create (data descriptor,
 		// flag bit 3). Write stored entries with CRC and sizes in the local header.
 		hdr := &zip.FileHeader{
-			Name:               "Scripts/" + filepath.ToSlash(rel),
+			Name:               prefix + filepath.ToSlash(rel),
 			Method:             zip.Store,
 			CRC32:              crc32.ChecksumIEEE(data),
 			CompressedSize64:   uint64(len(data)),
@@ -66,7 +89,7 @@ func installMod(root, gameDir string) error {
 		os.Remove(tmp)
 		return err
 	}
-	pak := filepath.Join(dst, modName+".pak")
+	pak := filepath.Join(dst, name+".pak")
 	os.Remove(pak)
 	if err := os.Rename(tmp, pak); err != nil {
 		return err
@@ -74,5 +97,3 @@ func installMod(root, gameDir string) error {
 	fmt.Printf("mod: %s (%d files)\n", pak, count)
 	return nil
 }
-
-func isOurMod(name string) bool { return strings.EqualFold(name, modName) }

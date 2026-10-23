@@ -21,7 +21,7 @@ import (
 
 const usage = `harness — FC1 co-op test harness
 
-  up [-mode sp|host] [-map training] [-mission Training] [-clients N] [-mod NAME] [-w 800 -h 600] [-start "cmd;cmd"]
+  up [-mode sp|host] [-map training] [-mission Training] [-clients N] [-mod NAME] [-asi FILE] [-w 800 -h 600] [-start "cmd;cmd"]
                           start a run (server + clients) and wait until levels are loaded
   status                  instances, pids, heartbeat age, last events
   state [inst...]         agent state (level, players, AI, position)
@@ -105,7 +105,8 @@ func cmdUp(args []string) error {
 	mapName := fs.String("map", "training", "level name")
 	mission := fs.String("mission", "", "mission name (default: map name; SP maps use e.g. Training)")
 	clients := fs.Int("clients", 0, "number of clients (host mode)")
-	mod := fs.String("mod", "", "mod folder under Mods/")
+	mod := fs.String("mod", "", "mod folder under Mods/ (FC1Coop and FarCryCoop are built from the repo)")
+	asi := fs.String("asi", "", "DLL to inject into every instance before it runs (e.g. tools/bin/FarCryCoopNet.asi)")
 	w := fs.Int("w", 800, "window width")
 	h := fs.Int("h", 600, "window height")
 	start := fs.String("start", "", "server start commands separated by ';' (default by mode)")
@@ -120,8 +121,8 @@ func cmdUp(args []string) error {
 		return err
 	}
 	home := filepath.Join(root, ".harness")
-	if isOurMod(*mod) {
-		if err := installMod(root, *gameDir); err != nil {
+	if *mod != "" {
+		if err := installMod(root, *gameDir, *mod); err != nil {
 			return fmt.Errorf("install mod: %w", err)
 		}
 	}
@@ -148,6 +149,13 @@ func cmdUp(args []string) error {
 	}
 	run := &Run{Dir: runDir, GameDir: *gameDir, Agent: filepath.Join(root, "scripts", "harness", "agent.lua"),
 		Mode: *mode, Map: *mapName, Mod: *mod, Width: *w, Height: *h, Started: time.Now()}
+	if *asi != "" {
+		a, err := filepath.Abs(*asi)
+		if err != nil {
+			return err
+		}
+		run.ASI = a
+	}
 	run.Instances = append(run.Instances, &Instance{Name: "server", Role: "server",
 		Dir: filepath.Join(runDir, "server"), Commands: serverCmds})
 	for i := 1; i <= *clients; i++ {

@@ -227,3 +227,61 @@ func writeMinidump(pid int, path string) error {
 	}
 	return nil
 }
+
+var (
+	ntdll                = syscall.NewLazyDLL("ntdll.dll")
+	pVirtualAllocEx      = kernel32.NewProc("VirtualAllocEx")
+	pWriteProcessMemory  = kernel32.NewProc("WriteProcessMemory")
+	pCreateRemoteThread  = kernel32.NewProc("CreateRemoteThread")
+	pWaitForSingleObject = kernel32.NewProc("WaitForSingleObject")
+	pGetExitCodeThread   = kernel32.NewProc("GetExitCodeThread")
+	pLoadLibraryA        = kernel32.NewProc("LoadLibraryA")
+	pNtResumeProcess     = ntdll.NewProc("NtResumeProcess")
+)
+
+// injectDLL loads a DLL into a (suspended) 32-bit process with a remote LoadLibraryA.
+// The harness is x86 too, so kernel32's LoadLibraryA has the same address there.
+func injectDLL(pid int, path string) error {
+	const processAllAccess, memCommitReserve, pageReadWrite = 0x1F0FFF, 0x3000, 0x04
+	hp, _, err := pOpenProcess.Call(processAllAccess, 0, uintptr(pid))
+	if hp == 0 {
+		return fmt.Errorf("OpenProcess: %v", err)
+	}
+	defer syscall.CloseHandle(syscall.Handle(hp))
+	b := append([]byte(path), 0)
+	mem, _, err := pVirtualAllocEx.Call(hp, 0, uintptr(len(b)), memCommitReserve, pageReadWrite)
+	if mem == 0 {
+		return fmt.Errorf("VirtualAllocEx: %v", err)
+	}
+	if r, _, err := pWriteProcessMemory.Call(hp, mem, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), 0); r == 0 {
+		return fmt.Errorf("WriteProcessMemory: %v", err)
+	}
+	if err := pLoadLibraryA.Find(); err != nil {
+		return err
+	}
+	th, _, err := pCreateRemoteThread.Call(hp, 0, 0, pLoadLibraryA.Addr(), mem, 0, 0)
+	if th == 0 {
+		return fmt.Errorf("CreateRemoteThread: %v", err)
+	}
+	defer syscall.CloseHandle(syscall.Handle(th))
+	pWaitForSingleObject.Call(th, 15000)
+	var mod uint32
+	pGetExitCodeThread.Call(th, uintptr(unsafe.Pointer(&mod)))
+	if mod == 0 {
+		return fmt.Errorf("LoadLibraryA(%s) returned NULL", path)
+	}
+	return nil
+}
+
+func resumeProcess(pid int) error {
+	const processSuspendResume = 0x0800
+	hp, _, err := pOpenProcess.Call(processSuspendResume, 0, uintptr(pid))
+	if hp == 0 {
+		return fmt.Errorf("OpenProcess: %v", err)
+	}
+	defer syscall.CloseHandle(syscall.Handle(hp))
+	if r, _, _ := pNtResumeProcess.Call(hp); r != 0 {
+		return fmt.Errorf("NtResumeProcess: 0x%x", r)
+	}
+	return nil
+}
