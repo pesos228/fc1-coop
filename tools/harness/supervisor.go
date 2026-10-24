@@ -140,8 +140,10 @@ func (s *supervisor) start(in *Instance) error {
 	// launcher), so everything except a short dofile goes into boot.lua.
 	boot := fmt.Sprintf("HARNESS_DIR = '%s'\nHARNESS_NAME = '%s'\ndofile('%s')\n",
 		slash(in.Dir), in.Name, slash(s.run.Agent))
-	for _, c := range in.Commands {
-		boot += fmt.Sprintf("System:ExecuteCommand(%q)\n", c)
+	if !s.joinMode() {
+		for _, c := range in.Commands {
+			boot += fmt.Sprintf("System:ExecuteCommand(%q)\n", c)
+		}
 	}
 	if err := os.WriteFile(filepath.Join(in.Dir, "boot.lua"), []byte(boot), 0o644); err != nil {
 		return err
@@ -178,6 +180,9 @@ func (s *supervisor) start(in *Instance) error {
 	}
 	s.run.Save()
 	appendEvent(s.run.Dir, in.Name, "start", fmt.Sprintf("pid=%d %s", in.PID, cmd.SysProcAttr.CmdLine))
+	if s.joinMode() {
+		go s.deliverJoin(in)
+	}
 
 	s.mu.Lock()
 	s.procs[in.Name] = cmd
@@ -392,4 +397,37 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// joinMode: the FarCryCoop ASI only treats a game as co-op (and, e.g., skips the level
+// files' baked physics states that crash Treehouse/Swamp in multiplayer) when its start
+// line comes through Mods\FarCryCoop\join_<pid>.txt, as its launcher does. So with that
+// ASI the start commands go through the join file instead of boot.lua.
+func (s *supervisor) joinMode() bool {
+	return s.run.ASI != "" && strings.EqualFold(s.run.Mod, "FarCryCoop")
+}
+
+// deliverJoin writes the instance's commands one at a time to its join file; the ASI
+// polls it every 500 ms after a game frame, runs the line and deletes the file.
+func (s *supervisor) deliverJoin(in *Instance) {
+	p := filepath.Join(s.run.GameDir, "Mods", s.run.Mod, fmt.Sprintf("join_%d.txt", in.PID))
+	for _, c := range in.Commands {
+		if err := os.WriteFile(p, []byte(c), 0o644); err != nil {
+			appendEvent(s.run.Dir, in.Name, "warn", "join: "+err.Error())
+			return
+		}
+		deadline := time.Now().Add(3 * time.Minute)
+		for {
+			if _, err := os.Stat(p); err != nil {
+				appendEvent(s.run.Dir, in.Name, "join", c)
+				break
+			}
+			if time.Now().After(deadline) || !s.alive(in.Name) {
+				appendEvent(s.run.Dir, in.Name, "warn", "join: not consumed: "+c)
+				os.Remove(p)
+				return
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
 }

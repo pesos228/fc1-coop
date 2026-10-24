@@ -135,6 +135,11 @@ func cmdUp(args []string) error {
 		return err
 	}
 
+	// The FarCryCoop ASI recognises a co-op client by a Game:Connect( line (see joinMode).
+	clientConnect := "connect 127.0.0.1"
+	if *asi != "" && strings.EqualFold(*mod, "FarCryCoop") {
+		clientConnect = `#Game:Connect("127.0.0.1",1,1)`
+	}
 	var serverCmds []string
 	switch {
 	case *start != "":
@@ -164,7 +169,7 @@ func cmdUp(args []string) error {
 		Dir: filepath.Join(runDir, "server"), Commands: serverCmds})
 	for i := 1; i <= *clients; i++ {
 		run.Instances = append(run.Instances, &Instance{Name: fmt.Sprintf("client%d", i), Role: "client",
-			Dir: filepath.Join(runDir, fmt.Sprintf("client%d", i)), Commands: []string{"connect 127.0.0.1"}})
+			Dir: filepath.Join(runDir, fmt.Sprintf("client%d", i)), Commands: []string{clientConnect}})
 	}
 	if err := run.Save(); err != nil {
 		return err
