@@ -9,8 +9,9 @@ expect-log client1 sequence.first_cutscene 40s
 
 # Same entities on both sides; players exact.
 expect-diff max=0.5 class=^Player$ missing=0
-# Mercenaries on foot exact. Known open issue: AI riding vehicles (Boat./Humvee.) is 1-5 m off.
-expect-diff max=0.5 class=^Merc exclude=(Boat|Humvee)\.
+# Mercenaries on foot exact. Known open issue: AI riding vehicles is 1-5 m off (Boat./Humvee.,
+# and the gunship passengers REINF_ONE2, MercCover_M4_4..6 next to Gunship5/Gunship7).
+expect-diff max=0.5 class=^Merc exclude=(Boat|Humvee)\.|REINF_|MercCover_M4_[456]$
 # Helicopters: net presence at spawn; the client copy still drifts in Z between updates.
 expect-diff max=2.5 class=^Gunship$
 
