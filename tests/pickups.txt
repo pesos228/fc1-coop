@@ -1,0 +1,26 @@
+# Level pickups on a co-op server stay where they lie in single player, and a remote player can pick them up.
+# Run from the repo root: tools/bin/harness.exe test tests/pickups.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 30s
+wait client1 players>=2 -t 30s
+
+# Pickups with bAwakePhysics=1 used to fall at once on the server (AmmoAssault0/1 hang over no
+# geometry and went down to -1000). Single player heights: 20.90, 20.88, 20.80.
+sleep 20s
+expect server format('%.1f', System:GetEntityByName('AmmoAssault0'):GetPos().z) => 20.9
+expect server format('%.1f', System:GetEntityByName('AmmoAssault1'):GetPos().z) => 20.9
+expect server format('%.1f', System:GetEntityByName('AmmoAssault6'):GetPos().z) => 20.8
+expect-diff max=0.1 class=^(Ammo|Pickup|Armor|Health|KeyCard) missing=0
+
+# A remote player (immortal, so guards cannot kill the player first) walks onto a level armor
+# pickup next to the start: armor 0 -> 100 on both sides, the pickup goes Inactive, others stay.
+lua server COOP_God=1
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=351.53,y=1005.74,z=33.8})
+sleep 4s
+expect server System:GetEntityByName('Pickups_Library.Armor_5'):GetState() => Inactive
+expect client1 System:GetEntityByName('Pickups_Library.Armor_5'):GetState() => Inactive
+expect server Harness:RemotePlayer().cnt.armor => 100
+expect client1 _localplayer.cnt.armor => 100
+expect server System:GetEntityByName('AmmoHandGrenades5'):GetState() => Active
+
+down

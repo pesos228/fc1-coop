@@ -66,6 +66,44 @@ function Harness:Tick()
 	if (mod(self.ticks, 5) == 1) then
 		self:WriteState();
 	end
+	if (self.trace) then
+		self:TraceTick();
+	end
+end
+
+-- Trace(pattern, file): every tick, append "time id class name x y z" for each entity
+-- whose class or name matches the Lua pattern (e.g. "^Ammo"; "@pickup" = every BasePickup).
+-- Trace() stops.
+function Harness:Trace(pattern, file)
+	if (not pattern) then
+		self.trace = nil;
+		return "trace off";
+	end
+	self.trace = {pattern = pattern, file = file or "trace.txt"};
+	return "trace "..pattern;
+end
+
+function Harness:TraceTick()
+	local t = self.trace;
+	local f = openfile(self:Path(t.file), "a");
+	if (not f) then
+		return;
+	end
+	local now = format("%.2f", _time);
+	for i, e in System:GetEntities() do
+		local cls, name = tostring(e.classname), tostring(e:GetName());
+		local hit;
+		if (t.pattern == "@pickup") then
+			hit = e.AttemptPick;
+		else
+			hit = strfind(cls, t.pattern) or strfind(name, t.pattern);
+		end
+		if (hit) then
+			local p = e:GetPos();
+			write(f, format("%s\t%d\t%s\t%s\t%.2f\t%.2f\t%.2f\n", now, e.id, cls, name, p.x, p.y, p.z));
+		end
+	end
+	closefile(f);
 end
 
 -- Commands -------------------------------------------------------------------
