@@ -601,15 +601,9 @@ end
 -- (CoopHudSync). Deaths reach the clients by themselves and are not sent.
 COOP_HPDirty = {}
 function CoopSendHP(list, slot)
-	local msg, n = "AIHP", 0;
-	for i = 1, getn(list) do
-		msg = msg.." "..list[i].id.." "..list[i].cnt.health;
-		n = n + 1;
-		if (n == 16 or i == getn(list)) then
-			if (slot) then slot:SendCommand(msg); else Server:BroadcastCommand(msg); end
-			msg, n = "AIHP", 0;
-		end
-	end
+	local words = {};
+	for i = 1, getn(list) do words[i] = list[i].id.." "..list[i].cnt.health; end
+	CoopSendPacked("AIHP", words, slot);
 end
 
 -- AI whose health is not what the clients got last; ents: the marked ones (by id), else all.
@@ -747,33 +741,52 @@ end
 -- boat crews' weapons lie on the decks on the server (z 28.4), while a client's boat is 1-3 m
 -- off, so its copy missed the deck and sank 5-7 m to the river bed (harness: SetPos on the
 -- server did not move the client's copy at all; they are dropped in the first second of the map,
--- before CoopWrapDrop). The server watches every spawned pickup (id from 65535 down) and,
--- once it has come to rest, tells the clients where ("PPOS <id> x y z", COOP ClientStuff), which
--- put it there and stop its physics; one that is still moving 5 s after the drop (a deck under
--- way), every 3 s.
+-- before CoopWrapDrop). Physical props (BasicEntity, RigidBody, DestroyableObject: the temple
+-- rubble on River) do get net presence once they move (ASI), but the server sends a body only
+-- while it is awake: the rubble falls at the map start on both sides, each settles somewhere
+-- else (one stone lay at z 34.4 on one side and 37.7 on the other, swapped between runs), and once
+-- asleep nothing was sent again (ASI watch: 2 updates, then none, also after a SetPos).
+-- So the server tells the clients where each of them has come to rest ("PPOS <id> x y z ax ay az
+-- ...", as many as fit, COOP ClientStuff): spawned pickups (id from 65535 down) and the props of
+-- the level, once at rest and again whenever they come to rest somewhere new; a drop that is
+-- still moving 5 s after it fell (a deck under way), every 3 s.
 -- A joining client gets them all again 5 and 15 s after it asked for the HUD (CoopHudSync): sent
 -- at once, its copies were set right and then fell again (the client was still setting them up).
-COOP_Drops = {} -- id -> {x, y, z (last sample), sx, sy, sz (sent), t (sent at), born}; this file runs on every map load
-function CoopSendDrop(id, d, slot)
-	local msg = format("PPOS %d %.2f %.2f %.2f", id, d.x, d.y, d.z);
-	if (slot) then slot:SendCommand(msg); else Server:BroadcastCommand(msg); end
-end
+COOP_REST_CLASSES = {BasicEntity = 1, RigidBody = 1, DestroyableObject = 1}
+COOP_Drops = {} -- id -> {x, y, z (last sample), sx, sy, sz, s (sent), t (sent at), born, drop}; this file runs on every map load
 COOP_DropResend = {}
+-- Server commands reach the clients cut at 255 characters (harness: a 400-character command
+-- arrived as 255): pack the words of one kind into messages under COOP_CMD_MAX.
+COOP_CMD_MAX = 240
+function CoopSendPacked(head, list, slot)
+	local msg = head;
+	for i = 1, getn(list) do
+		if (msg ~= head and strlen(msg) + 1 + strlen(list[i]) > COOP_CMD_MAX) then
+			if (slot) then slot:SendCommand(msg); else Server:BroadcastCommand(msg); end
+			msg = head;
+		end
+		msg = msg.." "..list[i];
+	end
+	if (msg ~= head) then
+		if (slot) then slot:SendCommand(msg); else Server:BroadcastCommand(msg); end
+	end
+end
+function CoopSendRest(list, slot) CoopSendPacked("PPOS", list, slot); end
 function CoopSyncDrops()
-	local resend = COOP_DropResend[1] and _time >= COOP_DropResend[1];
-	if (resend) then
-		COOP_DropResend[1] = COOP_DropResend[2];
-		COOP_DropResend[2] = nil;
-		for id, d in COOP_Drops do if (d.sx) then CoopSendDrop(id, {x = d.sx, y = d.sy, z = d.sz}); end end
+	local out, k = {}, 0;
+	if (COOP_DropResend[1] and _time >= COOP_DropResend[1]) then
+		COOP_DropResend[1], COOP_DropResend[2] = COOP_DropResend[2], nil;
+		for id, d in COOP_Drops do if (d.s) then k = k + 1; out[k] = id.." "..d.s; end end
 	end
 	for i, e in System:GetEntities() do
-		if (e.id >= COOP_STATIC_IDS and not COOP_Drops[e.id] and e.classname and strfind(e.classname, "^Pickup")) then
-			COOP_Drops[e.id] = {born = _time, t = _time};
+		if (not COOP_Drops[e.id] and e.classname and (COOP_REST_CLASSES[e.classname]
+			or (e.id >= COOP_STATIC_IDS and strfind(e.classname, "^Pickup")))) then
+			COOP_Drops[e.id] = {born = _time, t = _time, drop = (e.id >= COOP_STATIC_IDS)};
 		end
 	end
 	for id, d in COOP_Drops do
 		local e = System:GetEntity(id);
-		if (not e or e:GetState() == "Inactive") then -- picked up
+		if (not e or (d.drop and e:GetState() == "Inactive")) then -- gone, or picked up
 			COOP_Drops[id] = nil;
 		else
 			local p = e:GetPos();
@@ -781,12 +794,16 @@ function CoopSyncDrops()
 			local still = d.x and (x - d.x) * (x - d.x) + (y - d.y) * (y - d.y) + (z - d.z) * (z - d.z) < 0.0025;
 			d.x, d.y, d.z = x, y, z;
 			local sent = d.sx and (x - d.sx) * (x - d.sx) + (y - d.sy) * (y - d.sy) + (z - d.sz) * (z - d.sz) < 0.0025;
-			if ((still and not sent) or (not still and _time - d.born >= 5 and _time - d.t >= 3)) then
+			if ((still and not sent) or (d.drop and not still and _time - d.born >= 5 and _time - d.t >= 3)) then
+				local a = e:GetAngles();
 				d.sx, d.sy, d.sz, d.t = x, y, z, _time;
-				CoopSendDrop(id, d);
+				d.s = format("%.2f %.2f %.2f %.1f %.1f %.1f", x, y, z, a.x, a.y, a.z);
+				k = k + 1;
+				out[k] = id.." "..d.s;
 			end
 		end
 	end
+	if (k > 0) then CoopSendRest(out); end
 end
 
 -- AI classes copy BasicAI's functions when they are defined: replace Drop in every class table.

@@ -227,6 +227,8 @@ static void netPresenceIfMoved(void *ent)
 	logf("net presence on for moved entity %u (class %u)", id, cls);
 }
 
+// Mods\FarCryCoop\watchid.txt (see hUe): on the server, the watched entity's place in the snapshot list
+static DWORD g_watchId, g_watchSnaps;
 #define MAX_NET 4096
 static BYTE *v[MAX_NET];    // list nodes in send order
 static float k[MAX_NET], lu[MAX_NET]; // sort key, m_fLastUpdate before the snapshot
@@ -244,6 +246,12 @@ static void sortNetEntities(BYTE *snap)
 		if (*(void **)(n + 0xc)) // CNetEntityInfo::m_pEntity
 			netPresenceIfMoved(*(void **)(n + 0xc));
 		dt = now - *(float *)(n + 0x10);
+		if (g_watchId && *(void **)(n + 0xc)) {
+			void *we = *(void **)(n + 0xc);
+			if (((WORD(__fastcall *)(void *, void *))VFN(we, 0xc4))(we, 0) == g_watchId && !(g_watchSnaps++ % 30))
+				logf("watch %u: snapshot list place %d, priority %d, %d ms since sent, net presence %u", g_watchId, c,
+				     *(int *)(n + 0x24), (int)(dt * 1000), (DWORD)((BYTE(__fastcall *)(void *, void *))VFN(we, 0xd0))(we, 0));
+		}
 		v[c] = n;
 		k[c++] = (float)*(int *)(n + 0x24) * (dt > 0 ? dt : 0);
 	}
@@ -378,6 +386,9 @@ static BYTE __fastcall hTs(void *self, void *edx, void *stm)
 
 static BYTE(__fastcall *oUe)(void *, void *, void *);
 static DWORD g_ueId, g_ueClass, g_inUe; // the entity update being parsed (for hPhysErr)
+// Mods\FarCryCoop\watchid.txt (decimal, optional; for desync hunting): on a client, log the updates
+// of that one entity and whether its physics state was read, with its position after the update
+static DWORD g_watchUe, g_watchPh;
 static BYTE __fastcall hUe(void *self, void *edx, void *stm)
 {
 	DWORD *rd = (DWORD *)((BYTE *)stm + 0x474), at = *rd, id = 0; // CStream read position
@@ -398,6 +409,14 @@ static BYTE __fastcall hUe(void *self, void *edx, void *stm)
 	g_inUe = 1;
 	r = oUe(self, edx, stm);
 	g_inUe = 0;
+	if (g_watchId && (WORD)id == g_watchId && ent) {
+		g_watchUe++;
+		if (g_watchUe <= 5 || !(g_watchUe % 50)) {
+			Vec3 *p = ((Vec3 * (__fastcall *)(void *, void *, int))VFN(ent, 0x04))(ent, 0, 1);
+			logf("watch %u: update %u, physics states read %u, now at %d,%d,%d", g_watchId, g_watchUe, g_watchPh,
+			     (int)(p->x * 100), (int)(p->y * 100), (int)(p->z * 100));
+		}
+	}
 	s.ue++;
 	s.myId = *(WORD *)((BYTE *)self + 0xc); // m_wPlayerID
 	if ((WORD)id == s.myId) {
@@ -829,6 +848,8 @@ static int __fastcall hPhSet(void *self, void *edx, void *stm, int flags)
 			logf("baked physics state skipped (%u so far)", g_bakedSkipped);
 		return 0;
 	}
+	if (g_watchId && g_inUe && g_ueId == g_watchId)
+		g_watchPh++;
 	return oPhSet(self, edx, stm, flags);
 }
 static void __cdecl hPhysErr(const char *fmt, int a1, int a2, int a3)
@@ -1023,6 +1044,18 @@ BOOL __stdcall DllMain(HANDLE self, DWORD reason, void *reserved)
 			for (cut = 0; cut < (int)got && b[cut] >= '0' && b[cut] <= '9'; cut++)
 				v = v * 10 + (b[cut] - '0');
 			g_npMask = v;
+		}
+	}
+	wvsprintfA(path + n, "\\Mods\\FarCryCoop\\watchid.txt", 0);
+	{
+		HANDLE f = CreateFileA(path, 0x80000000, 1, 0, 3, 0x80, 0);
+		char b[16];
+		DWORD got = 0;
+		if (f != (HANDLE)-1) {
+			ReadFile(f, b, sizeof b - 1, &got, 0);
+			CloseHandle(f);
+			for (cut = 0; cut < (int)got && b[cut] >= '0' && b[cut] <= '9'; cut++)
+				g_watchId = g_watchId * 10 + (b[cut] - '0');
 		}
 	}
 	wvsprintfA(path + n, "\\Mods\\FarCryCoop\\netlog_%s_%u.txt", (va_list)args);

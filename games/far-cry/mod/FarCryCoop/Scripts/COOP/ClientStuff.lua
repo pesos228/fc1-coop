@@ -193,15 +193,24 @@ ClientStuff.ServerCommandTable["AIHP"] = function(String, tk)
 	end
 end
 
--- where a dropped weapon came to rest on the server (COOP gamerules CoopSyncDrops): it has no
--- net presence, and our own copy may have fallen elsewhere (River: through a boat's deck).
--- Its physics goes off here: asleep (AwakePhysics 0) it woke up and fell through the deck
--- again. The server's copy decides the pickup; ours is only shown.
+-- where dropped weapons and physical props came to rest on the server ("PPOS <id> x y z ax ay az
+-- ...", COOP gamerules CoopSyncDrops): our own copies may have fallen elsewhere (River: through a
+-- boat's deck, rubble settled differently). A pickup's physics goes off here: asleep
+-- (AwakePhysics 0) it woke up and fell through the deck again; the server's copy decides the
+-- pickup, ours is only shown. A prop stays physical but asleep, so explosions still move it.
 ClientStuff.ServerCommandTable["PPOS"] = function(String, tk)
-	local e = System:GetEntity(tonumber(tk[2]) or 0);
-	if (Game:IsServer() or not e or not tk[5]) then return; end
-	e:EnablePhysics(0);
-	e:SetPos({x = tonumber(tk[3]) or 0, y = tonumber(tk[4]) or 0, z = tonumber(tk[5]) or 0});
+	if (Game:IsServer()) then return; end
+	local i = 2;
+	while (tk[i + 6]) do
+		local e = System:GetEntity(tonumber(tk[i]) or 0);
+		if (e) then
+			if (e.classname and strfind(e.classname, "^Pickup")) then e:EnablePhysics(0); end
+			e:SetPos({x = tonumber(tk[i + 1]) or 0, y = tonumber(tk[i + 2]) or 0, z = tonumber(tk[i + 3]) or 0});
+			e:SetAngles({x = tonumber(tk[i + 4]) or 0, y = tonumber(tk[i + 5]) or 0, z = tonumber(tk[i + 6]) or 0});
+			if (not (e.classname and strfind(e.classname, "^Pickup"))) then e:AwakePhysics(0); end
+		end
+		i = i + 7;
+	end
 end
 
 -- AI animation started by the server (melee swing, see COOP gamerules CoopUpdateMelee)
