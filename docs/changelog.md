@@ -14,11 +14,10 @@
 - Коммиты теперь — Conventional Commits на английском.
 
 **Состояние**
-- Ветки `main` и `heli-netpresence-at-spawn`; remote `upstream` (push заглушен). `origin` появится после Fork на GitHub.
+- Опубликовано: https://github.com/pesos228/fc1-coop (GitHub Fork от Bantila/FarCryCoop), ветки `main` и `heli-netpresence-at-spawn`; `main` на 19 коммитов впереди апстрима, 0 позади. Коммиты на GitHub засчитаны `pesos228`. Remote `upstream` — push заглушен.
 - `tests/training-basic.txt` на новом `main` (апстрим с 4 новыми коммитами + наши фиксы, мод и ASI из `games/far-cry`): **19/19 PASS**.
 
 **Дальше**
-- Fork на GitHub → `origin`, push `main` и `heli-netpresence-at-spawn`.
 - Дальше по списку из записи 2026-10-24 (пикапы первыми).
 
 ---
