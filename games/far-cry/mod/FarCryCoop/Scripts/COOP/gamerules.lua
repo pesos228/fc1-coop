@@ -541,13 +541,39 @@ function CoopWriteProgress(why)
 end
 function CoopWriteProgressError(msg) System:LogAlways("coop: progress write error: "..tostring(msg)); writeto(); end
 
+-- Everybody sees who comes and goes (docs/specs/lobby-and-cutscenes.md, point 5): "<name> is
+-- connecting..." once its slot exists without a player yet (GameRules:OnClientConnect comes only
+-- when the client has loaded the map: CXServerSlot::FinishOnContextReady, SDK; a slot is there
+-- while it loads), "<name> has entered the game" at its first spawn
+-- on a map (CoopJoinNearTeam), "<name> has left the game" when it disconnects. Through the
+-- host's Hud:AddMessage, which CoopWrapHud forwards to every client (MHUD): Server:BroadcastText
+-- showed nothing (the single-player ClientStuff has no OnTextMessage), and with one added the
+-- clients got every message twice. Nothing about the host's own player.
+function CoopAnnounce(text)
+	if (Hud and Hud.AddMessage) then Hud:AddMessage(text); else Server:BroadcastCommand("MHUD msg "..text); end
+	CoopMonEvent("S", "announce "..text);
+end
+function CoopAnnounceConnecting()
+	for i, slot in Server:GetServerSlotMap() do
+		local id = slot:GetId();
+		-- the host's own slot at the map start has no player either: only once somebody plays
+		if (not COOP_Connecting[id] and not COOP_Entered[id] and not System:GetEntity(slot:GetPlayerId())
+			and getn(CoopPlayers()) > 0) then
+			COOP_Connecting[id] = 1;
+			local name = slot:GetName(); -- empty until the client has loaded
+			CoopAnnounce(((name and name ~= "") and name or "A player").." is connecting...");
+		end
+	end
+end
+
 -- a player leaves: keep the equipment for the next join
 COOP_DefaultOnClientDisconnect = GameRules.OnClientDisconnect; -- the single-player rules, loaded above
 function GameRules:OnClientDisconnect(server_slot)
 	call(CoopKeepLoadout, {server_slot}, "x", function(msg) System:LogAlways("coop: loadout keep error: "..tostring(msg)); end);
 	call(CoopWriteProgress, {"player left"}, "x", CoopWriteProgressError);
+	call(CoopAnnounce, {server_slot:GetName().." has left the game"}, "x", function(msg) System:LogAlways("coop: announce error: "..tostring(msg)); end);
 	COOP_SlotKeys[server_slot:GetId()], COOP_KeyWait[server_slot:GetId()] = nil, nil;
-	COOP_JoinedSlots[server_slot:GetId()] = nil;
+	COOP_JoinedSlots[server_slot:GetId()], COOP_Entered[server_slot:GetId()], COOP_Connecting[server_slot:GetId()] = nil, nil, nil;
 	return COOP_DefaultOnClientDisconnect(self, server_slot);
 end
 
@@ -566,6 +592,8 @@ end
 -- players where it keeps them (CoopApplyLoad marks them).
 COOP_JOIN_RADIUS = 30
 COOP_JoinedSlots = {} -- slot ids already spawned on this map; this file runs on every map load
+COOP_Entered = COOP_Entered or {} -- slot ids announced as entered; kept through map loads
+COOP_Connecting = COOP_Connecting or {} -- slot ids announced as connecting
 function CoopJoinNearTeam()
 	if (COOP_PendingLoad) then return; end
 	local list = CoopPlayers();
@@ -573,6 +601,10 @@ function CoopJoinNearTeam()
 		local P = System:GetEntity(slot:GetPlayerId());
 		if (P and P.cnt and BasicPlayer.IsAlive(P) and not COOP_JoinedSlots[slot:GetId()]) then
 			COOP_JoinedSlots[slot:GetId()] = 1;
+			if (P ~= _localplayer and not COOP_Entered[slot:GetId()]) then -- once per connection, not per map
+				COOP_Entered[slot:GetId()] = 1;
+				CoopAnnounce(P:GetName().." has entered the game");
+			end
 			local mate = (_localplayer ~= P and _localplayer and BasicPlayer.IsAlive(_localplayer)) and _localplayer;
 			for j, Q in list do
 				if (not mate and Q ~= P and Q.cnt and BasicPlayer.IsAlive(Q)) then mate = Q; end
@@ -896,6 +928,7 @@ function GameRules:OnUpdate(DeltaTime)
 	CoopRun("heli guns", function() CoopSyncHeliGuns(COOP_DropResend[1] and _time >= COOP_DropResend[1]) end)
 	CoopRun("drops", CoopSyncDrops)
 	CoopRun("join near team", CoopJoinNearTeam)
+	CoopRun("announce connecting", CoopAnnounceConnecting)
 	call(CoopApplyLoadouts, {}, "x", function(msg) System:LogAlways("coop: loadout error: "..tostring(msg)); end)
 	call(CoopApplyPrefs, {}, "x", function(msg) System:LogAlways("coop: prefs error: "..tostring(msg)); end)
 	call(CoopUpdateBots, {}, "x", function(msg) System:LogAlways("coop: bot error: "..tostring(msg)); end)
