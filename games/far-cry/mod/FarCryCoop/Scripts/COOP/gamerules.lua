@@ -359,7 +359,11 @@ function CoopBot()
 	CoopMonEvent("S", "bot "..bot:GetName().." ("..class..")");
 end
 Game:AddCommand("coop_bot", "CoopBot()", "coop_bot: spawn a teammate bot that follows the nearest player");
-Game:AddCommand("coop_expect", "COOP_ExpectPlayers = tonumber(%%) or 1", "coop_expect <n>: hold the map intro until n players are in (90 s at most)");
+Game:AddCommand("coop_expect", "COOP_ExpectPlayers = tonumber(%%) or 1", "coop_expect <n>: same as coop_minplayers");
+Game:AddCommand("coop_minplayers", "COOP_ExpectPlayers = tonumber(%%) or 1", "coop_minplayers <n>: a map starts when n players are in (COOP_ExpectTimeout s at most)");
+-- console commands do nothing in the game client (NOTES: coop_map), so the host types #CoopStart()
+function CoopStart() COOP_ForceStart = 1; end
+Game:AddCommand("coop_start", "CoopStart()", "coop_start: start the map now, without waiting for more players (#CoopStart() in the game)");
 
 function CoopUpdateBots()
 	local keep = {};
@@ -866,15 +870,55 @@ function CoopWrapDrop()
 end
 
 -- Players who join after the intro started never see it (a sequence is forwarded only when it
--- starts). The launcher / lobby knows how many players come: COOP_ExpectPlayers (coop_expect N)
--- holds the intro until that many are in, for at most COOP_ExpectTimeout seconds of the map.
+-- starts). The launcher / lobby knows how many players come: COOP_ExpectPlayers (coop_minplayers N)
+-- holds the map start until that many are in (docs/specs/lobby-and-cutscenes.md, points 1-3),
+-- for at most COOP_ExpectTimeout seconds of the map, or until the host types coop_start. Who is in
+-- already waits where he spawned: kept on that spot (moved back if he walks off more than 3 m),
+-- unhurt, and told every 5 s how many are in. Then everybody goes to the host and the map intro
+-- starts for all at once (CoopMapIntro). A save load has its own wait (CoopApplyLoad).
 COOP_ExpectPlayers = COOP_ExpectPlayers or 1;
-COOP_ExpectTimeout = COOP_ExpectTimeout or 90;
+COOP_ExpectTimeout = COOP_ExpectTimeout or 120;
+COOP_WaitDone, COOP_WaitHold, COOP_WaitMsgAt = nil, {}, nil; -- this file runs on every map load: every map start waits
+function CoopWaitOver()
+	if (COOP_WaitDone) then return 1; end
+	local list = CoopPlayers();
+	if (getn(list) == 0) then return; end
+	if (not (getn(list) >= COOP_ExpectPlayers or _time >= COOP_ExpectTimeout or COOP_ForceStart or COOP_PendingLoad)) then return; end
+	COOP_WaitDone, COOP_ForceStart = 1, nil;
+	if (next(COOP_WaitHold) and getn(list) > 1 and not COOP_PendingLoad) then
+		CoopGather();
+		CoopAnnounce(format("Starting with %d of %d players", getn(list), COOP_ExpectPlayers));
+	end
+	COOP_WaitHold = {};
+	return 1;
+end
+function CoopWaitTick()
+	if (CoopWaitOver()) then return; end
+	local list = CoopPlayers();
+	for i, P in list do
+		if (BasicPlayer.IsAlive(P)) then
+			local t = P:GetPos();
+			local x, y, z = t.x, t.y, t.z; -- GetPos returns a shared table
+			local h = COOP_WaitHold[P.id];
+			if (not h) then
+				COOP_WaitHold[P.id] = {x = x, y = y, z = z};
+			elseif ((x - h.x) * (x - h.x) + (y - h.y) * (y - h.y) > 9) then
+				CoopMovePlayer(P, h);
+			end
+		end
+	end
+	if (_time >= (COOP_WaitMsgAt or 0)) then
+		COOP_WaitMsgAt = _time + 5;
+		local text = format("Waiting for players: %d/%d, starting in %d s", getn(list), COOP_ExpectPlayers, max(0, floor(COOP_ExpectTimeout - _time)));
+		if (Hud and Hud.AddMessage) then Hud:AddMessage(text); else Server:BroadcastCommand("MHUD msg "..text); end
+		CoopMonEvent("S", "wait "..getn(list).."/"..COOP_ExpectPlayers);
+	end
+end
 function CoopMapIntro()
 	if (not g_MapChanged or not _localplayer or COOP_PendingLoad or not Mission or not Mission.OnMapChange) then return; end
 	local list = CoopPlayers();
 	if (getn(list) == 0) then return; end
-	if (getn(list) < COOP_ExpectPlayers and _time < COOP_ExpectTimeout) then return; end
+	if (not CoopWaitOver()) then return; end
 	for i, P in list do
 		if (not BasicPlayer.IsAlive(P)) then return; end
 	end
@@ -900,6 +944,11 @@ function GameRules:OnUpdate(DeltaTime)
 	COOP_AIPlayers = CoopPlayers() -- for CoopAIPlayer; every frame, players respawn as new entities
 	CoopRun("monitor", function() CoopMonitor("S") end)
 	CoopRun("update keys", CoopUpdateKeys)
+	if not COOP_WaitDone then -- waiting for the players (CoopWaitTick): nobody gets hurt
+		for i, P in CoopPlayers() do
+			if P.cnt and P.cnt.health > 0 then P.cnt.health = P.cnt.max_health; end
+		end
+	end
 	if COOP_God == 1 then -- coop_god: refill every frame
 		for i, P in CoopPlayers() do
 			if P.cnt.health > 0 then P.cnt.health = P.cnt.max_health; end
@@ -921,6 +970,7 @@ function GameRules:OnUpdate(DeltaTime)
 	CoopRun("vehicle copies", CoopVehicleCopies)
 	CoopRun("wrap cutscene moves", CoopWrapCutsceneMoves)
 	CoopRun("wrap drop", CoopWrapDrop)
+	CoopRun("wait for players", CoopWaitTick)
 	CoopRun("map intro", CoopMapIntro)
 	CoopRun("boat seats", CoopBoatSeats)
 	CoopRun("ai health sweep", CoopSyncAIHealth)

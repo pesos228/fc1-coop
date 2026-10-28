@@ -230,7 +230,7 @@ pub fn update(app: &AppHandle, me: Value, map: String, loadout: bool) {
 // host: everyone starts the game; the host loads the map, then tells the clients to connect
 // once its server has taken UDP 49001
 pub fn start(app: AppHandle) -> Result<(), String> {
-    let (map, loadout) = {
+    let (map, loadout, players) = {
         let mut guard = LOBBY.lock().unwrap();
         let l = guard.as_mut().filter(|l| l.host).ok_or("not hosting a lobby")?;
         if l.started {
@@ -238,10 +238,12 @@ pub fn start(app: AppHandle) -> Result<(), String> {
         }
         l.started = true;
         broadcast(&app, l, &json!({ "t": "start" }));
-        (l.map.clone(), l.loadout)
+        (l.map.clone(), l.loadout, l.players.len())
     };
     let me = crate::me();
-    crate::start_game(&me, loadout, Some(crate::host_line(&map, &me, loadout)?))?;
+    // the map start waits for everybody in the lobby (COOP gamerules CoopWaitTick)
+    let line = crate::expect_players(&crate::host_line(&map, &me, loadout)?, players);
+    crate::start_game(&me, loadout, Some(line))?;
     std::thread::spawn(move || {
         for _ in 0..300 {
             std::thread::sleep(Duration::from_secs(1));

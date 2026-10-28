@@ -185,6 +185,11 @@ fn host_line(map: &str, me: &Value, loadout: bool) -> Result<String, String> {
     Ok(format!("#{} {}(\"{}\")", prefs(me, loadout), call, name))
 }
 
+// the host's line with the number of players the map start waits for (coop_minplayers)
+fn expect_players(line: &str, players: usize) -> String {
+    line.replacen('#', &format!("#COOP_ExpectPlayers={} ", players.max(1)), 1)
+}
+
 fn connect_line(ip: &str, me: &Value) -> Result<String, String> {
     if ip.is_empty() || !ip.chars().all(|c| c.is_ascii_alphanumeric() || ".:-".contains(c)) {
         return Err("bad address".into());
@@ -279,7 +284,7 @@ fn place_window(pid: u32, left: bool) {
 #[tauri::command]
 fn launch_test(map: String, loadout: bool) -> Result<(), String> {
     let me = me();
-    let host = start_game(&me, loadout, Some(host_line(&map, &me, loadout)?))?;
+    let host = start_game(&me, loadout, Some(expect_players(&host_line(&map, &me, loadout)?, 2)))?;
     std::thread::spawn(move || {
         place_window(host, true);
         for _ in 0..300 {
@@ -365,6 +370,14 @@ fn main() {
 #[cfg(test)]
 mod tests {
     // reads this PC's Steam login: cargo test -- --ignored --nocapture
+    #[test]
+    fn host_line_waits_for_the_lobby() {
+        let me = serde_json::json!({"name": "A", "color": 1, "weapons": [], "difficulty": 1});
+        let line = super::expect_players(&super::host_line("pier", &me, false).unwrap(), 3);
+        assert!(line.starts_with("#COOP_ExpectPlayers=3 COOP_Color=1 "), "{}", line);
+        assert!(line.ends_with("CoopMap(\"pier\")"), "{}", line);
+    }
+
     #[test]
     #[ignore]
     fn steam_user_here() {

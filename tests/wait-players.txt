@@ -1,0 +1,31 @@
+# A map start waits for the players (docs/specs/lobby-and-cutscenes.md, points 1-3): with 3
+# expected and 2 in, both wait unhurt on their spot and see how many are in; the host's
+# #CoopStart() (or the timeout) starts the map: everybody at the host, the intro for all.
+# Run from the repo root: tools/bin/harness.exe test tests/wait-players.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=3;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 3s
+expect-log server wait.2/3 10s
+expect-log client1 hud.msg.Waiting.for.players:.2/3 10s
+expect server (COOP_WaitDone == nil) and 1 => 1
+# a waiting player who walks off is put back
+lua client1 HOLDX = _localplayer:GetPos().x _localplayer:SetPos({x=HOLDX+10, y=_localplayer:GetPos().y, z=_localplayer:GetPos().z})
+sleep 5s
+expect client1 (abs(_localplayer:GetPos().x - HOLDX) < 3) and 1 => 1
+# the intro has not started
+expect server (g_MapChanged ~= nil) and 1 => 1
+lua server CoopStart()
+expect-log server Starting.with.2.of.3.players 10s
+expect-log client1 sequence.first_cutscene 15s
+expect-no-events
+down
+
+# The same without coop_start: the timeout starts it.
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=3;#COOP_ExpectTimeout=40;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+expect-log server Starting.with.2.of.3.players 60s
+expect-log client1 sequence.first_cutscene 15s
+expect-no-events
+down
