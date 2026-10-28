@@ -214,6 +214,25 @@ ClientStuff.ServerCommandTable["PPOS"] = function(String, tk)
 	end
 end
 
+-- a helicopter's mounted gun, bound to it on the server only ("MWBIND <gun> <heli> ...", COOP
+-- gamerules CoopSyncHeliGuns): bind our copy the way Gunship:InitMountedWeapon does
+ClientStuff.ServerCommandTable["MWBIND"] = function(String, tk)
+	if (Game:IsServer()) then return; end
+	local i = 2;
+	while (tk[i + 1]) do
+		local gun, heli = System:GetEntity(tonumber(tk[i]) or 0), System:GetEntity(tonumber(tk[i + 1]) or 0);
+		if (gun and heli and gun.COOP_BoundTo ~= heli.id and heli.GetHelperPos) then
+			heli:Bind(gun);
+			gun:SetPos(heli:GetHelperPos("gun", 1));
+			gun:SetAngles({x = 0, y = 0, z = 180});
+			gun.isBound = heli;
+			gun.COOP_BoundTo = heli.id;
+			CoopMonEvent("C", "heli gun "..gun.id.." on "..heli:GetName());
+		end
+		i = i + 2;
+	end
+end
+
 -- AI animation started by the server (melee swing, see COOP gamerules CoopUpdateMelee)
 ClientStuff.ServerCommandTable["ANIM"] = function(String, toktable)
 	local e = System:GetEntity(tonumber(toktable[2]) or 0);

@@ -1,0 +1,22 @@
+# Pier: a Gunship's mounted gun (and the AI gunner on it) follows the helicopter on clients.
+# The gun is spawned and bound on the server only; clients kept it where the helicopter started
+# (126 m from its helicopter). The server tells them the binds (MWBIND). Checked per side, gun
+# against its own helicopter: Gunship1 flies and turns, so the absolute positions of both drift.
+# Run from the repo root: tools/bin/harness.exe test tests/heli-guns.txt
+up -mode host -map pier -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("pier")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 10s
+expect-log client1 heli.gun.[0-9]+.on.Gunship1
+lua server for k,n in {"Gunship3","Gunship4"} do local h=System:GetEntityByName(n) local p=h:GetPos() h:SetPos({x=p.x+60,y=p.y,z=p.z+20}) end
+sleep 5s
+lua server function GunOff(n) local h=System:GetEntityByName(n) local g=System:GetEntity(h.mountedWeaponId) local p=h:GetPos() local x,y,z=p.x,p.y,p.z p=g:GetPos() return sqrt((p.x-x)*(p.x-x)+(p.y-y)*(p.y-y)+(p.z-z)*(p.z-z)) end
+lua client1 function GunOff(n) local h=System:GetEntityByName(n) local p=h:GetPos() local x,y,z=p.x,p.y,p.z local best=1e9 for i,e in System:GetEntities() do if e.classname=="MountedWeaponVehicle" and e.COOP_BoundTo==h.id then local q=e:GetPos() best=sqrt((q.x-x)*(q.x-x)+(q.y-y)*(q.y-y)+(q.z-z)*(q.z-z)) end end return best end
+expect server (GunOff("Gunship1") < 6) and 1 => 1
+expect client1 (GunOff("Gunship1") < 6) and 1 => 1
+expect client1 (GunOff("Gunship3") < 6) and 1 => 1
+expect client1 (GunOff("Gunship4") < 6) and 1 => 1
+# every gun near the server's (all are named MWeapon_heli; Gunship1's flies and turns: 3-4 m)
+expect-diff max=5 class=^MountedWeaponVehicle$ missing=0
+expect-no-events
+down

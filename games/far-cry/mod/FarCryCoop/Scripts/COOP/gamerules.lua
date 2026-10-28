@@ -892,6 +892,8 @@ function GameRules:OnUpdate(DeltaTime)
 	CoopRun("map intro", CoopMapIntro)
 	CoopRun("boat seats", CoopBoatSeats)
 	CoopRun("ai health sweep", CoopSyncAIHealth)
+	-- before "drops": that one moves COOP_DropResend on
+	CoopRun("heli guns", function() CoopSyncHeliGuns(COOP_DropResend[1] and _time >= COOP_DropResend[1]) end)
 	CoopRun("drops", CoopSyncDrops)
 	CoopRun("join near team", CoopJoinNearTeam)
 	call(CoopApplyLoadouts, {}, "x", function(msg) System:LogAlways("coop: loadout error: "..tostring(msg)); end)
@@ -1310,6 +1312,27 @@ function CoopApplyMissionState(save)
 		if (save.radar) then Hud:SetRadarObjective(save.radar); end
 	end
 	CoopSaveMessage(format("mission state: %d entities removed, %d states restored, %d objectives", n, ns, getn(save.objectives or {})));
+end
+
+-- A Gunship's mounted gun (MountedWeaponVehicle, "MWeapon_heli") is spawned and bound to the
+-- helicopter on the server only (Gunship:InitMountedWeapon). A script spawn has no net presence
+-- and is not even in the snapshot list (the ASI never saw it), so a client never learned the bind:
+-- its copy of the gun, and the AI gunner on it, stayed where the helicopter started (Pier: 126 m
+-- off while the helicopter flew). The server tells the clients which gun belongs to which
+-- helicopter ("MWBIND <gun> <heli> ...", COOP ClientStuff), and they bind it the same way; a
+-- joining client gets them all again 5 and 15 s after HUDSYNC, as the rest places.
+COOP_GunBinds = {} -- gun id -> heli id sent; this file runs on every map load
+function CoopSyncHeliGuns(all)
+	local out, k = {}, 0;
+	for i, e in System:GetEntities() do
+		local gun = e.mountedWeaponId and System:GetEntity(e.mountedWeaponId);
+		if (gun and gun.isBound == e and (all or COOP_GunBinds[gun.id] ~= e.id)) then
+			COOP_GunBinds[gun.id] = e.id;
+			k = k + 1;
+			out[k] = gun.id.." "..e.id;
+		end
+	end
+	if (k > 0) then CoopSendPacked("MWBIND", out); end
 end
 
 -- The crews of the level's vehicles died in the first frame of a co-op map (Training: the Humvee
