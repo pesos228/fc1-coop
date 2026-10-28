@@ -1,0 +1,54 @@
+# Training, listen host + 1 client:
+# - a hurt AI has the same health on the client (the engine sends AI health to no client; AIHP);
+# - a player who rejoins a running map appears next to the host, not at the level start;
+# - a player leaving and the server shutting down write the progress into the last save.
+# Run from the repo root: tools/bin/harness.exe test tests/join-and-progress.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 30s
+wait client1 players>=2 -t 30s
+sleep 5s
+lua server COOP_God=1
+lua server function HDist(a, b) local p = a:GetPos() local x, y, z = p.x, p.y, p.z p = b:GetPos() return sqrt((p.x-x)*(p.x-x) + (p.y-y)*(p.y-y) + (p.z-z)*(p.z-z)) end
+lua client1 function HDist(a, b) local p = a:GetPos() local x, y, z = p.x, p.y, p.z p = b:GetPos() return sqrt((p.x-x)*(p.x-x) + (p.y-y)*(p.y-y) + (p.z-z)*(p.z-z)) end
+
+# Hurt a mercenary on the server without killing it: the client must have the same health soon after.
+lua server local t=System:GetEntity(770) local s=_localplayer local p=t:GetPos() t:Damage({shooter=s,target=t,weapon=s.cnt.weapon,damage=40,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 500ms
+expect server (System:GetEntity(770).cnt.health > 0 and System:GetEntity(770).cnt.health < 255) and 1 => 1
+expect client1 (System:GetEntity(770).cnt.health < 255) and 1 => 1
+# the diff compares health too
+expect-diff max=0.5 class=^Merc exclude=(Boat|Humvee)\.|REINF_|MercCover_M4_[456]$|beach_patrol_[jn]$
+
+# The host walks away (near checkpoint 4, ~190 m from the start; the checkpoint itself is not
+# taken); the client drops and comes back on the same map. ("x and 1" is nil when false: an error.)
+lua server _localplayer:SetPos({x=482,y=927,z=30})
+sleep 3s
+expect server (HDist(_localplayer, Harness:RemotePlayer()) > 40) and 1 => 1
+cmd client1 reconnect
+sleep 5s
+wait client1 players>=2 -t 120s
+sleep 8s
+expect server (HDist(_localplayer, Harness:RemotePlayer()) < 3) and 1 => 1
+expect client1 (HDist(_localplayer, Harness:RemotePlayer()) < 3) and 1 => 1
+expect-log server joined.client1.next.to
+
+# Progress since the last save: a player leaving writes it into that save.
+lua server CoopSave("jointest")
+lua server CoopGiveLoadout(Harness:RemotePlayer(), {weapons={"Shotgun"}, ammo={Shotgun=17}, current="Shotgun", armor=77})
+sleep 2s
+cmd client1 disconnect
+expect-log server progress.written.to.jointest..player.left 20s
+lua server COOP_LoadedSave=nil dofile("Mods/FarCryCoop/save_jointest.lua")
+expect server COOP_LoadedSave.progress["client1"].armor => 77
+
+# ... and so does the server going down (the host's own equipment here).
+lua server HKEY=COOP_SlotKeys[Server:GetServerSlotByEntityId(_localplayer.id):GetId()]
+lua server _localplayer.cnt.armor=33
+cmd server disconnect
+expect-log server progress.written.to.jointest..shutdown 20s
+lua server COOP_LoadedSave=nil dofile("Mods/FarCryCoop/save_jointest.lua")
+expect server COOP_LoadedSave.progress[HKEY].armor => 33
+expect-no-events
+# the save is in the game's install: remove it
+lua server remove("Mods/FarCryCoop/save_jointest.lua")
+down

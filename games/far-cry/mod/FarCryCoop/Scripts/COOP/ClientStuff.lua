@@ -161,6 +161,18 @@ ClientStuff.ServerCommandTable["HIDE"] = function(String, toktable)
 	CoopMonEvent("C", "hide "..e:GetName().." "..tostring(toktable[3]));
 end
 
+-- AI health from the server ("AIHP <id> <hp> ...", COOP gamerules CoopSyncAIHealth): the engine
+-- sends health only for our own player. A dead AI stays dead: deaths come by themselves.
+ClientStuff.ServerCommandTable["AIHP"] = function(String, tk)
+	if (Game:IsServer()) then return; end
+	local i = 2;
+	while (tk[i + 1]) do
+		local e, hp = System:GetEntity(tonumber(tk[i]) or 0), tonumber(tk[i + 1]);
+		if (e and e.ai and e.cnt and e.cnt.health and e.cnt.health > 0 and hp and hp > 0) then e.cnt.health = hp; end
+		i = i + 2;
+	end
+end
+
 -- AI animation started by the server (melee swing, see COOP gamerules CoopUpdateMelee)
 ClientStuff.ServerCommandTable["ANIM"] = function(String, toktable)
 	local e = System:GetEntity(tonumber(toktable[2]) or 0);

@@ -515,14 +515,123 @@ end
 -- the map changes: everybody's equipment comes along
 function CoopSaveLoadouts()
 	for i, slot in Server:GetServerSlotMap() do CoopKeepLoadout(slot); end -- slots and their keys stay
+	CoopWriteProgress("map change");
 end
+
+-- Between two saves the equipment lived in memory only: a host who quit or crashed lost what
+-- players got since the last checkpoint, also for those who had left already. When a player
+-- leaves, the map changes or the server shuts down, the progress part of the last save
+-- (COOP_LastSave, written or loaded) is written again; the save point itself (positions,
+-- mission state, the players' records) stays as it was. Who is not in the game when that save
+-- is loaded gets the newer equipment (CoopApplyLoad: save.progress).
+function CoopWriteProgress(why)
+	local save = COOP_LastSave;
+	if (not (save and save.name and Server)) then return; end
+	for i, slot in Server:GetServerSlotMap() do
+		local key = COOP_SlotKeys[slot:GetId()];
+		local P = System:GetEntity(slot:GetPlayerId());
+		if (key and P and P.cnt and BasicPlayer.IsAlive(P)) then COOP_Progress[key] = CoopCollectLoadout(P); end
+	end
+	save.progress = COOP_Progress;
+	save.t0 = nil; -- CoopApplyLoad's wait, not part of the save
+	writeto(COOP_SAVE_PATH..save.name..".lua");
+	write("COOP_LoadedSave = "..CoopSer(save).."\n");
+	writeto();
+	System:LogAlways("coop: progress written to "..save.name.." ("..why..")");
+end
+function CoopWriteProgressError(msg) System:LogAlways("coop: progress write error: "..tostring(msg)); writeto(); end
 
 -- a player leaves: keep the equipment for the next join
 COOP_DefaultOnClientDisconnect = GameRules.OnClientDisconnect; -- the single-player rules, loaded above
 function GameRules:OnClientDisconnect(server_slot)
 	call(CoopKeepLoadout, {server_slot}, "x", function(msg) System:LogAlways("coop: loadout keep error: "..tostring(msg)); end);
+	call(CoopWriteProgress, {"player left"}, "x", CoopWriteProgressError);
 	COOP_SlotKeys[server_slot:GetId()], COOP_KeyWait[server_slot:GetId()] = nil, nil;
+	COOP_JoinedSlots[server_slot:GetId()] = nil;
 	return COOP_DefaultOnClientDisconnect(self, server_slot);
+end
+
+-- the server goes down (CXServerRules::ShutDown: quit, disconnect, a new map)
+COOP_DefaultOnShutdown = GameRules.OnShutdown;
+function GameRules:OnShutdown()
+	call(CoopWriteProgress, {"shutdown"}, "x", CoopWriteProgressError);
+	if (COOP_DefaultOnShutdown) then return COOP_DefaultOnShutdown(self); end
+end
+
+-- A player who joins a running map spawned where the single-player rules put him: at the last
+-- checkpoint or the level start, maybe far from everybody. The first spawn of a slot on this map
+-- goes next to a living teammate (the host's player first) when that one is more than
+-- COOP_JOIN_RADIUS away. A respawn after death is not a first spawn and stays at the checkpoint,
+-- as in single player; at a map start everybody spawns together anyway; a save load puts the
+-- players where it keeps them (CoopApplyLoad marks them).
+COOP_JOIN_RADIUS = 30
+COOP_JoinedSlots = {} -- slot ids already spawned on this map; this file runs on every map load
+function CoopJoinNearTeam()
+	if (COOP_PendingLoad) then return; end
+	local list = CoopPlayers();
+	for i, slot in Server:GetServerSlotMap() do
+		local P = System:GetEntity(slot:GetPlayerId());
+		if (P and P.cnt and BasicPlayer.IsAlive(P) and not COOP_JoinedSlots[slot:GetId()]) then
+			COOP_JoinedSlots[slot:GetId()] = 1;
+			local mate = (_localplayer ~= P and _localplayer and BasicPlayer.IsAlive(_localplayer)) and _localplayer;
+			for j, Q in list do
+				if (not mate and Q ~= P and Q.cnt and BasicPlayer.IsAlive(Q)) then mate = Q; end
+			end
+			if (mate) then
+				local p = P:GetPos();
+				local x, y, z = p.x, p.y, p.z; -- GetPos returns a shared table
+				local t = mate:GetPos();
+				local d2 = (t.x - x) * (t.x - x) + (t.y - y) * (t.y - y) + (t.z - z) * (t.z - z);
+				if (d2 > COOP_JOIN_RADIUS * COOP_JOIN_RADIUS) then
+					local a = mate:GetAngles();
+					local pos, ang = {x = t.x, y = t.y, z = t.z + 0.3}, {x = a.x, y = a.y, z = a.z};
+					CoopMovePlayer(P, pos, ang); -- on the mate's spot, as coop_gather
+					CoopMonEvent("S", format("joined %s next to %s (was %.0f m away)", P:GetName(), mate:GetName(), sqrt(d2)));
+				end
+			end
+		end
+	end
+end
+
+-- AI health reaches no client: CPlayer::Write sends health only to the client whose own player
+-- it is (SDK XPlayer.cpp, bLocalHostEntity), so clients kept every enemy at full health until it
+-- died (harness: mutants sv 198-245 / cl 255 on Treehouse and Cooler). The server sends what
+-- changed ("AIHP <id> <hp> ...", COOP ClientStuff): in the frame of a hit (GameRules:OnDamage
+-- marks the target), once a second for any other change, and all of it to a joining client
+-- (CoopHudSync). Deaths reach the clients by themselves and are not sent.
+COOP_HPDirty = {}
+function CoopSendHP(list, slot)
+	local msg, n = "AIHP", 0;
+	for i = 1, getn(list) do
+		msg = msg.." "..list[i].id.." "..list[i].cnt.health;
+		n = n + 1;
+		if (n == 16 or i == getn(list)) then
+			if (slot) then slot:SendCommand(msg); else Server:BroadcastCommand(msg); end
+			msg, n = "AIHP", 0;
+		end
+	end
+end
+
+-- AI whose health is not what the clients got last; ents: the marked ones (by id), else all.
+-- An AI seen the first time by the sweep is where the clients have it too (the level's health).
+function CoopSyncAIHealth(ents)
+	local list, k = {}, 0;
+	for i, e in (ents or System:GetEntities()) do
+		if (type(e) == "table" and e.ai and e.cnt and e.cnt.health and e.COOP_HP ~= e.cnt.health) then
+			if (e.cnt.health > 0 and (ents or e.COOP_HP)) then k = k + 1; list[k] = e; end
+			e.COOP_HP = e.cnt.health;
+		end
+	end
+	if (k > 0) then CoopSendHP(list); end
+end
+
+-- a joining client: every AI that is hurt
+function CoopSendAllHP(server_slot)
+	local list, k = {}, 0;
+	for i, e in System:GetEntities() do
+		if (e.ai and e.cnt and e.cnt.health and e.cnt.health > 0 and e.COOP_HP) then k = k + 1; list[k] = e; end
+	end
+	if (k > 0) then CoopSendHP(list, server_slot); end
 end
 
 function CoopApplyLoadouts()
@@ -673,6 +782,10 @@ function GameRules:OnUpdate(DeltaTime)
 		return
 	end
 	CoopRun("preload weapons", CoopPreloadWeapons)
+	if next(COOP_HPDirty) then
+		CoopRun("ai health", function() CoopSyncAIHealth(COOP_HPDirty) end)
+		COOP_HPDirty = {}
+	end
 	COOP_AIPlayers = CoopPlayers() -- for CoopAIPlayer; every frame, players respawn as new entities
 	CoopRun("monitor", function() CoopMonitor("S") end)
 	CoopRun("update keys", CoopUpdateKeys)
@@ -699,6 +812,8 @@ function GameRules:OnUpdate(DeltaTime)
 	CoopRun("wrap drop", CoopWrapDrop)
 	CoopRun("map intro", CoopMapIntro)
 	CoopRun("boat seats", CoopBoatSeats)
+	CoopRun("ai health sweep", CoopSyncAIHealth)
+	CoopRun("join near team", CoopJoinNearTeam)
 	call(CoopApplyLoadouts, {}, "x", function(msg) System:LogAlways("coop: loadout error: "..tostring(msg)); end)
 	call(CoopApplyPrefs, {}, "x", function(msg) System:LogAlways("coop: prefs error: "..tostring(msg)); end)
 	call(CoopUpdateBots, {}, "x", function(msg) System:LogAlways("coop: bot error: "..tostring(msg)); end)
@@ -845,6 +960,7 @@ end
 
 function CoopHudSync(server_slot)
 	for id, v in COOP_HideState do server_slot:SendCommand("HIDE "..id.." "..v); end
+	CoopSendAllHP(server_slot);
 	server_slot:SendCommand("MHUD flash ");
 	for i, o in (Hud and Hud.objectives or {}) do
 		if (type(o) == "table") then
@@ -894,7 +1010,9 @@ function GameRules:OnDamage(hit)
 	if (t and t.ai and not t.COOP_Awake and t.Enemy_Hidden ~= 1) then
 		call(CoopWake, {t}, "x", CoopWakeError); -- a sleeper that gets shot wakes up (COOP_SLEEPER_RADIUS)
 	end
-	return COOP_OldOnDamage(self, hit);
+	local r = COOP_OldOnDamage(self, hit);
+	if (t and t.ai) then COOP_HPDirty[t.id] = t; end -- the clients get the new health this frame (CoopSyncAIHealth)
+	return r;
 end
 
 -- Campaign saves (host only), as in single player: a checkpoint saves by itself ("auto"), F6 is
@@ -987,6 +1105,7 @@ function CoopSave(name)
 	writeto(COOP_SAVE_PATH..name..".lua");
 	write("COOP_LoadedSave = "..CoopSer(save).."\n");
 	writeto();
+	COOP_LastSave = save; -- CoopWriteProgress keeps its progress part up to date
 	CoopSaveMessage(format("saved %s: %d players, %d dead AI on %s", name, getn(save.players), nd, save.map));
 end
 
@@ -1028,6 +1147,8 @@ function CoopApplyLoad()
 	save.t0 = save.t0 or _time;
 	if ((getn(list) < slots or keys < slots) and _time - save.t0 < 30) then return; end
 	COOP_PendingLoad = nil;
+	COOP_LastSave = save;
+	for i, slot in Server:GetServerSlotMap() do COOP_JoinedSlots[slot:GetId()] = 1; end -- placed below, not next to the team
 	-- everyone the save knows is owed their equipment; who is here gets it below, the rest on joining
 	COOP_Progress, COOP_Owed = save.progress or {}, {};
 	for key, L in COOP_Progress do COOP_Owed[key] = 1; end
