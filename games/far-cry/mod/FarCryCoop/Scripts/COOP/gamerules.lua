@@ -386,23 +386,42 @@ function CoopUpdateBots()
 end
 
 -- Weapons carry over to the next level, as in the single-player story. At a mission end the
--- server remembers every player's weapons and ammo per server slot (slots stay through
--- LoadLevelMPServer); on the next level, once that slot's player is alive, the level's own
--- starting weapons are replaced by them. Single player does this for its _localplayer only
--- (SavePlayerElements/LoadPlayerElements), and in co-op the host got the level's defaults.
+-- server remembers every player's equipment under the player's key (CoopSetKey); on the next
+-- level, once that player is alive, the level's own starting weapons are replaced by it. Single
+-- player does this for its _localplayer only (SavePlayerElements/LoadPlayerElements), and in
+-- co-op the host got the level's defaults. A player who leaves keeps the equipment too and gets
+-- it back on joining again, on this map or a later one; saves keep it for every player who ever
+-- joined (CoopSave), so a server started from a save a week later still has it.
 -- Kept in globals: they survive the map load.
+-- What single player keeps (SDK ScriptObjectPlayer.cpp): weapons, ammo, the rounds in every
+-- weapon's clips and its fire mode, the selected weapon, armor, binoculars, flashlight and the
+-- items table (cryvision goggles); health comes back full.
 function CoopCollectLoadout(P)
 	if (not (P and P.cnt and P.cnt.GetWeaponsSlots)) then return; end
-	local names = {};
+	-- the selected weapon keeps its ammo in cnt.ammo / cnt.ammo_in_clip, not in P.Ammo
+	if (P.Ammo and P.cnt.weapon) then
+		call(BasicPlayer.SyncCachedAmmoValues, {P}, "x", function(msg) System:LogAlways("coop: ammo sync error: "..tostring(msg)); end);
+	end
+	local names, clips = {}, {};
 	for k, w in P.cnt:GetWeaponsSlots() do
-		if (type(w) == "table" and w.name) then names[getn(names) + 1] = w.name; end
+		if (type(w) == "table" and w.name) then
+			names[getn(names) + 1] = w.name;
+			local def = WeaponClassesEx[w.name];
+			local ws = def and P.WeaponState and P.WeaponState[def.id];
+			if (ws and type(ws.AmmoInClip) == "table") then clips[w.name] = {fm = ws.FireMode, clip = new(ws.AmmoInClip)}; end
+		end
 	end
 	local cur = P.cnt.weapon;
-	return {weapons = names, ammo = new(P.Ammo or {}), current = (type(cur) == "table" and cur.name) or names[1]};
+	return {weapons = names, ammo = new(P.Ammo or {}), current = (type(cur) == "table" and cur.name) or names[1],
+		clips = clips, grenadetype = P.cnt.grenadetype, armor = P.cnt.armor, binoculars = P.cnt.has_binoculars, flashlight = P.cnt.has_flashlight,
+		items = new(P.items or {})};
 end
 
--- replace the player's weapons by the loadout L ({weapons = {names}, ammo, current})
+-- replace the player's weapons by the loadout L (CoopCollectLoadout; an old save has only
+-- weapons, ammo and current), in LoadPlayerElements' order: the weapon is put away first, so
+-- that selecting it again reads the carried ammo instead of keeping the level's in cnt.ammo
 function CoopGiveLoadout(P, L)
+	P.cnt:SetCurrWeapon(); -- no weapon: the selected one writes its cached ammo back now, not later
 	local keep = {};
 	for k = 1, getn(L.weapons) do keep[L.weapons[k]] = 1; end
 	for k, w in P.cnt:GetWeaponsSlots() do -- drop the level's starting weapons we did not carry
@@ -412,29 +431,111 @@ function CoopGiveLoadout(P, L)
 	end
 	for k = 1, getn(L.weapons) do
 		local def = WeaponClassesEx[L.weapons[k]];
-		if (def) then Game:AddWeapon(L.weapons[k]); P.cnt:MakeWeaponAvailable(def.id, 1); end
+		if (def) then
+			Game:AddWeapon(L.weapons[k]);
+			P.cnt:MakeWeaponAvailable(def.id, 1);
+			-- a weapon's state is made when it is first selected, and loads its first clip from
+			-- P.Ammo: make it now, before the ammo is set (else a clip of ammo was lost)
+			if (P.WeaponState and not P.WeaponState[def.id]) then BasicPlayer.ScriptInitWeapon(P, L.weapons[k]); end
+		end
 	end
+	for ammotype, n in P.Ammo do P.Ammo[ammotype] = 0; end -- as single player: only what was carried
 	for ammotype, n in L.ammo do P.Ammo[ammotype] = n; end
-	if (L.current and WeaponClassesEx[L.current]) then P.cnt:SetCurrWeapon(WeaponClassesEx[L.current].id); end
+	for name, c in (L.clips or {}) do
+		local def = WeaponClassesEx[name];
+		local ws = def and P.WeaponState and P.WeaponState[def.id];
+		if (ws) then ws.FireMode = c.fm; ws.AmmoInClip = new(c.clip); end
+	end
+	-- the thrown grenade's count is cached in cnt too (the rocks' as a byte: 255 at most)
+	local gt = L.grenadetype;
+	if (not (gt and GrenadesClasses[gt] and (P.Ammo[GrenadesClasses[gt]] or 0) > 0)) then
+		gt = 1; -- the rock
+		for id = 2, getn(GrenadesClasses) do
+			if ((P.Ammo[GrenadesClasses[id]] or 0) > 0) then gt = id; break; end
+		end
+	end
+	P.cnt.grenadetype = gt;
+	P.cnt.numofgrenades = P.Ammo[GrenadesClasses[gt]] or 0;
+	if (L.armor) then P.cnt.armor = L.armor; end
+	local slot = Server:GetServerSlotByEntityId(P.id);
+	if (L.binoculars == 1 and P.cnt.has_binoculars ~= 1) then
+		P.cnt:GiveBinoculars(1);
+		if (slot) then slot:SendCommand("GI B"); end
+	end
+	if (L.flashlight == 1 and P.cnt.has_flashlight ~= 1) then
+		P.cnt:GiveFlashLight(1);
+		if (slot) then slot:SendCommand("GI F"); end
+	end
+	if (L.items and P.items) then
+		for k, v in L.items do P.items[k] = v; end
+		if (L.items.heatvisiongoggles and slot) then slot:SendCommand("GI C"); end
+	end
+	if (L.current and WeaponClassesEx[L.current]) then P.cnt:SetCurrWeapon(WeaponClassesEx[L.current].id);
+	else P.cnt:SelectFirstWeapon(); end
 	P.COOP_Carried = 1; -- CoopApplyPrefs: keep these, only refill the ammo
 end
 
-function CoopSaveLoadouts()
-	COOP_Loadouts = {};
-	for i, slot in Server:GetServerSlotMap() do
-		local L = CoopCollectLoadout(System:GetEntity(slot:GetPlayerId()));
-		if (L) then COOP_Loadouts[slot:GetId()] = L; end
+-- Who the player in a server slot is: the key sent by COOP ClientStuff ("COOPID", the launcher's
+-- player key or name). A client without it is known by its slot number for this session only.
+if (not COOP_SlotKeys) then COOP_SlotKeys = {}; end -- server slot id -> key
+if (not COOP_KeyWait) then COOP_KeyWait = {}; end -- server slot id -> _time its player was first seen without a key
+if (not COOP_Progress) then COOP_Progress = {}; end -- key -> loadout (CoopCollectLoadout)
+if (not COOP_Owed) then COOP_Owed = {}; end -- key -> 1: give COOP_Progress[key] to that player's next spawn
+COOP_KEY_WAIT = 5 -- seconds to wait for COOPID before falling back to the slot number
+
+function CoopSetKey(server_slot, cmd)
+	local s, e, key = strfind(cmd, "^COOPID%s+(.-)%s*$");
+	if (not key or key == "") then return; end
+	local id = server_slot:GetId();
+	local base, n = key, 1;
+	for sid, k in COOP_SlotKeys do -- two players asked for the same name: the second is someone else
+		if (sid ~= id and k == key) then n = n + 1; key = base.."#"..n; end
 	end
+	if (COOP_SlotKeys[id] ~= key) then CoopMonEvent("S", "key slot "..id.." "..key); end
+	COOP_SlotKeys[id] = key;
+end
+
+-- the slot's key, or nil while its COOPID may still come
+function CoopSlotKey(slot)
+	local id = slot:GetId();
+	if (COOP_SlotKeys[id]) then return COOP_SlotKeys[id]; end
+	COOP_KeyWait[id] = COOP_KeyWait[id] or _time;
+	if (_time < COOP_KeyWait[id]) then COOP_KeyWait[id] = _time; end -- _time restarted with a map load
+	if (_time - COOP_KeyWait[id] >= COOP_KEY_WAIT) then return "slot"..id; end
+end
+
+-- remember the player's equipment and owe it to the next spawn under the same key
+function CoopKeepLoadout(slot)
+	local key = COOP_SlotKeys[slot:GetId()] or "slot"..slot:GetId();
+	local P = System:GetEntity(slot:GetPlayerId());
+	if (P and P.cnt and BasicPlayer.IsAlive(P)) then COOP_Progress[key] = CoopCollectLoadout(P); end
+	if (COOP_Progress[key]) then COOP_Owed[key] = 1; end -- a dead player gets what was kept last
+end
+
+-- the map changes: everybody's equipment comes along
+function CoopSaveLoadouts()
+	for i, slot in Server:GetServerSlotMap() do CoopKeepLoadout(slot); end -- slots and their keys stay
+end
+
+-- a player leaves: keep the equipment for the next join
+COOP_DefaultOnClientDisconnect = GameRules.OnClientDisconnect; -- the single-player rules, loaded above
+function GameRules:OnClientDisconnect(server_slot)
+	call(CoopKeepLoadout, {server_slot}, "x", function(msg) System:LogAlways("coop: loadout keep error: "..tostring(msg)); end);
+	COOP_SlotKeys[server_slot:GetId()], COOP_KeyWait[server_slot:GetId()] = nil, nil;
+	return COOP_DefaultOnClientDisconnect(self, server_slot);
 end
 
 function CoopApplyLoadouts()
-	if (not COOP_Loadouts) then return; end
+	if (COOP_PendingLoad) then return; end -- CoopApplyLoad gives the save's equipment
 	for i, slot in Server:GetServerSlotMap() do
-		local L, P = COOP_Loadouts[slot:GetId()], System:GetEntity(slot:GetPlayerId());
-		if (L and P and P.cnt and P.cnt.GetWeaponsSlots and BasicPlayer.IsAlive(P)) then
-			COOP_Loadouts[slot:GetId()] = nil;
-			CoopGiveLoadout(P, L);
-			CoopMonEvent("S", "loadout "..P:GetName().." "..getn(L.weapons).." weapons");
+		local P = System:GetEntity(slot:GetPlayerId());
+		if (P and P.cnt and P.cnt.GetWeaponsSlots and BasicPlayer.IsAlive(P)) then
+			local key = CoopSlotKey(slot);
+			if (key and COOP_Owed[key] and COOP_Progress[key]) then
+				COOP_Owed[key] = nil;
+				CoopGiveLoadout(P, COOP_Progress[key]);
+				CoopMonEvent("S", "loadout "..P:GetName().." ("..key..") "..getn(COOP_Progress[key].weapons).." weapons");
+			end
 		end
 	end
 end
@@ -474,7 +575,8 @@ end
 function CoopApplyPrefs()
 	for i, slot in Server:GetServerSlotMap() do
 		local p, P = COOP_Prefs[slot:GetId()], System:GetEntity(slot:GetPlayerId());
-		local waiting = COOP_Loadouts and COOP_Loadouts[slot:GetId()]; -- carried weapons not given yet
+		local key = CoopSlotKey(slot);
+		local waiting = not key or COOP_Owed[key]; -- carried weapons not given yet
 		if (p and P and not P.COOP_Prefed and not waiting and P.cnt and BasicPlayer.IsAlive(P)) then
 			P.COOP_Prefed = 1;
 			Server:BroadcastCommand("PCOLOR "..P.id.." "..p.color);
@@ -564,8 +666,9 @@ function GameRules:OnUpdate(DeltaTime)
 	if COOP_PendingMap then -- next level asked for by a mission end (CoopStartLevel)
 		local map = COOP_PendingMap
 		COOP_PendingMap = nil
-		if (COOP_PendingLoad) then COOP_Loadouts = nil; -- the save has the weapons
-		else call(CoopSaveLoadouts, {}, "x", function(msg) System:LogAlways("coop: loadout save error: "..tostring(msg)); end) end
+		if (not COOP_PendingLoad) then -- else the save has the weapons
+			call(CoopSaveLoadouts, {}, "x", function(msg) System:LogAlways("coop: loadout save error: "..tostring(msg)); end)
+		end
 		CoopMap(map)
 		return
 	end
@@ -757,7 +860,8 @@ function GameRules:OnClientCmd(server_slot, cmd)
 	local tk = tokenize(cmd);
 	if (tk[1] == "CHIT") then CoopClientHit(server_slot, tk);
 	elseif (tk[1] == "HUDSYNC") then CoopHudSync(server_slot);
-	elseif (tk[1] == "PREF") then CoopSetPrefs(server_slot, tk); end
+	elseif (tk[1] == "PREF") then CoopSetPrefs(server_slot, tk);
+	elseif (tk[1] == "COOPID") then CoopSetKey(server_slot, cmd); end
 end
 
 function CoopClientHit(server_slot, tk)
@@ -808,7 +912,6 @@ end
 -- (CoopStm); hidden entities (COOP_HideState) and the mission objectives come back. Not saved: the
 -- Mission table's own variables and AI behaviour states (the engine save does not have them
 -- either, or keeps them in its AI chunk).
-COOP_SAVE_PATH = "Mods/FarCryCoop/save_";
 COOP_STATIC_IDS = 32768 -- ponytail: level entities have small ids, dynamic ones (players, spawned) are given from 65535 down
 -- classes whose OnSave/OnLoad only keep mission flags (read in the game scripts); players, AI and
 -- vehicles have their own, heavier ones, and are left out
@@ -839,11 +942,6 @@ function CoopSer(v)
 	return "nil";
 end
 
-function CoopSaveMessage(text)
-	System:LogAlways("coop: "..text);
-	if (Hud and Hud.AddMessage) then call(Hud.AddMessage, {Hud, text}, "x", function() end); end
-end
-
 function CoopSave(name)
 	name = name or "quick";
 	if (not Game:IsServer()) then return; end
@@ -855,12 +953,16 @@ function CoopSave(name)
 	for i, P in CoopPlayers() do
 		local t, a = P:GetPos(), P:GetAngles();
 		local L = CoopCollectLoadout(P) or {weapons = {}, ammo = new(P.Ammo or {})};
+		local slot = Server:GetServerSlotByEntityId(P.id);
+		L.key = slot and (COOP_SlotKeys[slot:GetId()] or "slot"..slot:GetId());
+		if (L.key and P.cnt.health > 0) then COOP_Progress[L.key] = CoopCollectLoadout(P); end
 		L.pos = {x = t.x, y = t.y, z = t.z};
 		L.ang = {x = a.x, y = a.y, z = a.z};
 		L.health = (P.cnt.health > 0) and P.cnt.health or P.cnt.max_health; -- a dead player is saved alive
 		L.armor = P.cnt.armor;
 		save.players[i] = L;
 	end
+	save.progress = COOP_Progress; -- also the players who are not here now
 	local nd = 0;
 	for i, e in System:GetEntities() do
 		if (e.ai and e.cnt and e.cnt.health and e.cnt.health <= 0) then nd = nd + 1; save.dead[nd] = e.id; end
@@ -898,25 +1000,7 @@ function Game:OnAfterSave()
 	if (COOP_OldAfterSave ~= 0) then return COOP_OldAfterSave(self); end
 end
 
-function CoopLoad(name)
-	name = name or "quick";
-	if (not Game:IsServer()) then return; end
-	if (strfind(name, "[^%w_]")) then System:LogAlways("coop_load: bad name"); return; end
-	COOP_LoadedSave = nil;
-	call(dofile, {COOP_SAVE_PATH..name..".lua"}, "x", function(msg) System:LogAlways("coop_load: "..tostring(msg)); end);
-	local save = COOP_LoadedSave;
-	COOP_LoadedSave = nil;
-	if (type(save) ~= "table" or not save.map) then CoopSaveMessage("no save "..name); return; end
-	COOP_PendingLoad = save;
-	if (save.difficulty) then COOP_Difficulty = save.difficulty; end -- CoopMap applies it
-	if (COOP_Map) then
-		COOP_PendingMap = save.map; -- GameRules:OnUpdate loads it, never from inside an entity script
-	else
-		CoopMap(save.map); -- from the launcher: no server yet, the host's game starts it
-	end
-	CoopSaveMessage("loading "..name);
-end
-function CoopQuickLoad() CoopLoad("quick"); end
+-- CoopLoad, CoopQuickLoad: Scripts/Multiplayer/AvailableMods.lua (the launcher calls CoopLoad from the menu)
 
 Game:AddCommand("coop_save", "CoopQuickSave()", "coop_save: quicksave (F6)");
 Game:AddCommand("coop_load", "CoopQuickLoad()", "coop_load: quickload (F7)");
@@ -934,25 +1018,50 @@ function CoopApplyLoad()
 	for i, P in list do
 		if (not BasicPlayer.IsAlive(P)) then return; end -- wait until every player has spawned
 	end
-	-- a client still respawning after LoadLevelMPServer has a slot but no entity yet: wait for it (30 s at most)
-	local slots = 0;
-	for i, slot in Server:GetServerSlotMap() do slots = slots + 1; end
+	-- a client still respawning after LoadLevelMPServer has a slot but no entity yet: wait for it
+	-- (30 s at most), and for every player's key
+	local slots, keys = 0, 0;
+	for i, slot in Server:GetServerSlotMap() do
+		slots = slots + 1;
+		if (CoopSlotKey(slot)) then keys = keys + 1; end
+	end
 	save.t0 = save.t0 or _time;
-	if (getn(list) < slots and _time - save.t0 < 30) then return; end
+	if ((getn(list) < slots or keys < slots) and _time - save.t0 < 30) then return; end
 	COOP_PendingLoad = nil;
+	-- everyone the save knows is owed their equipment; who is here gets it below, the rest on joining
+	COOP_Progress, COOP_Owed = save.progress or {}, {};
+	for key, L in COOP_Progress do COOP_Owed[key] = 1; end
+	local keyed = save.players[1] and save.players[1].key; -- older saves give the records by join order
 	for i = 1, getn(save.dead) do
 		local e = System:GetEntity(save.dead[i]);
 		if (e and e.ai) then Server:RemoveEntity(e.id); end
 	end
 	if (save.present) then CoopApplyMissionState(save); end
-	for i, P in list do
-		local s = save.players[i] or save.players[1];
-		CoopMovePlayer(P, s.pos, s.ang);
-		P.cnt.health = s.health;
-		P.cnt.armor = s.armor;
-		if (s.weapons and P.cnt.GetWeaponsSlots) then CoopGiveLoadout(P, s); end
-	end
 	local c = save.check or {pos = save.players[1].pos, ang = save.players[1].ang};
+	for i, P in list do
+		local s;
+		if (keyed) then
+			local slot = Server:GetServerSlotByEntityId(P.id);
+			local key = slot and CoopSlotKey(slot);
+			for j = 1, getn(save.players) do
+				if (save.players[j].key == key) then s = save.players[j]; end
+			end
+			if (key) then COOP_Owed[key] = nil; end
+		else
+			s = save.players[i] or save.players[1];
+		end
+		if (s) then
+			CoopMovePlayer(P, s.pos, s.ang);
+			P.cnt.health = s.health;
+			P.cnt.armor = s.armor;
+			if (s.weapons and P.cnt.GetWeaponsSlots) then CoopGiveLoadout(P, s); end
+		else -- not in this save: to the team's respawn point, with what the save keeps for them
+			CoopMovePlayer(P, c.pos, c.ang);
+			local slot = Server:GetServerSlotByEntityId(P.id);
+			local key = slot and CoopSlotKey(slot);
+			if (key and COOP_Progress[key]) then CoopGiveLoadout(P, COOP_Progress[key]); end
+		end
+	end
 	_LastCheckPPos = new(c.pos);
 	if (c.ang) then _LastCheckPAngles = new(c.ang); end
 	CoopSaveMessage(format("loaded %s: %d players, %d dead AI removed", tostring(save.name), getn(list), getn(save.dead)));

@@ -101,6 +101,10 @@ Coop_DefaultOnSetPlayer = ClientStuff.OnSetPlayer;
 function ClientStuff:OnSetPlayer()
 	Coop_DefaultOnSetPlayer(self);
 	if (not Game:IsServer()) then Client:SendCommand("HUDSYNC"); end
+	-- who we are, so the host gives us our own equipment back after a reconnect or a restart
+	-- (COOP gamerules CoopSetKey): the launcher's COOP_PlayerKey, else the player name we asked
+	-- for (the server renames a second "Jack Carver" to "Jack Carver_")
+	Client:SendCommand("COOPID "..tostring(COOP_PlayerKey or getglobal("p_name") or ""));
 	-- launcher settings (COOP gamerules CoopSetPrefs); the host sends them too, over loopback
 	if (COOP_Color) then Client:SendCommand("PREF "..COOP_Color.." "..tostring(COOP_Weapons or "")); end
 	-- again once connected: asked in OnInit only, the server kept sending the default 20

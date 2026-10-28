@@ -84,6 +84,36 @@ end
 Game:AddCommand("coop_map", "CoopMap(%%)","coop_map <campaign map>: start a campaign map as a co-op server");
 Game:AddCommand("coop_restart", "if (COOP_Map) then CoopMap(COOP_Map) end", "coop_restart: reload the current co-op map, clients stay connected");
 
+-- Co-op saves (written by CoopSave, COOP gamerules): Mods\FarCryCoop\save_<name>.lua. Loading
+-- lives here and not in the gamerules: the launcher continues a campaign with CoopLoad("<name>")
+-- from the menu, before any co-op map (and its gamerules) is loaded.
+COOP_SAVE_PATH = "Mods/FarCryCoop/save_";
+
+function CoopSaveMessage(text)
+	System:LogAlways("coop: "..text);
+	if (Hud and Hud.AddMessage) then call(Hud.AddMessage, {Hud, text}, "x", function() end); end
+end
+
+function CoopLoad(name)
+	name = name or "quick";
+	if (not Game:IsServer() and _localplayer) then return; end -- a joined player; from the menu it starts the server
+	if (strfind(name, "[^%w_]")) then System:LogAlways("coop_load: bad name"); return; end
+	COOP_LoadedSave = nil;
+	call(dofile, {COOP_SAVE_PATH..name..".lua"}, "x", function(msg) System:LogAlways("coop_load: "..tostring(msg)); end);
+	local save = COOP_LoadedSave;
+	COOP_LoadedSave = nil;
+	if (type(save) ~= "table" or not save.map) then CoopSaveMessage("no save "..name); return; end
+	COOP_PendingLoad = save;
+	if (save.difficulty) then COOP_Difficulty = save.difficulty; end -- CoopMap applies it
+	if (COOP_Map) then
+		COOP_PendingMap = save.map; -- GameRules:OnUpdate loads it, never from inside an entity script
+	else
+		CoopMap(save.map); -- from the launcher: no server yet, the host's game starts it
+	end
+	CoopSaveMessage("loading "..name);
+end
+function CoopQuickLoad() CoopLoad("quick"); end
+
 -- Co-op campaign from the normal menus: #CoopStart() on the host, then start the campaign or a
 -- level from the menu as in single player. Single player loads a level with the message
 -- "StartLevel <map>" (Campaign.lua menu, and every mission end: UI:PlayCutScene(video,
