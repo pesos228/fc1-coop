@@ -1,4 +1,4 @@
-# Training, listen host + 1 client, FarCryCoop mod + ASI (with our fixes in external/FarCryCoop).
+# Training, listen host + 1 client, FarCryCoop mod + ASI (upstream code plus our fixes, games/far-cry).
 # Run from the repo root: tools/bin/harness.exe test tests/training-basic.txt
 up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
 wait server players>=2 -t 30s

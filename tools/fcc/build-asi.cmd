@@ -1,9 +1,9 @@
 @echo off
-rem Build FarCryCoopNet.asi (x86) from external\FarCryCoop with the local MSVC + Windows SDK.
+rem Build FarCryCoopNet.asi (x86) from games\far-cry\asi with the local MSVC + Windows SDK.
 rem Usage: tools\fcc\build-asi.cmd   (from the repo root) -> tools\bin\FarCryCoopNet.asi
 setlocal
 set ROOT=%~dp0..\..
-set SRC=%ROOT%\external\FarCryCoop\games\far-cry\asi\FarCryCoopNet.c
+set SRC=%ROOT%\games\far-cry\asi\FarCryCoopNet.c
 set OUT=%ROOT%\tools\bin\asi
 if not exist "%OUT%" mkdir "%OUT%"
 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x86 >nul || exit /b 1

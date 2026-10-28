@@ -120,6 +120,10 @@ func cmdUp(args []string) error {
 	if r, err := currentRun(); err == nil && anyAlive(r) {
 		return fmt.Errorf("run %s still has live instances, use `harness down`", r.Dir)
 	}
+	// The Steam build exits at once (status 53, empty log) when Steam is not running.
+	if !steamRunning() {
+		return fmt.Errorf("Steam is not running: the Steam build of Far Cry exits at start without it")
+	}
 	root, err := repoRoot()
 	if err != nil {
 		return err
@@ -238,6 +242,11 @@ func processAlive(pid int) bool {
 		return false
 	}
 	return code == stillActive
+}
+
+func steamRunning() bool {
+	out, err := exec.Command("tasklist", "/FI", "IMAGENAME eq steam.exe", "/NH").Output()
+	return err == nil && strings.Contains(strings.ToLower(string(out)), "steam.exe")
 }
 
 func cmdStatus() error {
