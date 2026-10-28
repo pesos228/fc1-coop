@@ -15,11 +15,10 @@
 
 **Состояние**
 - Ветки `main` и `heli-netpresence-at-spawn`; remote `upstream` (push заглушен). `origin` появится после Fork на GitHub.
-- **`tests/training-basic.txt` на новом `main` не прогнан** (Steam не был запущен). ASI и харнес из новых путей собираются.
+- `tests/training-basic.txt` на новом `main` (апстрим с 4 новыми коммитами + наши фиксы, мод и ASI из `games/far-cry`): **19/19 PASS**.
 
 **Дальше**
 - Fork на GitHub → `origin`, push `main` и `heli-netpresence-at-spawn`.
-- Запустить Steam, прогнать `training-basic`.
 - Дальше по списку из записи 2026-10-24 (пикапы первыми).
 
 ---
