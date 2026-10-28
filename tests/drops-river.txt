@@ -1,0 +1,13 @@
+# River: weapons dropped by the boat crews lie on the decks on the server; a client's copy fell
+# through its own (1-3 m off) boat and sank 5-7 m to the river bed (dropped pickups have no net
+# presence). The server tells the clients where each drop came to rest (PPOS).
+# Run from the repo root: tools/bin/harness.exe test tests/drops-river.txt
+up -mode host -map river -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("river")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 40s
+# the drops exist (ids from 65535 down) and match the server
+expect server (System:GetEntity(65522) ~= nil) and 1 => 1
+expect-diff max=0.5 class=^Pickup missing=0
+expect-no-events
+down

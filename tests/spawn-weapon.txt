@@ -1,0 +1,13 @@
+# River: the weapon a client spawns with must be visible in first person (drawfpweapon). It was
+# invisible until a weapon switch: the client activated it before it had its own health, and
+# BasicWeapon.Client:OnActivate shows it only for a living player.
+# Run from the repo root: tools/bin/harness.exe test tests/spawn-weapon.txt
+up -mode host -map river -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("river")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 5s
+expect client1 _localplayer.cnt.weapon.name => Falcon
+expect client1 _localplayer.cnt.drawfpweapon => 1
+expect server _localplayer.cnt.drawfpweapon => 1
+expect-no-events
+down

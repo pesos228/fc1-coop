@@ -743,6 +743,52 @@ function CoopDrop(self, packname)
 	Server.SpawnEntity = orig;
 end
 
+-- A dropped weapon has no net presence either: each side lets it fall on its own. On River the
+-- boat crews' weapons lie on the decks on the server (z 28.4), while a client's boat is 1-3 m
+-- off, so its copy missed the deck and sank 5-7 m to the river bed (harness: SetPos on the
+-- server did not move the client's copy at all; they are dropped in the first second of the map,
+-- before CoopWrapDrop). The server watches every spawned pickup (id from 65535 down) and,
+-- once it has come to rest, tells the clients where ("PPOS <id> x y z", COOP ClientStuff), which
+-- put it there and stop its physics; one that is still moving 5 s after the drop (a deck under
+-- way), every 3 s.
+-- A joining client gets them all again 5 and 15 s after it asked for the HUD (CoopHudSync): sent
+-- at once, its copies were set right and then fell again (the client was still setting them up).
+COOP_Drops = {} -- id -> {x, y, z (last sample), sx, sy, sz (sent), t (sent at), born}; this file runs on every map load
+function CoopSendDrop(id, d, slot)
+	local msg = format("PPOS %d %.2f %.2f %.2f", id, d.x, d.y, d.z);
+	if (slot) then slot:SendCommand(msg); else Server:BroadcastCommand(msg); end
+end
+COOP_DropResend = {}
+function CoopSyncDrops()
+	local resend = COOP_DropResend[1] and _time >= COOP_DropResend[1];
+	if (resend) then
+		COOP_DropResend[1] = COOP_DropResend[2];
+		COOP_DropResend[2] = nil;
+		for id, d in COOP_Drops do if (d.sx) then CoopSendDrop(id, {x = d.sx, y = d.sy, z = d.sz}); end end
+	end
+	for i, e in System:GetEntities() do
+		if (e.id >= COOP_STATIC_IDS and not COOP_Drops[e.id] and e.classname and strfind(e.classname, "^Pickup")) then
+			COOP_Drops[e.id] = {born = _time, t = _time};
+		end
+	end
+	for id, d in COOP_Drops do
+		local e = System:GetEntity(id);
+		if (not e or e:GetState() == "Inactive") then -- picked up
+			COOP_Drops[id] = nil;
+		else
+			local p = e:GetPos();
+			local x, y, z = p.x, p.y, p.z; -- GetPos returns a shared table
+			local still = d.x and (x - d.x) * (x - d.x) + (y - d.y) * (y - d.y) + (z - d.z) * (z - d.z) < 0.0025;
+			d.x, d.y, d.z = x, y, z;
+			local sent = d.sx and (x - d.sx) * (x - d.sx) + (y - d.sy) * (y - d.sy) + (z - d.sz) * (z - d.sz) < 0.0025;
+			if ((still and not sent) or (not still and _time - d.born >= 5 and _time - d.t >= 3)) then
+				d.sx, d.sy, d.sz, d.t = x, y, z, _time;
+				CoopSendDrop(id, d);
+			end
+		end
+	end
+end
+
 -- AI classes copy BasicAI's functions when they are defined: replace Drop in every class table.
 function CoopWrapDrop()
 	if (not Server or not BasicAI or not BasicAI.Drop) then return; end
@@ -813,6 +859,7 @@ function GameRules:OnUpdate(DeltaTime)
 	CoopRun("map intro", CoopMapIntro)
 	CoopRun("boat seats", CoopBoatSeats)
 	CoopRun("ai health sweep", CoopSyncAIHealth)
+	CoopRun("drops", CoopSyncDrops)
 	CoopRun("join near team", CoopJoinNearTeam)
 	call(CoopApplyLoadouts, {}, "x", function(msg) System:LogAlways("coop: loadout error: "..tostring(msg)); end)
 	call(CoopApplyPrefs, {}, "x", function(msg) System:LogAlways("coop: prefs error: "..tostring(msg)); end)
@@ -961,6 +1008,7 @@ end
 function CoopHudSync(server_slot)
 	for id, v in COOP_HideState do server_slot:SendCommand("HIDE "..id.." "..v); end
 	CoopSendAllHP(server_slot);
+	COOP_DropResend = {_time + 5, _time + 15};
 	server_slot:SendCommand("MHUD flash ");
 	for i, o in (Hud and Hud.objectives or {}) do
 		if (type(o) == "table") then

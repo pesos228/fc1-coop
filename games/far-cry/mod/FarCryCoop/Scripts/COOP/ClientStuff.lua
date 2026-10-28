@@ -26,10 +26,30 @@ function ClientStuff:OnInit()
 	CoopMonEvent("C", "map");
 end
 
+-- The weapon a client spawned with stayed invisible until the player switched weapons (River,
+-- 3 of 3 first spawns): BasicWeapon.Client:OnActivate shows the first-person weapon only for a
+-- living _localplayer, and here the spawn's weapon is activated before the client has its own
+-- health from the server; the weapon then stays selected, so nothing activates it again. Once
+-- per spawn (a respawn is a new entity), 1 s after the player is alive with a weapon, show it
+-- the same way, unless a scope or the binoculars keep it hidden on purpose.
+function CoopShowSpawnWeapon()
+	local P = _localplayer;
+	if (not P or P.COOP_SpawnWeaponDone or not P.cnt or not P.cnt.weapon or not BasicPlayer.IsAlive(P)) then return; end
+	P.COOP_SpawnWeaponAt = P.COOP_SpawnWeaponAt or _time;
+	if (_time - P.COOP_SpawnWeaponAt < 1 and _time >= P.COOP_SpawnWeaponAt) then return; end
+	P.COOP_SpawnWeaponDone = 1;
+	if (P.cnt.drawfpweapon ~= 1 and not P.cnt.aiming and not ClientStuff.vlayers:IsActive("Binoculars")
+		and not ClientStuff.vlayers:IsActive("WeaponScope")) then
+		BasicWeapon.Show(P.cnt.weapon, P);
+		CoopMonEvent("C", "spawn weapon shown "..tostring(P.cnt.weapon.name));
+	end
+end
+
 Coop_DefaultClientOnUpdate = ClientStuff.OnUpdate;
 function ClientStuff:OnUpdate()
 	Coop_DefaultClientOnUpdate(self);
 	CoopMonitor("C");
+	CoopShowSpawnWeapon();
 	local nxt = COOP_NextBoatSeats or 0;
 	if (not Game:IsServer() and (_time > nxt or _time + 2 < nxt)) then -- the host does it in gamerules
 		COOP_NextBoatSeats = _time + 1; -- second test: _time restarts with every map load
@@ -171,6 +191,17 @@ ClientStuff.ServerCommandTable["AIHP"] = function(String, tk)
 		if (e and e.ai and e.cnt and e.cnt.health and e.cnt.health > 0 and hp and hp > 0) then e.cnt.health = hp; end
 		i = i + 2;
 	end
+end
+
+-- where a dropped weapon came to rest on the server (COOP gamerules CoopSyncDrops): it has no
+-- net presence, and our own copy may have fallen elsewhere (River: through a boat's deck).
+-- Its physics goes off here: asleep (AwakePhysics 0) it woke up and fell through the deck
+-- again. The server's copy decides the pickup; ours is only shown.
+ClientStuff.ServerCommandTable["PPOS"] = function(String, tk)
+	local e = System:GetEntity(tonumber(tk[2]) or 0);
+	if (Game:IsServer() or not e or not tk[5]) then return; end
+	e:EnablePhysics(0);
+	e:SetPos({x = tonumber(tk[3]) or 0, y = tonumber(tk[4]) or 0, z = tonumber(tk[5]) or 0});
 end
 
 -- AI animation started by the server (melee swing, see COOP gamerules CoopUpdateMelee)
