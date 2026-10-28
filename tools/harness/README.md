@@ -30,4 +30,9 @@ tools/bin/harness.exe down
 
 `tools/bin/harness.exe test tests/training-basic.txt` поднимает игру, выполняет шаги и печатает PASS/FAIL по каждому (отчёт сохраняется в папку прогона). Шаги: `up`, `sleep`, `wait`, `lua`, `cmd`, `expect <inst> <code> => <value>`, `expect-log`, `expect-diff max= class= exclude= missing=0`, `down`. Синтаксис описан в начале `test.go`.
 
-`tests/training-basic.txt` на исходном FarCryCoop падает в 3 шагах (интро у поздно подключившегося клиента, вертолёты, выпавшее оружие), а с нашими фиксами проходит 13/13.
+Сценарии:
+- `tests/training-basic.txt` (19 шагов): подключение, интро, `diff` игроков, наёмников и вертолётов, убийство ИИ и выпавшее оружие, триггер и телепорт удалённого игрока. На исходном FarCryCoop падает в 3 шагах (интро у поздно подключившегося клиента, вертолёты, выпавшее оружие).
+- `tests/pickups.txt` (17): пикапы уровня в MP лежат как в SP, подбор удалённым игроком.
+- `tests/level-change.txt` (32): перенос снаряжения Training → Carrier и при переподключении.
+- `tests/progress.txt` (22): снаряжение по ключу игрока через сейв и перезапуск сервера.
+- `tests/smoke-map.txt` (`MAP=<карта>`): дымовой тест одной карты, результаты в `docs/maps.md`.
