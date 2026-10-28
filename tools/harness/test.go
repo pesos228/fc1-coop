@@ -17,6 +17,7 @@ import (
 //	sleep <duration>
 //	wait <inst> <cond> [timeout]            state condition, as in `harness wait`
 //	lua <inst> <code>                       must run without a Lua error
+//	cmd <inst> <console command>            e.g. reconnect
 //	expect <inst> <code> => <value>         `return <code>` must give <value>
 //	expect-log <inst> <regex> [timeout]     the instance log must contain a match
 //	expect-diff max=<m> [class=<re>] [exclude=<re>] [missing=0]
@@ -84,6 +85,8 @@ func cmdTest(args []string) error {
 		case "lua":
 			inst, code, _ := strings.Cut(rest, " ")
 			stepErr = runLua(inst, code, nil)
+		case "cmd":
+			stepErr = cmdCmd(strings.Fields(rest), "")
 		case "expect":
 			hard = false
 			inst, body, _ := strings.Cut(rest, " ")

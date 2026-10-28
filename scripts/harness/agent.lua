@@ -258,6 +258,35 @@ function Harness:RemotePlayer()
 	end
 end
 
+-- The player with this name (harness clients are named after their instance: client1, ...).
+function Harness:Player(name)
+	for i, e in System:GetEntities() do
+		if (e.type == "Player" and not e.ai and e:GetName() == name) then
+			return e;
+		end
+	end
+end
+
+-- A player's equipment in one line, the same on the server and on that player's client (only
+-- stats the server sends): weapons by name, the selected one with its ammo and clip, armor,
+-- grenades, binoculars, flashlight.
+function Harness:Loadout(P)
+	if (not (P and P.cnt and P.cnt.GetWeaponsSlots)) then return "no player"; end
+	local names = {};
+	for k, w in P.cnt:GetWeaponsSlots() do
+		if (type(w) == "table" and w.name) then tinsert(names, w.name); end
+	end
+	sort(names);
+	local s = "";
+	for i = 1, getn(names) do s = s..names[i]..","; end
+	if (s == "") then s = "none"; end
+	local cur = P.cnt.weapon;
+	return format("%s cur=%s ammo=%d clip=%d armor=%d gren=%d/%d bino=%d light=%d", s,
+		tostring(type(cur) == "table" and cur.name), P.cnt.ammo or -1, P.cnt.ammo_in_clip or -1,
+		P.cnt.armor or -1, P.cnt.grenadetype or -1, P.cnt.numofgrenades or -1,
+		P.cnt.has_binoculars or 0, P.cnt.has_flashlight or 0);
+end
+
 -- Snapshot of every scripted entity for desync comparison (harness diff).
 -- Line: id \t class \t name \t x \t y \t z \t health
 function Harness:Snapshot(file)

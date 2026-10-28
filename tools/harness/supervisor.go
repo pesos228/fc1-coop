@@ -140,6 +140,11 @@ func (s *supervisor) start(in *Instance) error {
 	// launcher), so everything except a short dofile goes into boot.lua.
 	boot := fmt.Sprintf("HARNESS_DIR = '%s'\nHARNESS_NAME = '%s'\ndofile('%s')\n",
 		slash(in.Dir), in.Name, slash(s.run.Agent))
+	if in.Role == "client" {
+		// Players have their own names; all games here would be "Jack Carver" from system.cfg
+		// (the co-op host keys a player's equipment by it).
+		boot += fmt.Sprintf("System:ExecuteCommand(%q)\n", "p_name "+in.Name)
+	}
 	if !s.joinMode() {
 		for _, c := range in.Commands {
 			boot += fmt.Sprintf("System:ExecuteCommand(%q)\n", c)
@@ -301,7 +306,9 @@ func (s *supervisor) checkHeartbeat(in *Instance) {
 		return
 	}
 	age := time.Since(st.ModTime())
-	if age > 20*time.Second && !s.stalled[in.Name] {
+	// The agent is silent while a level loads (20-30 s for a map change here), so a stall
+	// is only reported well past that.
+	if age > 90*time.Second && !s.stalled[in.Name] {
 		s.stalled[in.Name] = true
 		appendEvent(s.run.Dir, in.Name, "stall", fmt.Sprintf("no agent heartbeat for %s", age.Round(time.Second)))
 		s.snapshot(in, "stall")
