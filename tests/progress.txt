@@ -1,0 +1,29 @@
+# Every player gets their own equipment back from a save, whoever joins and in whatever order, on a
+# server started anew from it (docs/specs/persistent-progress.md). A player the save does not know
+# gets the mission's own starting equipment (on Training: nothing).
+# Run from the repo root: tools/bin/harness.exe test tests/progress.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 30s
+wait client1 players>=2 -t 30s
+sleep 5s
+lua server CoopGiveLoadout(Harness:Player("client1"), {weapons={"Shotgun","SniperRifle"}, ammo={Shotgun=17, Sniper=23, HandGrenade=3, Rock=9999}, current="Shotgun", grenadetype=2, clips={Shotgun={fm=0, clip={5}}, SniperRifle={fm=0, clip={4}}}, armor=50, binoculars=1})
+lua server CoopGiveLoadout(_localplayer, {weapons={"P90","Falcon"}, ammo={SMG=77, Pistol=11, Rock=9999}, current="P90", clips={P90={fm=0, clip={20}}}, armor=30, flashlight=1})
+sleep 2s
+lua server CoopSave("progtest")
+expect-log server saved.progtest:.2.players
+down
+
+# Later: the host starts the server from that save; client1 and a new player join after the load.
+up -mode host -map training -clients 2 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=3;#CoopLoad("progtest")
+wait server players>=3 -t 60s
+wait client1 players>=3 -t 60s
+wait client2 players>=3 -t 60s
+sleep 10s
+expect server Harness:Loadout(_localplayer) => Falcon,P90, cur=P90 ammo=77 clip=20 armor=30 gren=1/255 bino=0 light=1
+expect server Harness:Loadout(Harness:Player("client1")) => Shotgun,SniperRifle, cur=Shotgun ammo=17 clip=5 armor=50 gren=2/3 bino=1 light=0
+expect client1 Harness:Loadout(_localplayer) => Shotgun,SniperRifle, cur=Shotgun ammo=17 clip=5 armor=50 gren=2/3 bino=1 light=0
+expect server Harness:Loadout(Harness:Player("client2")) => none cur=nil ammo=0 clip=0 armor=0 gren=1/0 bino=0 light=0
+expect-no-events
+# the save is in the game's install: remove it
+lua server remove("Mods/FarCryCoop/save_progtest.lua")
+down
