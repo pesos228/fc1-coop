@@ -747,9 +747,12 @@ end
 -- else (one stone lay at z 34.4 on one side and 37.7 on the other, swapped between runs), and once
 -- asleep nothing was sent again (ASI watch: 2 updates, then none, also after a SetPos).
 -- So the server tells the clients where each of them has come to rest ("PPOS <id> x y z ax ay az
--- ...", as many as fit, COOP ClientStuff): spawned pickups (id from 65535 down) and the props of
--- the level, once at rest and again whenever they come to rest somewhere new; a drop that is
--- still moving 5 s after it fell (a deck under way), every 3 s.
+-- ...", as many as fit, COOP ClientStuff): spawned pickups (id from 65535 down, any BasePickup
+-- class: ammo boxes too) and the rigid props of the level, once at rest and again whenever they
+-- come to rest somewhere new; a drop that is still moving 5 s after it fell (a deck under way),
+-- every second. A BasicEntity that is not a rigid body (Properties.Physics.bRigidBody 0) is left
+-- out: the level's sequences move those (Training first_cutscene, BasicEntity182), and a rest
+-- place set before the cutscene sent the client's copy 1000 m away.
 -- A joining client gets them all again 5 and 15 s after it asked for the HUD (CoopHudSync): sent
 -- at once, its copies were set right and then fell again (the client was still setting them up).
 COOP_REST_CLASSES = {BasicEntity = 1, RigidBody = 1, DestroyableObject = 1}
@@ -772,6 +775,16 @@ function CoopSendPacked(head, list, slot)
 	end
 end
 function CoopSendRest(list, slot) CoopSendPacked("PPOS", list, slot); end
+-- a drop (spawned pickup) or a rigid prop of the level
+function CoopRestTracked(e)
+	if (e.id >= COOP_STATIC_IDS) then
+		return BasePickup and e.Physicalize == BasePickup.Physicalize; -- pickup classes copy BasePickup's functions
+	end
+	if (not COOP_REST_CLASSES[e.classname]) then return; end
+	if (e.classname ~= "BasicEntity") then return 1; end
+	local ph = e.Properties and e.Properties.Physics;
+	return ph and ph.bRigidBody == 1;
+end
 function CoopSyncDrops()
 	local out, k = {}, 0;
 	if (COOP_DropResend[1] and _time >= COOP_DropResend[1]) then
@@ -779,9 +792,12 @@ function CoopSyncDrops()
 		for id, d in COOP_Drops do if (d.s) then k = k + 1; out[k] = id.." "..d.s; end end
 	end
 	for i, e in System:GetEntities() do
-		if (not COOP_Drops[e.id] and e.classname and (COOP_REST_CLASSES[e.classname]
-			or (e.id >= COOP_STATIC_IDS and strfind(e.classname, "^Pickup")))) then
-			COOP_Drops[e.id] = {born = _time, t = _time, drop = (e.id >= COOP_STATIC_IDS)};
+		if (not COOP_Drops[e.id] and not e.COOP_NoRest) then
+			if (CoopRestTracked(e)) then
+				COOP_Drops[e.id] = {born = _time, t = _time, drop = (e.id >= COOP_STATIC_IDS)};
+			else
+				e.COOP_NoRest = 1; -- looked at once
+			end
 		end
 	end
 	for id, d in COOP_Drops do
@@ -794,7 +810,7 @@ function CoopSyncDrops()
 			local still = d.x and (x - d.x) * (x - d.x) + (y - d.y) * (y - d.y) + (z - d.z) * (z - d.z) < 0.0025;
 			d.x, d.y, d.z = x, y, z;
 			local sent = d.sx and (x - d.sx) * (x - d.sx) + (y - d.sy) * (y - d.sy) + (z - d.sz) * (z - d.sz) < 0.0025;
-			if ((still and not sent) or (d.drop and not still and _time - d.born >= 5 and _time - d.t >= 3)) then
+			if ((still and not sent) or (d.drop and not still and _time - d.born >= 5 and _time - d.t >= 1)) then
 				local a = e:GetAngles();
 				d.sx, d.sy, d.sz, d.t = x, y, z, _time;
 				d.s = format("%.2f %.2f %.2f %.1f %.1f %.1f", x, y, z, a.x, a.y, a.z);
@@ -1295,6 +1311,27 @@ function CoopApplyMissionState(save)
 	end
 	CoopSaveMessage(format("mission state: %d entities removed, %d states restored, %d objectives", n, ns, getn(save.objectives or {})));
 end
+
+-- The crews of the level's vehicles died in the first frame of a co-op map (Training: the Humvee
+-- and boat crews, 4 AI, hp 0 at t=0.01; alive and seated in single player). VC:OnResetCommon
+-- (VehicleCommon.lua) gives every vehicle JustSpawned=5 in multiplayer, and VC:OnContactServerT
+-- kills whoever touches it during those first updates (VC:KillPlayer, 5000 damage from
+-- themselves): telefrag protection for vehicles respawning in deathmatch. In co-op nothing
+-- respawns into a vehicle's place (CoopVehicleCopies waits for a free spot), so the level's
+-- vehicles do not get it. The level's vehicles are reset before this file runs, so their flag
+-- is cleared here; later resets (coop_restart, spawned copies) go through the wrapper.
+function CoopNoTelefrag()
+	if (not VC or not VC.OnResetCommon) then return; end
+	if (not COOP_OrigVCReset) then COOP_OrigVCReset = VC.OnResetCommon; end -- once: this file runs on every map load
+	VC.OnResetCommon = function(self)
+		COOP_OrigVCReset(self);
+		self.JustSpawned = nil;
+	end
+	for i, e in System:GetEntities() do
+		if (e.JustSpawned) then e.JustSpawned = nil; end
+	end
+end
+CoopNoTelefrag();
 
 -- Movie sequences (e.g. the heli fly-by on Pier, started by a ProximityTrigger) play only on
 -- the machine that calls Movie:PlaySequence, and the entities they animate are not sent over

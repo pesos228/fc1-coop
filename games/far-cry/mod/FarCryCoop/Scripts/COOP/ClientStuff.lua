@@ -204,10 +204,11 @@ ClientStuff.ServerCommandTable["PPOS"] = function(String, tk)
 	while (tk[i + 6]) do
 		local e = System:GetEntity(tonumber(tk[i]) or 0);
 		if (e) then
-			if (e.classname and strfind(e.classname, "^Pickup")) then e:EnablePhysics(0); end
+			local pickup = BasePickup and e.Physicalize == BasePickup.Physicalize; -- pickup classes copy BasePickup's functions
+			if (pickup) then e:EnablePhysics(0); end
 			e:SetPos({x = tonumber(tk[i + 1]) or 0, y = tonumber(tk[i + 2]) or 0, z = tonumber(tk[i + 3]) or 0});
 			e:SetAngles({x = tonumber(tk[i + 4]) or 0, y = tonumber(tk[i + 5]) or 0, z = tonumber(tk[i + 6]) or 0});
-			if (not (e.classname and strfind(e.classname, "^Pickup"))) then e:AwakePhysics(0); end
+			if (not pickup) then e:AwakePhysics(0); end
 		end
 		i = i + 7;
 	end
