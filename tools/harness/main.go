@@ -114,7 +114,7 @@ func cmdUp(args []string) error {
 	w := fs.Int("w", 800, "window width")
 	h := fs.Int("h", 600, "window height")
 	start := fs.String("start", "", "server start commands separated by ';' (default by mode)")
-	gameDir := fs.String("game", envOr("FC1_GAME_DIR", defaultGameDir), "Far Cry install dir")
+	gameDir := fs.String("game", gameDir(), "Far Cry install dir (default: $FC1_GAME_DIR, .harness/game-dir.txt, Steam)")
 	fs.Parse(args)
 
 	if r, err := currentRun(); err == nil && anyAlive(r) {
@@ -212,13 +212,6 @@ func cmdUp(args []string) error {
 		time.Sleep(500 * time.Millisecond)
 	}
 	return fmt.Errorf("startup timeout")
-}
-
-func envOr(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
 }
 
 func anyAlive(r *Run) bool {

@@ -13,6 +13,23 @@ import (
 
 const defaultGameDir = `D:\SteamLibrary\steamapps\common\FarCry`
 
+// gameDir picks the install the harness runs: $FC1_GAME_DIR, else the path in
+// .harness/game-dir.txt (a per-machine test copy, so runs never touch the Steam
+// install), else the Steam install.
+func gameDir() string {
+	if v := os.Getenv("FC1_GAME_DIR"); v != "" {
+		return v
+	}
+	if root, err := repoRoot(); err == nil {
+		if b, err := os.ReadFile(filepath.Join(root, ".harness", "game-dir.txt")); err == nil {
+			if v := strings.TrimSpace(string(b)); v != "" {
+				return v
+			}
+		}
+	}
+	return defaultGameDir
+}
+
 // Instance is one game process (server or client).
 type Instance struct {
 	Name     string   `json:"name"`

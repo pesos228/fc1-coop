@@ -365,6 +365,7 @@ func (s *supervisor) shutdown() {
 	}
 	time.Sleep(time.Second)
 	s.collectErrorLog()
+	s.collectModLogs()
 	os.Remove(filepath.Join(s.run.Dir, "down.req"))
 	appendEvent(s.run.Dir, "-", "done", "shutdown complete")
 }
@@ -379,6 +380,28 @@ func (s *supervisor) collectErrorLog() {
 	dst := filepath.Join(s.run.Dir, "error.log")
 	if copyFile(src, dst) == nil {
 		appendEvent(s.run.Dir, "-", "errorlog", dst)
+	}
+}
+
+// collectModLogs moves the per-process files the FarCryCoop ASI leaves in the mod
+// folder (netlog_FarCry_<pid>.txt, join_<pid>.txt) into the instance folders, so
+// runs do not pile up in the game install.
+func (s *supervisor) collectModLogs() {
+	if s.run.Mod == "" {
+		return
+	}
+	modDir := filepath.Join(s.run.GameDir, "Mods", s.run.Mod)
+	for _, in := range s.run.Instances {
+		for _, f := range []string{fmt.Sprintf("netlog_FarCry_%d.txt", in.PID), fmt.Sprintf("join_%d.txt", in.PID)} {
+			src := filepath.Join(modDir, f)
+			if _, err := os.Stat(src); err != nil {
+				continue
+			}
+			dst := filepath.Join(in.Dir, f)
+			if os.Rename(src, dst) != nil && copyFile(src, dst) == nil {
+				os.Remove(src)
+			}
+		}
 	}
 }
 
