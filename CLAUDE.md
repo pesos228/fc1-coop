@@ -1,55 +1,72 @@
-# Project rules for Claude / Правила проекта для Claude
+# FC1 Co-op
 
-## Golden rule / Золотое правило
+Кооп кампании Far Cry 1 (2004) в духе Sven Co-op и Synergy: проходить оригинальные карты вместе с друзьями по сети. Форк [FarCryCoop](https://github.com/Bantila/FarCryCoop) (Bantila, MIT), дальше развивается как отдельный проект.
 
-**EN:** ALWAYS write documentation and every other human-readable project text (README, notes,
-guides, comments in docs, issue/PR descriptions) in BOTH Russian and English. No exceptions.
-Use a pair of files `NAME.md` (English) + `NAME.ru.md` (Russian), or both languages in one file
-for short texts. When one language version changes, update the other in the same commit.
+Отвечай по-русски. Технические термины, имена файлов и команды — как есть.
 
-**RU:** ВСЕГДА пиши документацию и любые другие тексты проекта для людей (README, заметки,
-руководства, комментарии в документах, описания issue/PR) на ДВУХ языках: русском и английском.
-Без исключений. Используй пару файлов `NAME.md` (английский) + `NAME.ru.md` (русский) или оба
-языка в одном файле для коротких текстов. Если меняется одна языковая версия, обнови другую в
-том же коммите.
+## Цель
 
-## Golden rule 2: workspace / Золотое правило 2: рабочая папка
+- Кооп всей кампании (20 карт), сначала 2 игрока, потом 4-8 или больше если получится.
+- Целевая версия игры: Steam, патч 1.4. GOG-версию не поддерживаем.
+- Установка для игроков — в один клик (лаунчер), без проброса портов.
+- Внешне как ванила: никаких лишних режимов, карт и интерфейса поверх оригинальной кампании.
+- Релиз по главам: публикуем только полностью доведённые карты.
 
-**EN:** Work ONLY inside `E:\FarCryCoop`. NEVER read, write or download anything on drive C: —
-no exceptions. NEVER download into `%TEMP%`. Before running any tool, load `. E:\FarCryCoop\env.ps1`
-(it points TEMP/TMP, npm cache, JAVA_HOME, Ghidra to `E:\FarCryCoop`). Layout:
-`Downloads\<name>\` — verified archives (one folder each); `Tools\` — unpacked tools;
-`Data\` — tool settings and caches; `Temp\` — temporary files. The game at
-`D:\SteamLibrary\steamapps\common\FarCry` is read-only (AGENTS.md rule 2); work on copies in
-`E:\FarCryCoop`. If a step would need drive C:, stop and ask the owner.
+## Что уже известно
 
-**RU:** Работать ТОЛЬКО внутри `E:\FarCryCoop`. НИКОГДА ничего не читать, не писать и не скачивать
-на диск C: — без исключений. НИКОГДА не качать в `%TEMP%`. Перед запуском любых инструментов
-загружать `. E:\FarCryCoop\env.ps1` (он направляет TEMP/TMP, кэш npm, JAVA_HOME, Ghidra в
-`E:\FarCryCoop`). Структура: `Downloads\<имя>\` — проверенные архивы (у каждого своя папка);
-`Tools\` — распакованные инструменты; `Data\` — настройки и кэши инструментов; `Temp\` — временные
-файлы. Игра в `D:\SteamLibrary\steamapps\common\FarCry` — только чтение (правило 2 AGENTS.md);
-работать с копиями в `E:\FarCryCoop`. Если шаг требует диска C:, остановиться и спросить владельца.
+- Движок CryEngine 1. Игровая логика во многом на Lua (скрипты в .pak, это zip).
+- Официальный Mod SDK 1.4 содержит исходники CryGame.dll и заголовки интерфейсов движка (IGame, ISystem, INetwork, IAISystem, IEntitySystem и т.д.).
+- SP идёт через локальный сервер (`CXServer` + `CXClient` с фейковым соединением); MP отличается только `listen=true`. Подробности в `docs/findings.md`.
+- Мод ContestIsle (Contest Island: Invasion) — чистый Lua/контент без DLL (форк всего `Scripts.pak` + свои `MISSION_COOP.xml` на 11 картах). Изучен, как пример; база проекта — FarCryCoop.
+- Основа — FarCryCoop: Lua-пак (game type `COOP`) + ASI-хуки `CryGame.dll` 1.4 (`games/far-cry/`). Его технический журнал: `games/far-cry/NOTES.md`.
 
-## Commits / Коммиты
+## Форк
 
-**EN:** Commit messages follow Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/)
-and are written in English only: `<type>(<optional scope>): <description>`, e.g.
-`docs(far-cry): add research notes`. Types: feat, fix, docs, chore, refactor, test, build, ci, perf, style, revert.
+- `upstream` = Bantila/FarCryCoop (push заглушен, **никогда не пушим**), `origin` = наш форк. Синхронизация: `git fetch upstream`, в `main` — `git merge upstream/main`. Конфликты на файлах, которые мы заменили или удалили (`README*`, `CLAUDE.md`, `ROADMAP*`, `PLAN-fun-mode*`, `docs/workspace*`, `docs/tools/*`), решаем в нашу пользу.
+- Правки кода апстрима, полезные автору, — каждая в своей ветке от `upstream/main` (как `heli-netpresence-at-spawn`), потом merge в `main`. Такую ветку можно отдать автору PR-ом; PR и сообщения автору — только с согласия владельца.
+- Коммиты — Conventional Commits, **только на английском** (`fix(far-cry): …`, `feat(harness): …`, `docs: …`), автор — владелец, **без `Co-Authored-By`** и других упоминаний Claude. Документы проекта — на русском.
 
-**RU:** Сообщения коммитов пишутся по Conventional Commits и только на английском:
-`<тип>(<область, необязательно>): <описание>`, например `docs(far-cry): add research notes`.
+## Харнес (основной инструмент проверки)
 
-## Tools / Инструменты
+`tools/harness` (см. README): `harness up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start '#COOP_ExpectPlayers=2;#CoopMap("training")'`, потом `state` / `lua` / `cmd` / `diff` / `shot` / `log` / `down`. Нужен запущенный Steam. Пак мода харнес собирает из `games/far-cry/mod/FarCryCoop`. ASI собирается командой `tools\fcc\build-asi.cmd` из `games/far-cry/asi`, харнес — `cd tools && GOARCH=386 go build -o bin/harness.exe ./harness`. Перед заявлением «починено» прогоняй `diff` и сверяй общее число сущностей, а не только целевую метрику.
 
-**EN:** Reverse engineering uses REA (https://github.com/morluto/rea) as an MCP server, registered
-locally on the owner's PC: see [docs/tools/rea.md](docs/tools/rea.md).
+## Жёсткие правила
 
-**RU:** Для реверс-инжиниринга используется REA (https://github.com/morluto/rea) как MCP-сервер,
-подключённый локально на ПК владельца: см. [docs/tools/rea.ru.md](docs/tools/rea.ru.md).
+1. Код на базе SDK распространяется только бесплатно, по лицензии SDK. Свой код — отдельно, лицензию выберем перед релизом. Код FarCryCoop — MIT, `LICENSE` сохраняем.
+2. Чужие моды: указываем авторов в кредитах. Перед публикацией производной работы пишем автору.
+3. Только кооп. Ничего, что даёт преимущество в чужих мультиплеерных играх.
+4. Всё, что идёт в релиз, должно собираться только из SDK 1.4 и своего кода.
 
-## Communication / Общение
+## Стек и структура
 
-**EN:** Chat with the owner in Russian.
+```
+games/far-cry/ основа из FarCryCoop: mod/FarCryCoop (Lua), asi/ (C, хуки CryGame.dll),
+               launcher/ (Tauri), steam/, release/, NOTES.md
+mod/          C++ (SDK 1.4, MSVC, Win32) — изменения CryGame (пока нет)
+scripts/      Lua — агент харнеса (scripts/harness), старый мод FC1Coop (scripts/game)
+tests/        сценарии харнеса
+tools/        Go
+  harness/    запуск сервера и N клиентов, сценарии, сбор логов и минидампов, diff снапшотов
+  fcc/        сборка ASI
+docs/
+  changelog.md журнал сессий: что сделано, состояние, что дальше (читать в начале сессии)
+  findings.md журнал находок (что выяснили, где, чем подтверждено)
+  maps.md     таблица статуса всех 20 карт
+```
 
-**RU:** С владельцем общаться по-русски.
+## Вехи
+
+0. **Разведка.** Запустить мод на 1.4; ответить на вопрос про локальный сервер; заполнить docs/maps.md; решить «чинить или переписывать». Готово: строим на FarCryCoop.
+1. **Одна карта, 2 игрока, стабильно** + базовый харнес (2 клиента на одной машине, детектор десинка).
+2. **Рецепт адаптации карты** (docs/map-recipe.md) и общая система: список игроков вместо единственного игрока, чекпоинты, смерть и респаун.
+3. **Глава 1** (3–4 карты), полностью доведённая → первый публичный релиз.
+4. Остальные карты обновлениями.
+
+## Как работать
+
+- Плейбук coop-anything (`mcp/coop-anything`, локально): AGENTS.md, playbook/, skills. Путь «оживить существующий мод» плюс automated QA и networking.
+- Порядок поиска ответа: SDK (исходники и заголовки) → Lua-скрипты игры и модов → декомпиляция своих бинарников в Ghidra.
+- Каждую подтверждённую находку записывай в `docs/findings.md`: что, где, как проверено. Гипотезы помечай как гипотезы.
+- Не заявляй, что что-то работает, пока это не проверено запуском игры или харнесом.
+- При достижении результатов делай коммит.
+- **Журнал сессий `docs/changelog.md`.** В начале сессии читай его, чтобы знать контекст. В конце сессии (и при крупных результатах) добавляй сверху запись: что сделано, в каком состоянии всё осталось (что закоммичено, что запущено, что лежит в папке игры), открытые проблемы, что дальше, подводные камни. Коротко; детали и доказательства — в `docs/findings.md`.
