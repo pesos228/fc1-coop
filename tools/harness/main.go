@@ -109,7 +109,7 @@ func cmdUp(args []string) error {
 	mapName := fs.String("map", "training", "level name")
 	mission := fs.String("mission", "", "mission name (default: map name; SP maps use e.g. Training)")
 	clients := fs.Int("clients", 0, "number of clients (host mode)")
-	mod := fs.String("mod", "", "mod folder under Mods/ (FC1Coop and FarCryCoop are built from the repo)")
+	mod := fs.String("mod", "", "mod folder under Mods/ (FarCryCoop is built from games/far-cry/mod)")
 	asi := fs.String("asi", "", "DLL to inject into every instance before it runs (e.g. tools/bin/FarCryCoopNet.asi)")
 	w := fs.Int("w", 800, "window width")
 	h := fs.Int("h", 600, "window height")

@@ -43,7 +43,7 @@
 games/far-cry/ основа из FarCryCoop: mod/FarCryCoop (Lua), asi/ (C, хуки CryGame.dll),
                launcher/ (Tauri), steam/, release/, NOTES.md
 mod/          C++ (SDK 1.4, MSVC, Win32) — изменения CryGame (пока нет)
-scripts/      Lua — агент харнеса (scripts/harness), старый мод FC1Coop (scripts/game)
+scripts/      Lua — агент харнеса (scripts/harness)
 tests/        сценарии харнеса
 tools/        Go
   harness/    запуск сервера и N клиентов, сценарии, сбор логов и минидампов, diff снапшотов

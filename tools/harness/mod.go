@@ -12,12 +12,9 @@ import (
 
 
 // modSource says where a known mod's files live in the repo.
-// FC1Coop: scripts/game/** is packed as Scripts/**.
 // FarCryCoop (upstream of this fork, MIT): its mod folder already has Scripts/ and ModDesc.txt.
 func modSource(root, name string) (src, prefix, desc string, ok bool) {
 	switch strings.ToLower(name) {
-	case "fc1coop":
-		return filepath.Join(root, "scripts", "game"), "Scripts/", "", true
 	case "farcrycoop":
 		dir := filepath.Join(root, "games", "far-cry", "mod", "FarCryCoop")
 		return filepath.Join(dir, "Scripts"), "Scripts/", filepath.Join(dir, "ModDesc.txt"), true
