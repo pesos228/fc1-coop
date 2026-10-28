@@ -361,3 +361,15 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("tauri");
 }
+
+#[cfg(test)]
+mod tests {
+    // reads this PC's Steam login: cargo test -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn steam_user_here() {
+        let user = super::steam_user();
+        println!("steam user: {:?}, default name: {}", user.as_ref().map(|(id, _)| id), super::game_name());
+        assert!(user.is_some(), "no Steam user logged in");
+    }
+}
