@@ -8,6 +8,8 @@ expect-no-events
 # Entity sets equal (no missing/extra), health equal; positions ignored here.
 expect-diff max=100000 missing=0
 expect-diff max=0.5 class=^Player$
+# Level pickups lie still on both sides (they used to fall through the world on the server).
+expect-diff max=0.1 class=^(Ammo|Pickup|Armor|Health|KeyCard)
 # Everything else within 1 m (informative: lists what drifts on this map).
 expect-diff max=1.0
 down
