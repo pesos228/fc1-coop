@@ -115,6 +115,8 @@ func cmdUp(args []string) error {
 	h := fs.Int("h", 600, "window height")
 	start := fs.String("start", "", "server start commands separated by ';' (default by mode)")
 	gameDir := fs.String("game", gameDir(), "Far Cry install dir (default: $FC1_GAME_DIR, .harness/game-dir.txt, Steam)")
+	pname := fs.String("pname", "", "every client plays under this p_name and is told apart by its COOP_PlayerKey, as the launcher does")
+	keys := fs.String("keys", "", "with -pname: the clients' COOP_PlayerKey in order, separated by ',' (default: the instance name)")
 	fs.Parse(args)
 
 	if r, err := currentRun(); err == nil && anyAlive(r) {
@@ -161,7 +163,7 @@ func cmdUp(args []string) error {
 		return fmt.Errorf("unknown mode %q", *mode)
 	}
 	run := &Run{Dir: runDir, GameDir: *gameDir, Agent: filepath.Join(root, "scripts", "harness", "agent.lua"),
-		Mode: *mode, Map: *mapName, Mod: *mod, Width: *w, Height: *h, Started: time.Now()}
+		Mode: *mode, Map: *mapName, Mod: *mod, Width: *w, Height: *h, PName: *pname, Started: time.Now()}
 	if *asi != "" {
 		a, err := filepath.Abs(*asi)
 		if err != nil {
@@ -171,9 +173,17 @@ func cmdUp(args []string) error {
 	}
 	run.Instances = append(run.Instances, &Instance{Name: "server", Role: "server",
 		Dir: filepath.Join(runDir, "server"), Commands: serverCmds})
+	keyList := strings.Split(*keys, ",")
 	for i := 1; i <= *clients; i++ {
-		run.Instances = append(run.Instances, &Instance{Name: fmt.Sprintf("client%d", i), Role: "client",
-			Dir: filepath.Join(runDir, fmt.Sprintf("client%d", i)), Commands: []string{clientConnect}})
+		in := &Instance{Name: fmt.Sprintf("client%d", i), Role: "client",
+			Dir: filepath.Join(runDir, fmt.Sprintf("client%d", i)), Commands: []string{clientConnect}}
+		if *pname != "" {
+			in.Key = in.Name
+			if i <= len(keyList) && keyList[i-1] != "" {
+				in.Key = keyList[i-1]
+			}
+		}
+		run.Instances = append(run.Instances, in)
 	}
 	if err := run.Save(); err != nil {
 		return err

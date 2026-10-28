@@ -143,7 +143,12 @@ func (s *supervisor) start(in *Instance) error {
 	if in.Role == "client" {
 		// Players have their own names; all games here would be "Jack Carver" from system.cfg
 		// (the co-op host keys a player's equipment by it).
-		boot += fmt.Sprintf("System:ExecuteCommand(%q)\n", "p_name "+in.Name)
+		if s.run.PName != "" {
+			// as the launcher: one name for everybody, the key tells the players apart
+			boot += fmt.Sprintf("setglobal(\"p_name\", %q)\nCOOP_PlayerKey = %q\n", s.run.PName, in.Key)
+		} else {
+			boot += fmt.Sprintf("System:ExecuteCommand(%q)\n", "p_name "+in.Name)
+		}
 	}
 	if !s.joinMode() {
 		for _, c := range in.Commands {

@@ -267,6 +267,14 @@ function Harness:Player(name)
 	end
 end
 
+-- Server: the player whose client sent this COOPID key (COOP gamerules COOP_SlotKeys).
+function Harness:PlayerByKey(key)
+	if (not (Server and COOP_SlotKeys)) then return; end
+	for i, slot in Server:GetServerSlotMap() do
+		if (COOP_SlotKeys[slot:GetId()] == key) then return System:GetEntity(slot:GetPlayerId()); end
+	end
+end
+
 -- A player's equipment in one line, the same on the server and on that player's client (only
 -- stats the server sends): weapons by name, the selected one with its ammo and clip, armor,
 -- grenades, binoculars, flashlight.

@@ -1,0 +1,34 @@
+# Two players with the same name are told apart by their key (COOP_PlayerKey from the launcher:
+# the SteamID), not by the order they join in (docs/specs/persistent-progress.md).
+# Both clients play as "Carver"; the second run swaps their keys, so a server that went by name or
+# by join order would hand out the other player's equipment.
+# Run from the repo root: tools/bin/harness.exe test tests/player-key.txt
+up -mode host -map training -clients 2 -pname Carver -keys alice,bob -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=3;#CoopMap("training")
+wait server players>=3 -t 60s
+wait client1 players>=3 -t 60s
+wait client2 players>=3 -t 60s
+sleep 5s
+expect client1 getglobal("p_name") => Carver
+expect client2 getglobal("p_name") => Carver
+lua server CoopGiveLoadout(Harness:PlayerByKey("alice"), {weapons={"Shotgun","SniperRifle"}, ammo={Shotgun=17, Sniper=23, HandGrenade=3, Rock=9999}, current="Shotgun", grenadetype=2, clips={Shotgun={fm=0, clip={5}}, SniperRifle={fm=0, clip={4}}}, armor=50, binoculars=1})
+lua server CoopGiveLoadout(Harness:PlayerByKey("bob"), {weapons={"P90","Falcon"}, ammo={SMG=77, Pistol=11, Rock=9999}, current="P90", clips={P90={fm=0, clip={20}}}, armor=30, flashlight=1})
+sleep 2s
+expect client1 Harness:Loadout(_localplayer) => Shotgun,SniperRifle, cur=Shotgun ammo=17 clip=5 armor=50 gren=2/3 bino=1 light=0
+expect client2 Harness:Loadout(_localplayer) => Falcon,P90, cur=P90 ammo=77 clip=20 armor=30 gren=1/255 bino=0 light=1
+lua server CoopSave("keytest")
+expect-log server saved.keytest:.3.players
+down
+
+# A server from that save; the same two players join in the same order, but with each other's keys.
+up -mode host -map training -clients 2 -pname Carver -keys bob,alice -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=3;#CoopLoad("keytest")
+wait server players>=3 -t 60s
+wait client1 players>=3 -t 60s
+wait client2 players>=3 -t 60s
+sleep 10s
+expect client1 Harness:Loadout(_localplayer) => Falcon,P90, cur=P90 ammo=77 clip=20 armor=30 gren=1/255 bino=0 light=1
+expect client2 Harness:Loadout(_localplayer) => Shotgun,SniperRifle, cur=Shotgun ammo=17 clip=5 armor=50 gren=2/3 bino=1 light=0
+expect server Harness:Loadout(Harness:PlayerByKey("bob")) => Falcon,P90, cur=P90 ammo=77 clip=20 armor=30 gren=1/255 bino=0 light=1
+expect-no-events
+# the save is in the game's install: remove it
+lua server remove("Mods/FarCryCoop/save_keytest.lua")
+down

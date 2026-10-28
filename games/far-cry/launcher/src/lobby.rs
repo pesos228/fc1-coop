@@ -30,14 +30,66 @@ static LOBBY: Mutex<Option<Lobby>> = Mutex::new(None);
 
 // a player as the host accepts it: the name is shown to everyone, the rest goes to prefs.lua
 pub fn clean_me(me: &Value) -> Value {
-    let name: String = me["name"].as_str().unwrap_or("").chars().filter(|c| !c.is_control()).take(24).collect();
+    let name = clean_name(me["name"].as_str().unwrap_or(""));
     let color = me["color"].as_u64().filter(|c| *c <= 9).unwrap_or(1);
     let weapons: Vec<&str> = me["weapons"]
         .as_array()
         .map(|a| a.iter().filter_map(|w| w.as_str()).filter(|w| crate::WEAPONS.contains(w)).take(4).collect())
         .unwrap_or_default();
     let difficulty = me["difficulty"].as_u64().filter(|d| *d <= 4).unwrap_or(1);
-    json!({ "name": if name.trim().is_empty() { "Player".into() } else { name }, "color": color, "weapons": weapons, "difficulty": difficulty })
+    json!({ "name": name, "color": color, "weapons": weapons, "difficulty": difficulty })
+}
+
+// a player name the game can take: it goes into a console line (p_name, a Lua string) and the
+// game font has Latin letters only. Printable ASCII without quotes, `;`, `#`, `%` and backslash,
+// Cyrillic transliterated, anything else dropped; up to 24 characters, "Player" if nothing is left
+pub fn clean_name(s: &str) -> String {
+    const RU: [&str; 32] = [
+        "a", "b", "v", "g", "d", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p",
+        "r", "s", "t", "u", "f", "kh", "ts", "ch", "sh", "sch", "", "y", "", "e", "yu", "ya",
+    ];
+    let mut out = String::new();
+    for c in s.chars() {
+        let lower = c.to_lowercase().next().unwrap_or(c);
+        let t: String = match lower {
+            ' '..='~' if !"\"';#%\\".contains(c) => c.to_string(),
+            'а'..='я' => RU[(lower as u32 - 'а' as u32) as usize].to_string(),
+            'ё' | 'є' => "e".into(),
+            'і' | 'ї' => "i".into(),
+            'ґ' => "g".into(),
+            _ => String::new(),
+        };
+        // keep the case of a capital Cyrillic letter on the first Latin letter
+        if c != lower && !c.is_ascii() {
+            let mut t = t.chars();
+            if let Some(f) = t.next() {
+                out.extend(f.to_uppercase());
+                out.push_str(t.as_str());
+            }
+        } else {
+            out.push_str(&t);
+        }
+    }
+    let name: String = out.trim().chars().take(24).collect();
+    let name = name.trim_end().to_string();
+    if name.is_empty() { "Player".into() } else { name }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clean_name;
+
+    #[test]
+    fn names() {
+        assert_eq!(clean_name("Jack Carver"), "Jack Carver");
+        assert_eq!(clean_name("  "), "Player");
+        assert_eq!(clean_name("a\"b;c#d%e\\f'g"), "abcdefg");
+        assert_eq!(clean_name("Вася Пупкин"), "Vasya Pupkin");
+        assert_eq!(clean_name("ЩУКА"), "SchUKA");
+        assert_eq!(clean_name("日本"), "Player");
+        assert_eq!(clean_name("x\u{7}y"), "xy");
+        assert_eq!(clean_name("123456789012345678901234567"), "123456789012345678901234");
+    }
 }
 
 // every write happens with LOBBY locked: a peer that stops reading must not hang the lobby,

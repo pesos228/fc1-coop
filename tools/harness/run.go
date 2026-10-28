@@ -37,6 +37,7 @@ type Instance struct {
 	Dir      string   `json:"dir"`
 	PID      int      `json:"pid"`
 	Commands []string `json:"commands"` // console commands passed on the command line
+	Key      string   `json:"key,omitempty"` // with Run.PName: the client's COOP_PlayerKey
 }
 
 // Run describes one harness session; stored as <run>/run.json.
@@ -50,6 +51,7 @@ type Run struct {
 	ASI       string      `json:"asi,omitempty"` // injected into every instance; copied to Bin32 for the run
 	Width     int         `json:"width"`
 	Height    int         `json:"height"`
+	PName     string      `json:"pname,omitempty"` // clients share this p_name; Instance.Key tells them apart
 	Instances []*Instance `json:"instances"`
 	Started   time.Time   `json:"started"`
 }

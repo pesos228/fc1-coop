@@ -44,20 +44,81 @@ fn save_settings(json: String) -> Result<(), String> {
     std::fs::write(exe_dir().join("FarCryCoopLauncher.json"), json).map_err(|e| e.to_string())
 }
 
-// our player as saved by the UI: name, color, weapons
+// our player as saved by the UI: name, color, weapons; plus the key the host keeps our progress
+// under (COOP gamerules COOP_Progress): the SteamID of the logged-in Steam user, else the name
 fn me() -> Value {
-    lobby::clean_me(&serde_json::from_str(&load_settings()).unwrap_or_default())
+    let mut me = lobby::clean_me(&serde_json::from_str(&load_settings()).unwrap_or_default());
+    let key = steam_user().map(|(id, _)| id).unwrap_or_else(|| me["name"].as_str().unwrap_or("Player").to_string());
+    me["key"] = key.into();
+    me
 }
 
-// default player name: p_name from the game's system.cfg
+#[link(name = "advapi32")]
+extern "system" {
+    fn RegGetValueW(key: isize, sub: *const u16, value: *const u16, flags: u32, ty: *mut u32, data: *mut u8, len: *mut u32) -> i32;
+}
+const HKEY_CURRENT_USER: isize = 0x8000_0001u32 as i32 as isize;
+
+fn wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(Some(0)).collect()
+}
+
+// a value under HKEY_CURRENT_USER: RRF_RT_REG_DWORD (0x10) or RRF_RT_REG_SZ (0x2)
+fn reg(sub: &str, value: &str, flags: u32) -> Option<Vec<u8>> {
+    let (sub, value) = (wide(sub), wide(value));
+    let mut len = 0u32;
+    if unsafe { RegGetValueW(HKEY_CURRENT_USER, sub.as_ptr(), value.as_ptr(), flags, std::ptr::null_mut(), std::ptr::null_mut(), &mut len) } != 0 {
+        return None;
+    }
+    let mut data = vec![0u8; len as usize];
+    if unsafe { RegGetValueW(HKEY_CURRENT_USER, sub.as_ptr(), value.as_ptr(), flags, std::ptr::null_mut(), data.as_mut_ptr(), &mut len) } != 0 {
+        return None;
+    }
+    data.truncate(len as usize);
+    Some(data)
+}
+
+// the Steam user logged in right now: (SteamID64, persona name). The game needs Steam running
+// anyway. No Steam API here: Steam keeps the account id of the running user in the registry
+// (ActiveProcess\ActiveUser, 0 when nobody is logged in) and the persona in loginusers.vdf
+fn steam_user() -> Option<(String, String)> {
+    let user = reg("Software\\Valve\\Steam\\ActiveProcess", "ActiveUser", 0x10)?;
+    let account = u32::from_le_bytes(user.get(..4)?.try_into().ok()?);
+    if account == 0 {
+        return None;
+    }
+    let id = (76561197960265728u64 + account as u64).to_string();
+    let path: Vec<u16> = reg("Software\\Valve\\Steam", "SteamPath", 0x2)?.chunks(2).map(|b| u16::from_le_bytes([b[0], b[1]])).take_while(|c| *c != 0).collect();
+    let vdf = std::fs::read_to_string(PathBuf::from(String::from_utf16_lossy(&path)).join("config").join("loginusers.vdf")).unwrap_or_default();
+    // "users" { "<SteamID64>" { ... "PersonaName" "<name>" ... } }
+    let mut ours = false;
+    let mut persona = String::new();
+    for l in vdf.lines().map(str::trim) {
+        if l == format!("\"{}\"", id) {
+            ours = true;
+        } else if ours && l.starts_with("\"PersonaName\"") {
+            persona = l.split('"').nth(3).unwrap_or("").to_string();
+            break;
+        } else if ours && l == "}" {
+            break;
+        }
+    }
+    Some((id, persona))
+}
+
+// default player name: the Steam persona name, else p_name from the game's system.cfg
 #[tauri::command]
 fn game_name() -> String {
+    if let Some((_, persona)) = steam_user().filter(|(_, p)| !p.is_empty()) {
+        return lobby::clean_name(&persona);
+    }
     let cfg = bin32().map(|b| b.parent().unwrap().join("system.cfg")).unwrap_or_default();
-    std::fs::read_to_string(cfg)
+    let name = std::fs::read_to_string(cfg)
         .unwrap_or_default()
         .lines()
         .find_map(|l| l.trim().strip_prefix("p_name").map(|r| r.trim_start_matches([' ', '=']).trim_matches('"').to_string()))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    lobby::clean_name(&name)
 }
 
 const STORY: [&str; 20] = [
@@ -95,14 +156,20 @@ fn list_maps() -> Result<Vec<String>, String> {
 // launcher settings as Lua: written to prefs.lua and put in front of the console line too.
 // Two games on one PC share prefs.lua, so each game gets its own settings in its own line
 // (COOP ClientStuff reads prefs.lua only when the line did not set them).
+// The name becomes the game's p_name, the key COOP_PlayerKey (sent to the host as COOPID).
+// Both went through clean_name or are digits: nothing in them can end the Lua string.
 fn prefs(me: &Value, loadout: bool) -> String {
     let weapons: Vec<&str> = me["weapons"].as_array().map(|a| a.iter().filter_map(|w| w.as_str()).collect()).unwrap_or_default();
+    let name = lobby::clean_name(me["name"].as_str().unwrap_or(""));
+    let key = lobby::clean_name(me["key"].as_str().unwrap_or(name.as_str()));
     format!(
-        "COOP_Color={} COOP_Weapons=\"{}\" COOP_LoadoutMode={} COOP_Difficulty={}",
+        "COOP_Color={} COOP_Weapons=\"{}\" COOP_LoadoutMode={} COOP_Difficulty={} COOP_PlayerKey=\"{}\" setglobal(\"p_name\",\"{}\")",
         me["color"].as_u64().unwrap_or(1),
         weapons.join(" "),
         loadout as u8,
-        me["difficulty"].as_u64().unwrap_or(1)
+        me["difficulty"].as_u64().unwrap_or(1),
+        key,
+        name
     )
 }
 
@@ -219,6 +286,8 @@ fn launch_test(map: String, loadout: bool) -> Result<(), String> {
             if server_up() {
                 let mut friend = me.clone();
                 friend["color"] = ((me["color"].as_u64().unwrap_or(1) + 1) % 10).into();
+                // the same Steam user plays both games: the second one needs a key of its own
+                friend["key"] = format!("{}-2", me["key"].as_str().unwrap_or("Player")).into();
                 if let Ok(line) = connect_line("127.0.0.1", &friend) {
                     if let Ok(pid) = start_game(&friend, loadout, Some(line)) {
                         place_window(pid, false);
