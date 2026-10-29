@@ -34,7 +34,8 @@ for m in "${maps[@]}"; do
 		hp=$(echo "$d" | grep -c 'health')
 		cnt=$(echo "$d" | head -1 | sed -E 's/.*server=([0-9]+) client=([0-9]+).*/\1\/\2/')
 		alive=$($H lua server 'local s="" for i,P in CoopPlayers() do s=s..P.cnt.health.." " end return s' 2>/dev/null | sed 's/^ok //')
-		line="$m cp$id players_off=${pl:-0} over5m=$big health_diff=$hp entities=$cnt hp=[$alive]"
+		top=$(echo "$d" | grep 'pos Δ' | head -3 | sed -E 's/^ *[0-9]+ ([A-Za-z_0-9]+) "([^"]*)": pos Δ([0-9.]+)m.*/\1:\2:\3/' | tr '\n' ' ')
+		line="$m cp$id players_off=${pl:-0} over5m=$big health_diff=$hp entities=$cnt hp=[$alive] top=[$top]"
 		echo "$line" >> "$f"
 		n=$((n + 1))
 		if [ -n "${pl:-}" ] && awk "BEGIN{exit !($pl > 3)}"; then bad=$((bad + 1)); fi
