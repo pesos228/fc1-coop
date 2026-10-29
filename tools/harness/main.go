@@ -113,6 +113,7 @@ func cmdUp(args []string) error {
 	asi := fs.String("asi", "", "DLL to inject into every instance before it runs (e.g. tools/bin/FarCryCoopNet.asi)")
 	w := fs.Int("w", 800, "window width")
 	h := fs.Int("h", 600, "window height")
+	sound := fs.Bool("sound", false, "keep the game's sound (muted by default: effects and music volume 0)")
 	start := fs.String("start", "", "server start commands separated by ';' (default by mode)")
 	gameDir := fs.String("game", gameDir(), "Far Cry install dir (default: $FC1_GAME_DIR, .harness/game-dir.txt, Steam)")
 	pname := fs.String("pname", "", "every client plays under this p_name and is told apart by its COOP_PlayerKey, as the launcher does")
@@ -163,7 +164,7 @@ func cmdUp(args []string) error {
 		return fmt.Errorf("unknown mode %q", *mode)
 	}
 	run := &Run{Dir: runDir, GameDir: *gameDir, Agent: filepath.Join(root, "scripts", "harness", "agent.lua"),
-		Mode: *mode, Map: *mapName, Mod: *mod, Width: *w, Height: *h, PName: *pname, Started: time.Now()}
+		Mode: *mode, Map: *mapName, Mod: *mod, Width: *w, Height: *h, Sound: *sound, PName: *pname, Started: time.Now()}
 	if *asi != "" {
 		a, err := filepath.Abs(*asi)
 		if err != nil {

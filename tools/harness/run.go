@@ -51,6 +51,7 @@ type Run struct {
 	ASI       string      `json:"asi,omitempty"` // injected into every instance; copied to Bin32 for the run
 	Width     int         `json:"width"`
 	Height    int         `json:"height"`
+	Sound     bool        `json:"sound,omitempty"` // false: the games run muted (SystemCfgOverride.cfg)
 	PName     string      `json:"pname,omitempty"` // clients share this p_name; Instance.Key tells them apart
 	Instances []*Instance `json:"instances"`
 	Started   time.Time   `json:"started"`

@@ -80,6 +80,9 @@ func (s *supervisor) backupConfigs() error {
 	// The user's system.cfg may have log_FileVerbosity = 0, which silences the log after init.
 	override := fmt.Sprintf("r_Fullscreen = \"0\"\r\nr_Width = \"%d\"\r\nr_Height = \"%d\"\r\n"+
 		"log_Verbosity = \"3\"\r\nlog_FileVerbosity = \"3\"\r\n", s.run.Width, s.run.Height)
+	if !s.run.Sound { // muted, not off: the sound system stays up, so the game runs as it does for players
+		override += "s_SFXVolume = \"0\"\r\ns_MusicVolume = \"0\"\r\n"
+	}
 	return os.WriteFile(filepath.Join(s.run.GameDir, "SystemCfgOverride.cfg"), []byte(override), 0o644)
 }
 
