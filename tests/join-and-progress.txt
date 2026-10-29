@@ -49,6 +49,6 @@ expect-log server progress.written.to.jointest..shutdown 20s
 lua server COOP_LoadedSave=nil dofile("Mods/FarCryCoop/save_jointest.lua")
 expect server COOP_LoadedSave.progress[HKEY].armor => 33
 expect-no-events
-# the save is in the game's install: remove it
-lua server remove("Mods/FarCryCoop/save_jointest.lua")
+# the save is in the game's install: remove it, and forget it (the shutdown writes the progress into the last save)
+lua server COOP_LastSave=nil remove("Mods/FarCryCoop/save_jointest.lua")
 down

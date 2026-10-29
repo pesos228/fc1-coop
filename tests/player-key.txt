@@ -29,6 +29,6 @@ expect client1 Harness:Loadout(_localplayer) => Falcon,P90, cur=P90 ammo=77 clip
 expect client2 Harness:Loadout(_localplayer) => Shotgun,SniperRifle, cur=Shotgun ammo=17 clip=5 armor=50 gren=2/3 bino=1 light=0
 expect server Harness:Loadout(Harness:PlayerByKey("bob")) => Falcon,P90, cur=P90 ammo=77 clip=20 armor=30 gren=1/255 bino=0 light=1
 expect-no-events
-# the save is in the game's install: remove it
-lua server remove("Mods/FarCryCoop/save_keytest.lua")
+# the save is in the game's install: remove it, and forget it (the shutdown writes the progress into the last save)
+lua server COOP_LastSave=nil remove("Mods/FarCryCoop/save_keytest.lua")
 down

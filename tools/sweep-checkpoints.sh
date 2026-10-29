@@ -7,6 +7,10 @@ set -u
 H=tools/bin/harness.exe
 OUT=.harness/sweep
 mkdir -p "$OUT"
+# checkpoints autosave (save_auto.lua in the mod folder of the install): keep the player's own
+GAME=$(sed -n 's/.*"game_dir": *"\(.*\)".*//p' .harness/runs/*/run.json 2>/dev/null | tail -1 | sed 's/\\/\//g')
+AUTO="$GAME/Mods/FarCryCoop/save_auto.lua"
+[ -f "$AUTO" ] && cp "$AUTO" "$OUT/save_auto.lua.bak"
 maps=("$@")
 [ ${#maps[@]} -eq 0 ] && maps=(training carrier fort pier research treehouse bunker steam regulator control rebellion archive cooler boat catacombs river swamp factory dam volcano)
 for m in "${maps[@]}"; do
@@ -44,4 +48,5 @@ for m in "${maps[@]}"; do
 	$H down > /dev/null 2>&1
 	echo "$m: $n checkpoints, players >3 m apart on $bad, events $ev" >> "$OUT/all.txt"
 done
+if [ -f "$OUT/save_auto.lua.bak" ]; then cp "$OUT/save_auto.lua.bak" "$AUTO"; else rm -f "$AUTO"; fi
 echo DONE >> "$OUT/all.txt"
