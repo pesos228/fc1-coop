@@ -42,6 +42,14 @@ function HC:LoadModel()
 	System:Log( "Loading Heli: "..model );
 
 	--	if(self.IsPhisicalized == 0) then
+	-- COOP: on an MP client OnReset never reaches its VC.AIDriver(self, 0): VC.InitAnchors fails
+	-- on passengersTT (made by InitServer only), so the copy's AI stays on. Its proxy then drives
+	-- the living body (MoveLikeAHelicopter, aircontrol 1: +30 m/s up) between server updates and
+	-- the helicopter flickers. The server moves the helicopter; the client copy has no AI.
+	if (not Server) then
+		VC.AIDriver(self, 0);
+	end
+
 	if( self.temp_ModelName ~= model) then
 		
 		--System:Log( "loading HELY ----------------------------------------------------- ");		
