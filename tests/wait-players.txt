@@ -21,11 +21,15 @@ expect-log client1 sequence.first_cutscene 15s
 expect-no-events
 down
 
-# The same without coop_start: the timeout starts it.
-up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=3;#COOP_ExpectTimeout=40;#CoopMap("training")
+# The same without coop_start: the timeout starts it. The timeout counts map time, and a client
+# loads in 20 s or in 60 s depending on the machine: give it all the time it needs, then make the
+# timeout run out 5 s from now.
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=3;#COOP_ExpectTimeout=600;#CoopMap("training")
 wait server players>=2 -t 60s
 wait client1 players>=2 -t 120s
-expect-log server Starting.with.2.of.3.players 60s
+expect server (COOP_WaitDone == nil) and 1 => 1
+lua server COOP_ExpectTimeout = _time + 5
+expect-log server Starting.with.2.of.3.players 20s
 expect-log client1 sequence.first_cutscene 15s
 expect-no-events
 down
