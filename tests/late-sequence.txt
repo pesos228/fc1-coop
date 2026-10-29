@@ -1,0 +1,13 @@
+# Dam, listen host + 1 client: a movie sequence the server started before the client joined (the
+# "heli" fly-by, at t=0.7 of the map) is where the server has it on the client too (SEQAT: the client
+# plays it and the ASI moves it to the server's time). Without that, "heli" was 964 m off and
+# SoundSpot2 280 m.
+# Run from the repo root: tools/bin/harness.exe test tests/late-sequence.txt
+up -mode host -map dam -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("dam")
+wait server players>=2 -t 150s
+wait client1 players>=2 -t 150s
+sleep 10s
+expect-log server sequence.heli
+expect-diff max=1 class=^(BasicEntity|SoundSpot)$
+expect-no-events
+down

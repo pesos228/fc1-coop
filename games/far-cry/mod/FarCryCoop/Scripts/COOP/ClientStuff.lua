@@ -25,6 +25,7 @@ function ClientStuff:OnInit()
 	if (not Game:IsServer()) then COOP_Joined = 1; CoopWrapStartLevel(); end
 	-- the skip key votes (COOP gamerules CoopCountSkipVote) instead of skipping for this player only
 	if (Input) then Input:BindCommandToKey("#CoopSkipVote()", "spacebar", 1); end
+	COOP_SeqPlayed = {}; -- a new map: its sequences (SEQ, SEQAT)
 	CoopMonEvent("C", "map");
 end
 
@@ -316,7 +317,24 @@ if (not Game:IsServer()) then setglobal("mov_NoCutscenes", 0); end
 ClientStuff.ServerCommandTable["SEQ"] = function(String, toktable)
 	CoopMonEvent("C", "sequence "..strsub(String, 5));
 	COOP_MySkipVote = nil; -- a new vote (CoopSkipVote)
+	COOP_SeqPlayed[strsub(String, 5)] = 1; -- a SEQAT for it comes too late (CoopSendSequences)
 	if (not Game:IsServer()) then Movie:PlaySequence(strsub(String, 5)); end
+end
+-- a sequence that started before we joined, with the time since its start (COOP gamerules
+-- CoopSendSequences): play it and let the ASI move it to that time (seek_<pid>.txt, the ASI's
+-- seekTick); Lua's Movie cannot. Without the ASI it plays from the start.
+COOP_SeqPlayed = {};
+ClientStuff.ServerCommandTable["SEQAT"] = function(String, tk)
+	local name = strsub(String, strlen("SEQAT "..tostring(tk[2]).." ") + 1);
+	if (Game:IsServer() or COOP_SeqPlayed[name]) then return; end
+	COOP_SeqPlayed[name] = 1;
+	Movie:PlaySequence(name);
+	CoopMonEvent("C", "sequence at "..tostring(tk[2]).." ms "..name);
+	if (COOP_AsiPid) then
+		appendto("Mods/FarCryCoop/seek_"..COOP_AsiPid..".txt");
+		write(tostring(tk[2]).." "..name.."\n");
+		writeto();
+	end
 end
 -- a line from the server shown as a subtitle: seen in a cutscene too (COOP gamerules CoopCountSkipVote)
 ClientStuff.ServerCommandTable["MSUB"] = function(String, toktable)

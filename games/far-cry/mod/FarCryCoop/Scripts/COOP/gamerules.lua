@@ -572,6 +572,7 @@ end
 -- a player leaves: keep the equipment for the next join
 COOP_DefaultOnClientDisconnect = GameRules.OnClientDisconnect; -- the single-player rules, loaded above
 function GameRules:OnClientDisconnect(server_slot)
+	if (COOP_SeqSent) then COOP_SeqSent[server_slot:GetId()] = nil; end -- a rejoin gets the sequences again (CoopSendSequences)
 	call(CoopKeepLoadout, {server_slot}, "x", function(msg) System:LogAlways("coop: loadout keep error: "..tostring(msg)); end);
 	call(CoopWriteProgress, {"player left"}, "x", CoopWriteProgressError);
 	call(CoopAnnounce, {server_slot:GetName().." has left the game"}, "x", function(msg) System:LogAlways("coop: announce error: "..tostring(msg)); end);
@@ -1143,7 +1144,22 @@ function CoopWrapHide(e)
 	wrap("Event_UnHide", 0);
 end
 
+-- A player who joins later never got the SEQ of the sequences started before: send each one with
+-- the time since its start ("SEQAT <ms> <name>", COOP ClientStuff), once per client and map (a
+-- respawn sends HUDSYNC again). A stopped one goes to its end.
+COOP_SeqStart, COOP_SeqSent = {}, {}; -- this file runs on every map load
+function CoopSendSequences(server_slot)
+	local id = server_slot:GetId();
+	if (COOP_SeqSent[id]) then return; end
+	COOP_SeqSent[id] = 1;
+	for name, t in COOP_SeqStart do
+		server_slot:SendCommand(format("SEQAT %d %s", floor((_time - t) * 1000), name));
+		CoopMonEvent("S", format("seqat %s %.1f s", name, _time - t));
+	end
+end
+
 function CoopHudSync(server_slot)
+	CoopSendSequences(server_slot);
 	for id, v in COOP_HideState do server_slot:SendCommand("HIDE "..id.." "..v); end
 	CoopSendAllHP(server_slot);
 	COOP_DropResend = {_time + 5, _time + 15};
@@ -1500,11 +1516,13 @@ if (not COOP_OrigPlaySequence) then
 	Movie.PlaySequence = function(self, name)
 		CoopMonEvent("S", "sequence "..tostring(name));
 		COOP_SkipVotes = {}; -- a new vote for every sequence (CoopCountSkipVote)
+		if (COOP_SeqStart) then COOP_SeqStart[tostring(name)] = _time; end -- for players who join later (CoopSendSequences)
 		COOP_OrigPlaySequence(self, name);
 		Server:BroadcastCommand("SEQ "..tostring(name));
 	end
 	Movie.StopSequence = function(self, name)
 		COOP_OrigStopSequence(self, name);
+		if (COOP_SeqStart and COOP_SeqStart[tostring(name)]) then COOP_SeqStart[tostring(name)] = -1000000; end -- a late joiner: to its end
 		Server:BroadcastCommand("SEQSTOP "..tostring(name));
 	end
 end

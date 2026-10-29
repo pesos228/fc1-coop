@@ -762,10 +762,77 @@ static void runJoin(const char *file)
 		((void(__fastcall *)(void *, void *, const char *, int, int))VFN(con, 0x80))(con, 0, cmd, 0, 1);
 	logf("join: done");
 }
+// A player who joins after a movie sequence started (Dam: "heli" at t=0.7, before any client is
+// in) never got its SEQ, so what it animates stayed where the level put it. The server sends the
+// joiner each sequence of the map with the time since its start (SEQAT, COOP ClientStuff); Lua
+// plays it and asks here, in Mods\FarCryCoop\seek_<pid>.txt ("<ms> <name>" lines), to move it to
+// that time: Lua's Movie has no such call, IMovieSystem::SetPlayingTime (SDK IMovieSystem.h) does.
+// Past its end the movie system stops it on the next update and leaves it at its end. A cutscene
+// (CUT_SCENE) goes to its end at once: it does not start for a player who joins in its middle.
+// ISystem::GetIMovieSystem +0x78; IMovieSystem: FindSequence +0x28, IsPlaying +0x54,
+// GetPlayingTime +0x98, SetPlayingTime +0x9c; IAnimSequence: GetName +0x08, GetFlags +0x10
+// (slot 0 is IRefCountBase's virtual destructor). Lua learns the pid from "#COOP_AsiPid=<pid>".
+static char g_seek[600];
+static int g_pidSent;
+static void seekLine(char *s)
+{
+	void *sys = getISystem(), *mov, *seq;
+	DWORD ms = 0, flags;
+	float t, was;
+	while (*s >= '0' && *s <= '9')
+		ms = ms * 10 + (*s++ - '0');
+	if (*s++ != ' ' || !*s)
+		return;
+	mov = sys ? ((void *(__fastcall *)(void *, void *))VFN(sys, 0x78))(sys, 0) : 0;
+	seq = mov ? ((void *(__fastcall *)(void *, void *, const char *))VFN(mov, 0x28))(mov, 0, s) : 0;
+	if (!seq) {
+		logf("seek: no sequence %s", s);
+		return;
+	}
+	flags = ((DWORD(__fastcall *)(void *, void *))VFN(seq, 0x10))(seq, 0);
+	t = (flags & 0x008) ? 1000000.0f : (int)ms / 1000.0f; // CUT_SCENE: to its end; int: no CRT helper for unsigned
+	was = ((float(__fastcall *)(void *, void *, void *))VFN(mov, 0x98))(mov, 0, seq);
+	((BYTE(__fastcall *)(void *, void *, void *, float))VFN(mov, 0x9c))(mov, 0, seq, t);
+	logf("seek: %s (%s) flags %x playing %u: %u ms -> %u ms", s, ((const char *(__fastcall *)(void *, void *))VFN(seq, 0x08))(seq, 0),
+	     flags, (DWORD)((BYTE(__fastcall *)(void *, void *, void *))VFN(mov, 0x54))(mov, 0, seq), was < 0 ? 0 : f2ms(was), f2ms(t));
+}
+static void seekTick(void)
+{
+	static char buf[2048]; // static: no __chkstk without the CRT, main thread only
+	DWORD n = 0, i, from = 0;
+	HANDLE f;
+	if (!g_pidSent) { // the console runs "#..." as Lua: tell the scripts which file is ours
+		void *sys = getISystem(), *con = sys ? ((void *(__fastcall *)(void *, void *))VFN(sys, 0x60))(sys, 0) : 0;
+		void *args[1];
+		char line[40];
+		if (!con)
+			return;
+		args[0] = (void *)GetCurrentProcessId();
+		wvsprintfA(line, "#COOP_AsiPid=%u", (va_list)args);
+		((void(__fastcall *)(void *, void *, const char *, int, int))VFN(con, 0x80))(con, 0, line, 0, 1);
+		g_pidSent = 1;
+	}
+	f = CreateFileA(g_seek, 0x80000000, 0, 0, 3, 0x80, 0); // GENERIC_READ, OPEN_EXISTING
+	if (f == (HANDLE)-1)
+		return;
+	ReadFile(f, buf, sizeof buf - 1, &n, 0);
+	CloseHandle(f);
+	DeleteFileA(g_seek);
+	buf[n] = 0;
+	for (i = 0; i <= n; i++)
+		if (buf[i] == '\n' || buf[i] == '\r' || !buf[i]) {
+			buf[i] = 0;
+			if (i > from)
+				seekLine(buf + from);
+			from = i + 1;
+		}
+}
+
 static BYTE __fastcall hGameUpdate(void *game, void *edx)
 {
 	BYTE r = oGameUpdate(game, edx); // after the frame, as the console runs typed lines
 	jumpTick();
+	seekTick();
 	if (GetTickCount() - g_joinTick > 500) {
 		g_joinTick = GetTickCount();
 		runJoin(g_joinOwn);
@@ -1033,6 +1100,9 @@ BOOL __stdcall DllMain(HANDLE self, DWORD reason, void *reserved)
 	for (cut = 0; cut < n; cut++)
 		g_joinOwn[cut] = path[cut];
 	wvsprintfA(g_joinOwn + n, "\\Mods\\FarCryCoop\\join_%u.txt", (va_list)(args + 1));
+	for (cut = 0; cut < n; cut++)
+		g_seek[cut] = path[cut];
+	wvsprintfA(g_seek + n, "\\Mods\\FarCryCoop\\seek_%u.txt", (va_list)(args + 1));
 	wvsprintfA(path + n, "\\Mods\\FarCryCoop\\npmask.txt", 0);
 	{
 		HANDLE f = CreateFileA(path, 0x80000000, 1, 0, 3, 0x80, 0);
