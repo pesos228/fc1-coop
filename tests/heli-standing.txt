@@ -1,0 +1,15 @@
+# Training, listen host + 1 client: a standing helicopter stands still on the client too. Its copy
+# there got a one-frame upward velocity of ~30 m/s every few seconds, rose 1.7-2.7 m for a frame
+# and was put back by the next snapshot: it flickered (docs/findings.md). Counted here frame by
+# frame: Gunship6 jumping more than 0.5 m between two frames.
+# OPEN: fails until the flicker is fixed (2026-10-29: 4 jumps in 45 s; docs/findings.md (6)).
+# Run from the repo root: tools/bin/harness.exe test tests/heli-standing.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+lua client1 COOP_HJ=0 COOP_HG=System:GetEntityByName("Gunship6") local old=ClientStuff.OnUpdate ClientStuff.OnUpdate=function(self) local z=COOP_HG:GetPos().z if COOP_HZ and abs(z-COOP_HZ)>0.5 then COOP_HJ=COOP_HJ+1 end COOP_HZ=z return %old(self) end
+sleep 45s
+expect client1 COOP_HJ => 0
+expect-diff max=0.5 class=^(Gunship|CargoChopper|MountedWeaponVehicle)$
+expect-no-events
+down
