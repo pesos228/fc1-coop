@@ -987,6 +987,7 @@ function GameRules:OnUpdate(DeltaTime)
 	CoopRun("ai health sweep", CoopSyncAIHealth)
 	-- before "drops": that one moves COOP_DropResend on
 	CoopRun("heli guns", function() CoopSyncHeliGuns(COOP_DropResend[1] and _time >= COOP_DropResend[1]) end)
+	CoopRun("heli rotors", function() CoopSyncHeliRotors(COOP_DropResend[1] and _time >= COOP_DropResend[1]) end)
 	CoopRun("drops", CoopSyncDrops)
 	CoopRun("join near team", CoopJoinNearTeam)
 	CoopRun("announce connecting", CoopAnnounceConnecting)
@@ -1454,6 +1455,26 @@ function CoopSyncHeliGuns(all)
 		end
 	end
 	if (k > 0) then CoopSendPacked("MWBIND", out); end
+end
+
+-- A helicopter's rotor (rotor shader, engine sound, dust under it) is started and stopped by map
+-- events on the server: Gunship:Event_GoPatrol and the like call HC.StartRotor, HC:Land stops it.
+-- A client copy never got them and flew with the rotor still and silent (Pier: client rotorOn 0,
+-- rotorSpeed 0 while the server had 1 and 1616). The server tells the clients when it changes
+-- ("HROTOR <heli> <0|1> ...", COOP ClientStuff); a joining client gets them all again with the
+-- gun binds.
+COOP_RotorSent = {} -- heli id -> rotorOn sent; this file runs on every map load
+function CoopSyncHeliRotors(all)
+	local out, k = {}, 0;
+	for i, e in System:GetEntities() do
+		if ((e.classname == "Gunship" or e.classname == "CargoChopper") and e.rotorOn
+			and (all or COOP_RotorSent[e.id] ~= e.rotorOn)) then
+			COOP_RotorSent[e.id] = e.rotorOn;
+			k = k + 1;
+			out[k] = e.id.." "..e.rotorOn;
+		end
+	end
+	if (k > 0) then CoopSendPacked("HROTOR", out); end
 end
 
 -- The crews of the level's vehicles died in the first frame of a co-op map (Training: the Humvee

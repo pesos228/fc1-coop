@@ -311,6 +311,32 @@ ClientStuff.ServerCommandTable["MWBIND"] = function(String, tk)
 	end
 end
 
+-- a helicopter's rotor started or stopped on the server ("HROTOR <heli> <0|1> ...", COOP gamerules
+-- CoopSyncHeliRotors): do the same to our copy; stopping takes the engine sound away as HC:Land does
+ClientStuff.ServerCommandTable["HROTOR"] = function(String, tk)
+	if (Game:IsServer()) then return; end
+	local i = 2;
+	while (tk[i + 1]) do
+		local heli, on = System:GetEntity(tonumber(tk[i]) or 0), tonumber(tk[i + 1]);
+		if (heli and heli.rotorOn and HC and heli.rotorOn ~= on) then
+			if (on == 1) then
+				HC.StartRotor(heli);
+			else
+				HC.StopRotor(heli);
+				if (heli.Properties.bFadeEngineSound == 0) then
+					heli.CurrEngineFade = heli.FadeEngineTime;
+					heli.FadeDir = 2;
+				else
+					if (heli.sound_engine_stop) then heli:PlaySound(heli.sound_engine_stop); end
+					if (heli.sound_engine) then Sound:StopSound(heli.sound_engine); end
+				end
+			end
+			CoopMonEvent("C", "heli rotor "..heli:GetName().." "..on);
+		end
+		i = i + 2;
+	end
+end
+
 -- AI animation started by the server (melee swing, see COOP gamerules CoopUpdateMelee)
 ClientStuff.ServerCommandTable["ANIM"] = function(String, toktable)
 	local e = System:GetEntity(tonumber(toktable[2]) or 0);
