@@ -37,6 +37,16 @@ function CoopSkipVote()
 	Client:SendCommand("SKIPVOTE "..(COOP_MySkipVote or 0));
 	CoopMonEvent("C", "skip vote "..(COOP_MySkipVote or 0));
 end
+-- The single-player skip still worked for one player: the host pressed space and only its own
+-- cutscene stopped (2026-10-29, the binding above had not held). Whatever the key, it runs the
+-- SkipCutScene console command, which is Lua Movie:StopAllCutScenes() (SDK GameActionInput.cpp):
+-- every such call votes instead. The vote's own stop goes through CoopStopCutScenes (COOP gamerules
+-- CoopCountSkipVote, SEQSKIP here). Once: this file reloads with every map.
+if (not COOP_OrigStopAllCutScenes) then
+	COOP_OrigStopAllCutScenes = Movie.StopAllCutScenes;
+	Movie.StopAllCutScenes = function(self) CoopSkipVote(); end
+end
+function CoopStopCutScenes() COOP_OrigStopAllCutScenes(Movie); end
 
 -- The weapon a client spawned with stayed invisible until the player switched weapons (River,
 -- 3 of 3 first spawns): BasicWeapon.Client:OnActivate shows the first-person weapon only for a
@@ -345,7 +355,7 @@ end
 ClientStuff.ServerCommandTable["SEQSKIP"] = function(String, toktable)
 	COOP_MySkipVote = nil;
 	CoopMonEvent("C", "cutscene skipped");
-	if (not Game:IsServer()) then Movie:StopAllCutScenes(); end
+	if (not Game:IsServer()) then CoopStopCutScenes(); end
 end
 ClientStuff.ServerCommandTable["SEQSTOP"] = function(String, toktable)
 	if (not Game:IsServer()) then Movie:StopSequence(strsub(String, 9)); end

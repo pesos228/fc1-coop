@@ -1497,7 +1497,8 @@ function CoopCountSkipVote(server_slot, v)
 	if (c >= need) then
 		COOP_SkipVotes = {};
 		CoopMonEvent("S", "cutscene skipped by "..c.." of "..n);
-		Movie:StopAllCutScenes();
+		-- not Movie:StopAllCutScenes: on a game with a player that votes (COOP ClientStuff)
+		if (CoopStopCutScenes) then CoopStopCutScenes(); else Movie:StopAllCutScenes(); end
 		Server:BroadcastCommand("SEQSKIP");
 	else
 		-- the HUD is hidden in a cutscene; its subtitles are not (COOP ClientStuff MSUB)
