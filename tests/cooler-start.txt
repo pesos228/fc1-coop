@@ -1,0 +1,13 @@
+# Cooler: the players survive the map start. While they waited for each other (and in the
+# intro) the mutants' rockets hit the spawn spot (explosions, 200 damage): both died.
+# Run from the repo root: tools/bin/harness.exe test tests/cooler-start.txt
+up -mode host -map cooler -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("cooler")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 150s
+sleep 40s
+expect server (_localplayer.cnt.health > 0) and 1 => 1
+expect server (Harness:RemotePlayer().cnt.health > 0) and 1 => 1
+expect client1 (_localplayer.cnt.health > 0) and 1 => 1
+expect server tonumber(getglobal("ai_ignoreplayer")) => 0
+expect-no-events
+down

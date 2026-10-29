@@ -886,6 +886,7 @@ function CoopWaitOver()
 	if (getn(list) == 0) then return; end
 	if (not (getn(list) >= COOP_ExpectPlayers or _time >= COOP_ExpectTimeout or COOP_ForceStart or COOP_PendingLoad)) then return; end
 	COOP_WaitDone, COOP_ForceStart = 1, nil;
+	if (COOP_WaitIgnore) then setglobal("ai_ignoreplayer", 0); COOP_WaitIgnore = nil; end
 	if (next(COOP_WaitHold) and getn(list) > 1 and not COOP_PendingLoad) then
 		CoopGather();
 		CoopAnnounce(format("Starting with %d of %d players", getn(list), COOP_ExpectPlayers));
@@ -895,6 +896,12 @@ function CoopWaitOver()
 end
 function CoopWaitTick()
 	if (CoopWaitOver()) then return; end
+	-- the AI leaves the waiting players alone: on Cooler the mutants' rockets hit the spawn spot,
+	-- where single player shows the intro at once (NO_PLAYER: ai_ignoreplayer, the player hidden)
+	if (not COOP_WaitIgnore and tonumber(getglobal("ai_ignoreplayer")) ~= 1) then
+		setglobal("ai_ignoreplayer", 1);
+		COOP_WaitIgnore = 1;
+	end
 	local list = CoopPlayers();
 	for i, P in list do
 		if (BasicPlayer.IsAlive(P)) then
@@ -945,7 +952,10 @@ function GameRules:OnUpdate(DeltaTime)
 	COOP_AIPlayers = CoopPlayers() -- for CoopAIPlayer; every frame, players respawn as new entities
 	CoopRun("monitor", function() CoopMonitor("S") end)
 	CoopRun("update keys", CoopUpdateKeys)
-	if not COOP_WaitDone then -- waiting for the players (CoopWaitTick): nobody gets hurt
+	-- nobody gets hurt while waiting for the players (CoopWaitTick) or while the host is in a
+	-- cutscene (its NO_HUD flag): single player hides its player then (NO_PLAYER), here the players
+	-- stand where they are, and on Cooler the mutants' rockets of the intro killed both
+	if not COOP_WaitDone or (_localplayer and tonumber(getglobal("cl_display_hud")) == 0) then
 		for i, P in CoopPlayers() do
 			if P.cnt and P.cnt.health > 0 then P.cnt.health = P.cnt.max_health; end
 		end
