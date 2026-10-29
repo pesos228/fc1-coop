@@ -785,8 +785,8 @@ end
 -- So the server tells the clients where each of them has come to rest ("PPOS <id> x y z ax ay az
 -- ...", as many as fit, COOP ClientStuff): spawned pickups (id from 65535 down, any BasePickup
 -- class: ammo boxes too) and the rigid props of the level, once at rest and again whenever they
--- come to rest somewhere new; a drop that is still moving 5 s after it fell (a deck under way),
--- every second. A BasicEntity that is not a rigid body (Properties.Physics.bRigidBody 0) is left
+-- come to rest somewhere new; one that is still moving 5 s after it was first seen (a deck under
+-- way, a pontoon of River on the water), every second. A BasicEntity that is not a rigid body (Properties.Physics.bRigidBody 0) is left
 -- out: the level's sequences move those (Training first_cutscene, BasicEntity182), and a rest
 -- place set before the cutscene sent the client's copy 1000 m away.
 -- A joining client gets them all again 5 and 15 s after it asked for the HUD (CoopHudSync): sent
@@ -846,7 +846,8 @@ function CoopSyncDrops()
 			local still = d.x and (x - d.x) * (x - d.x) + (y - d.y) * (y - d.y) + (z - d.z) * (z - d.z) < 0.0025;
 			d.x, d.y, d.z = x, y, z;
 			local sent = d.sx and (x - d.sx) * (x - d.sx) + (y - d.sy) * (y - d.sy) + (z - d.sz) * (z - d.sz) < 0.0025;
-			if ((still and not sent) or (d.drop and not still and _time - d.born >= 5 and _time - d.t >= 1)) then
+			-- a body that never comes to rest (a deck under way, a pontoon on the water): every second
+			if ((still and not sent) or (not still and _time - d.born >= 5 and _time - d.t >= 1)) then
 				local a = e:GetAngles();
 				d.sx, d.sy, d.sz, d.t = x, y, z, _time;
 				d.s = format("%.2f %.2f %.2f %.1f %.1f %.1f", x, y, z, a.x, a.y, a.z);
@@ -1143,7 +1144,8 @@ function GameRules:OnClientCmd(server_slot, cmd)
 	if (tk[1] == "CHIT") then CoopClientHit(server_slot, tk);
 	elseif (tk[1] == "HUDSYNC") then CoopHudSync(server_slot);
 	elseif (tk[1] == "PREF") then CoopSetPrefs(server_slot, tk);
-	elseif (tk[1] == "COOPID") then CoopSetKey(server_slot, cmd); end
+	elseif (tk[1] == "COOPID") then CoopSetKey(server_slot, cmd);
+	elseif (tk[1] == "SKIPVOTE") then CoopCountSkipVote(server_slot, tonumber(tk[2])); end
 end
 
 function CoopClientHit(server_slot, tk)
@@ -1439,6 +1441,36 @@ function CoopNoTelefrag()
 end
 CoopNoTelefrag();
 
+-- Cutscenes are skipped by vote (docs/specs/lobby-and-cutscenes.md, point 4): the single-player
+-- skip key (spacebar, "\SkipCutScene" -> Movie:StopAllCutScenes(), SDK GameActionInput.cpp)
+-- votes instead (COOP ClientStuff CoopSkipVote, "SKIPVOTE 1/0", pressed again it takes the vote
+-- back; the count here has its own name: on a listen host both files share the globals, and one
+-- CoopSkipVote for both looped through SendCommand and hung the host). When more than half of
+-- the players voted, the server stops the cutscenes the way the skip key does and so do the
+-- clients ("SEQSKIP"); every player sees the count. A new sequence starts a new vote
+-- (Movie.PlaySequence below). The host votes like anybody else.
+COOP_SkipVotes = {} -- slot id -> 1
+function CoopCountSkipVote(server_slot, v)
+	COOP_SkipVotes[server_slot:GetId()] = (v == 1) and 1 or nil;
+	local n, c = 0, 0;
+	for i, slot in Server:GetServerSlotMap() do
+		n = n + 1;
+		if (COOP_SkipVotes[slot:GetId()]) then c = c + 1; end
+	end
+	local need = floor(n / 2) + 1;
+	if (c >= need) then
+		COOP_SkipVotes = {};
+		CoopMonEvent("S", "cutscene skipped by "..c.." of "..n);
+		Movie:StopAllCutScenes();
+		Server:BroadcastCommand("SEQSKIP");
+	else
+		-- the HUD is hidden in a cutscene; its subtitles are not (COOP ClientStuff MSUB)
+		local text = format("Skip cutscene: %d/%d", c, need);
+		Server:BroadcastCommand("MSUB "..text);
+		CoopMonEvent("S", "announce "..text);
+	end
+end
+
 -- Movie sequences (e.g. the heli fly-by on Pier, started by a ProximityTrigger) play only on
 -- the machine that calls Movie:PlaySequence, and the entities they animate are not sent over
 -- the network. The server forwards every sequence start/stop to the clients ("SEQ"/"SEQSTOP",
@@ -1447,6 +1479,7 @@ if (not COOP_OrigPlaySequence) then
 	COOP_OrigPlaySequence, COOP_OrigStopSequence = Movie.PlaySequence, Movie.StopSequence;
 	Movie.PlaySequence = function(self, name)
 		CoopMonEvent("S", "sequence "..tostring(name));
+		COOP_SkipVotes = {}; -- a new vote for every sequence (CoopCountSkipVote)
 		COOP_OrigPlaySequence(self, name);
 		Server:BroadcastCommand("SEQ "..tostring(name));
 	end

@@ -23,7 +23,18 @@ function ClientStuff:OnInit()
 	if (Game:IsServer()) then g_MapChanged = 1; end
 	-- a joined player must not start the next level itself at a mission end (CoopStartLevel)
 	if (not Game:IsServer()) then COOP_Joined = 1; CoopWrapStartLevel(); end
+	-- the skip key votes (COOP gamerules CoopCountSkipVote) instead of skipping for this player only
+	if (Input) then Input:BindCommandToKey("#CoopSkipVote()", "spacebar", 1); end
 	CoopMonEvent("C", "map");
+end
+
+-- our vote to skip the cutscene that is playing: only while one plays (its NO_HUD flag hides the
+-- HUD, CMovieUser::BeginCutScene, SDK); pressed again, the vote is taken back
+function CoopSkipVote()
+	if (tonumber(getglobal("cl_display_hud")) ~= 0 or not Client) then return; end
+	COOP_MySkipVote = (not COOP_MySkipVote) and 1 or nil;
+	Client:SendCommand("SKIPVOTE "..(COOP_MySkipVote or 0));
+	CoopMonEvent("C", "skip vote "..(COOP_MySkipVote or 0));
 end
 
 -- The weapon a client spawned with stayed invisible until the player switched weapons (River,
@@ -248,7 +259,19 @@ end
 if (not Game:IsServer()) then setglobal("mov_NoCutscenes", 0); end
 ClientStuff.ServerCommandTable["SEQ"] = function(String, toktable)
 	CoopMonEvent("C", "sequence "..strsub(String, 5));
+	COOP_MySkipVote = nil; -- a new vote (CoopSkipVote)
 	if (not Game:IsServer()) then Movie:PlaySequence(strsub(String, 5)); end
+end
+-- a line from the server shown as a subtitle: seen in a cutscene too (COOP gamerules CoopCountSkipVote)
+ClientStuff.ServerCommandTable["MSUB"] = function(String, toktable)
+	if (Hud and Hud.AddSubtitle) then Hud:AddSubtitle(strsub(String, 6), 3); end
+	CoopMonEvent("C", "subtitle "..strsub(String, 6));
+end
+-- the players voted to skip the cutscene (COOP gamerules CoopCountSkipVote)
+ClientStuff.ServerCommandTable["SEQSKIP"] = function(String, toktable)
+	COOP_MySkipVote = nil;
+	CoopMonEvent("C", "cutscene skipped");
+	if (not Game:IsServer()) then Movie:StopAllCutScenes(); end
 end
 ClientStuff.ServerCommandTable["SEQSTOP"] = function(String, toktable)
 	if (not Game:IsServer()) then Movie:StopSequence(strsub(String, 9)); end

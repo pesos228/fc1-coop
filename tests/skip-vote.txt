@@ -1,0 +1,26 @@
+# The intro cutscene is skipped by vote (docs/specs/lobby-and-cutscenes.md, point 4): one vote
+# of two players is not enough, pressing again takes it back, both votes skip it for everybody.
+# Run from the repo root: tools/bin/harness.exe test tests/skip-vote.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+expect-log client1 sequence.first_cutscene 20s
+sleep 2s
+expect client1 tonumber(getglobal("cl_display_hud")) => 0
+lua client1 CoopSkipVote()
+expect-log server Skip.cutscene:.1/2 5s
+# shown as a subtitle: the HUD is hidden in a cutscene
+expect-log client1 subtitle.Skip.cutscene:.1/2 5s
+lua client1 CoopSkipVote()
+expect-log server Skip.cutscene:.0/2 5s
+lua client1 CoopSkipVote()
+sleep 2s
+expect server tonumber(getglobal("cl_display_hud")) => 0
+lua server CoopSkipVote()
+expect-log server cutscene.skipped.by.2.of.2 5s
+expect-log client1 cutscene.skipped 5s
+sleep 3s
+expect server tonumber(getglobal("cl_display_hud")) => 1
+expect client1 tonumber(getglobal("cl_display_hud")) => 1
+expect-no-events
+down
