@@ -1,0 +1,17 @@
+# Steam: the patrol boat's crew on a client. In about half of the longer runs (2026-10-30) the
+# client logged "SetParams(pe_params_pos): (Merc_Cover.MercCover_Falcon_1 ...) Validation Error:
+# pos is invalid" every frame from the map start: the boat's gunner stayed at its level spot
+# (240 m from the server's, which sits in the boat) and got an invalid position each frame (the
+# fake entering jump divides by the time to the seat). In 3 runs the flood ended in Lua "stack
+# overflow" all over the client scripts and the client dropped out after 25-80 s.
+# OPEN: fails until fixed. Run from the repo root: tools/bin/harness.exe test tests/steam-boat-crew.txt
+up -mode host -map steam -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("steam")
+wait server players>=2 -t 90s
+wait client1 players>=2 -t 120s
+sleep 60s
+# the client is still in the game
+wait client1 players>=2 -t 10s
+# the crew sits in the boat on both sides (the boat itself may lag while it moves)
+expect-diff max=8 class=^(MercCover|MercScout)$
+expect-no-events
+down
