@@ -2,7 +2,8 @@
 # there got a one-frame upward velocity of ~30 m/s every few seconds, rose 1.7-2.7 m for a frame
 # and was put back by the next snapshot: it flickered (docs/findings.md). Counted here frame by
 # frame: Gunship6 jumping more than 0.5 m between two frames.
-# OPEN: fails until the flicker is fixed (2026-10-29: 4 jumps in 45 s; docs/findings.md (6)).
+# Cause: the client copy's AI stayed on and drove it (docs/findings.md (7)); before the fix
+# 4 jumps in 45 s on the laptop, 196 at ~300 fps.
 # Run from the repo root: tools/bin/harness.exe test tests/heli-standing.txt
 up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
 wait server players>=2 -t 60s
