@@ -22,10 +22,9 @@ end
 -- anyone (the single-player game wakes them around its local player). Once a second wake
 -- the puppets near any player. Hidden puppets (Event_Hide) are left to their mission triggers.
 COOP_WAKE_RADIUS = 150 -- ponytail: fixed radius, tune if far snipers or patrols stay frozen
--- Puppets placed asleep (bSleepOnSpawn) wait for a mission trigger, and some of those triggers
--- never reach them on a dedicated server (Training's first village slept with the player
--- standing in it and shooting them). Wake them once a player is this close, or hits them.
-COOP_SLEEPER_RADIUS = 40
+-- Puppets placed asleep (bSleepOnSpawn) are left out: in single player they wake once they are on
+-- the local player's screen, so the host's own view still does that, and a remote client reports
+-- the sleepers it sees (COOP ClientStuff CoopReportSeen, CoopWakeSeen here). A hit wakes them too.
 COOP_NextWake = 0
 
 -- AI animation keyframes without animations. A dedicated server never ticks character
@@ -1000,18 +999,17 @@ function GameRules:OnUpdate(DeltaTime)
 		players[i] = {x = t.x, y = t.y, z = t.z}
 	end
 	if getn(players) == 0 then return end
-	local wake2, sleeper2 = COOP_WAKE_RADIUS * COOP_WAKE_RADIUS, COOP_SLEEPER_RADIUS * COOP_SLEEPER_RADIUS
+	local wake2 = COOP_WAKE_RADIUS * COOP_WAKE_RADIUS
 	for i, e in System:GetEntities() do
 		if e.ai and not e.COOP_AnimWrapped then CoopWrapAnim(e) end
 		if e.classname == "GameEvent" and not e.COOP_Wrapped then CoopWrapGameEvent(e) end
 		if (e.Event_Hide or e.Event_UnHide) and not e.COOP_HideWrapped then CoopWrapHide(e) end
 		if e.Behaviour and e.cnt and e.Properties and e.Properties.species and not e.COOP_Awake
-			and e.Enemy_Hidden ~= 1 then
-			local r2 = (e.Properties.bSleepOnSpawn == 1) and sleeper2 or wake2
+			and e.Enemy_Hidden ~= 1 and e.Properties.bSleepOnSpawn ~= 1 then
 			local t = e:GetPos()
 			for j = 1, getn(players) do
 				local q = players[j]
-				if (t.x-q.x)*(t.x-q.x) + (t.y-q.y)*(t.y-q.y) + (t.z-q.z)*(t.z-q.z) < r2 then
+				if (t.x-q.x)*(t.x-q.x) + (t.y-q.y)*(t.y-q.y) + (t.z-q.z)*(t.z-q.z) < wake2 then
 					-- one bad entity must not stop the wake-up of the rest: catch and log once
 					call(CoopWake, {e}, "x", CoopWakeError)
 					break
@@ -1071,6 +1069,17 @@ function CoopWake(e)
 	e.COOP_Awake = 1 -- set first, so a failing entity is not retried every second
 	e:TriggerEvent(AIEVENT_WAKEUP)
 	e:TriggerEvent(AIEVENT_ENABLE)
+end
+
+-- "SEEN <id> ...": sleepers a remote client has on its screen (COOP ClientStuff CoopReportSeen)
+function CoopWakeSeen(tk)
+	for i = 2, getn(tk) do
+		local e = System:GetEntity(tonumber(tk[i]) or 0);
+		if (e and e.ai and e.Properties and e.Properties.bSleepOnSpawn == 1 and not e.COOP_Awake
+			and e.Enemy_Hidden ~= 1 and e.cnt and e.cnt.health > 0) then
+			call(CoopWake, {e}, "x", CoopWakeError);
+		end
+	end
 end
 
 function CoopWakeError(msg)
@@ -1155,7 +1164,8 @@ function GameRules:OnClientCmd(server_slot, cmd)
 	elseif (tk[1] == "HUDSYNC") then CoopHudSync(server_slot);
 	elseif (tk[1] == "PREF") then CoopSetPrefs(server_slot, tk);
 	elseif (tk[1] == "COOPID") then CoopSetKey(server_slot, cmd);
-	elseif (tk[1] == "SKIPVOTE") then CoopCountSkipVote(server_slot, tonumber(tk[2])); end
+	elseif (tk[1] == "SKIPVOTE") then CoopCountSkipVote(server_slot, tonumber(tk[2]));
+	elseif (tk[1] == "SEEN") then CoopWakeSeen(tk); end
 end
 
 function CoopClientHit(server_slot, tk)
@@ -1186,7 +1196,7 @@ function GameRules:OnDamage(hit)
 	local s, t = hit.shooter, hit.target;
 	if (s and not s.ai and s ~= _localplayer and t and t.ai and not hit.COOP_ClientHit) then return end
 	if (t and t.ai and not t.COOP_Awake and t.Enemy_Hidden ~= 1) then
-		call(CoopWake, {t}, "x", CoopWakeError); -- a sleeper that gets shot wakes up (COOP_SLEEPER_RADIUS)
+		call(CoopWake, {t}, "x", CoopWakeError); -- a sleeper that gets shot wakes up
 	end
 	local r = COOP_OldOnDamage(self, hit);
 	if (t and t.ai) then COOP_HPDirty[t.id] = t; end -- the clients get the new health this frame (CoopSyncAIHealth)

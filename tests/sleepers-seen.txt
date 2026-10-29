@@ -1,0 +1,33 @@
+# Training, listen host + 1 client: AI placed asleep (bSleepOnSpawn) wake up when a player sees
+# them, as in single player. There the first village wakes once it is on the local player's screen:
+# the player at AreaTrigger80 with its back to the village, 0 of 5 sleepers move in 15 s; facing it,
+# 3 of 5 (the trigger itself disabled; docs/findings.md). A remote player is nobody's local player.
+# Run from the repo root: tools/bin/harness.exe test tests/sleepers-seen.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 30s
+wait client1 players>=2 -t 30s
+sleep 5s
+lua server COOP_God=1
+# the host away from the village (~95 m, ~190 m from the start), its back to it: its own view
+# wakes them otherwise, as in single player
+lua server _localplayer:SetAngles({x=0,y=0,z=100}) _localplayer:SetPos({x=482,y=927,z=30})
+lua server local tr=System:GetEntityByName("AreaTrigger80") tr:Event_Disable(tr) local t=tr:GetPos() TX,TY,TZ=t.x,t.y,t.z SL={} SLN=0 for i,e in System:GetEntities() do if e.Properties and e.Properties.bSleepOnSpawn==1 and e.Behaviour then local p=e:GetPos() if (p.x-TX)*(p.x-TX)+(p.y-TY)*(p.y-TY)<3600 then SLN=SLN+1 SL[e.id]={p.x,p.y,p.z} end end end
+lua server function Moved() local m=0 for id,a in SL do local p=System:GetEntity(id):GetPos() if (p.x-a[1])*(p.x-a[1])+(p.y-a[2])*(p.y-a[2])>1 then m=m+1 end end return m end
+expect server SLN => 5
+sleep 10s
+expect server Moved() => 0
+
+# The client at the trigger with its back to the village: nobody wakes.
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=TX,y=TY,z=TZ+1}, {x=0,y=0,z=280})
+sleep 15s
+expect server Moved() => 0
+
+# It turns round: the sleeper in front of it (boxcarrier) wakes and comes for it. How many of the
+# rest it rouses varies from run to run (3 or more in two runs, fewer in a third), so only that
+# one is counted.
+lua client1 _localplayer:SetAngles({x=0,y=0,z=100})
+sleep 15s
+expect server System:GetEntityByName("boxcarrier").COOP_Awake => 1
+expect server (Moved() >= 1) and 1 => 1
+expect-no-events
+down

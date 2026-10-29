@@ -56,11 +56,67 @@ function CoopShowSpawnWeapon()
 	end
 end
 
+-- AI placed asleep (bSleepOnSpawn) wake up in single player once they are on the local player's
+-- screen (Training's first village: 0 of 5 move with the player's back to it, 3 of 5 facing it;
+-- docs/findings.md). The server only knows what its own player sees, so a remote client tells it
+-- which sleepers it sees ("SEEN <id> ...", COOP gamerules CoopWakeSeen): in front of its eyes
+-- (COOP_SEE_COS of the horizontal angle), closer than COOP_SEE_DIST and not behind terrain or
+-- static geometry (RayTraceCheck to the chest or the head). Each sleeper is sent once per map.
+-- System:GetViewCameraPos is no use here: on a client in the background it gave a spot 95 m away.
+COOP_SEE_DIST = 100 -- ponytail: the renderer's distance for characters is not known; tune
+-- the game's 90 degree field of view (Game:GetCameraFov) is ~42 degrees either side horizontally
+-- at 4:3 and 16:9 (CCamera::Update, SDK Cry_Camera.h); 45 leaves room for the body's width
+COOP_SEE_COS = 0.707
+function CoopReportSeen()
+	local P = _localplayer;
+	if (Game:IsServer() or not P or not P.cnt or not BasicPlayer.IsAlive(P)) then return; end
+	local nxt = COOP_NextSeen or 0;
+	if (_time < nxt and _time + 2 > nxt) then return; end
+	if (_time + 2 <= nxt) then COOP_SeenSent = {}; end -- _time restarted: a new map
+	COOP_NextSeen = _time + 0.25;
+	COOP_SeenSent = COOP_SeenSent or {};
+	local c = P:GetCameraPosition();
+	local cx, cy, cz = c.x, c.y, c.z;
+	c = {x = cx, y = cy, z = cz};
+	local d = P:GetDirectionVector();
+	local dx, dy = d.x, d.y;
+	local dl = sqrt(dx * dx + dy * dy);
+	if (dl < 0.01) then return; end
+	local words, k = {}, 0;
+	for i, e in System:GetEntities() do
+		if (e.Properties and e.Properties.bSleepOnSpawn == 1 and e.cnt and e.cnt.health and e.cnt.health > 0
+			and not COOP_SeenSent[e.id]) then
+			local p = e:GetPos();
+			local x, y, z = p.x - cx, p.y - cy, p.z - cz;
+			local l = sqrt(x * x + y * y);
+			if (l < COOP_SEE_DIST and (x * dx + y * dy) >= COOP_SEE_COS * l * dl
+				and (System:RayTraceCheck(c, {x = p.x, y = p.y, z = p.z + 1}, P.id, e.id)
+					or System:RayTraceCheck(c, {x = p.x, y = p.y, z = p.z + 1.6}, P.id, e.id))) then
+				COOP_SeenSent[e.id] = 1;
+				k = k + 1; words[k] = tostring(e.id);
+			end
+		end
+	end
+	if (k > 0) then
+		CoopMonEvent("C", format("seen %d sleepers from %.0f %.0f yaw %.0f: %s", k, cx, cy, P:GetAngles().z, words[1]));
+		-- a command is cut at 255 characters (COOP gamerules CoopSendPacked)
+		local msg = "SEEN";
+		for i = 1, k do
+			if (msg ~= "SEEN" and strlen(msg) + 1 + strlen(words[i]) > 240) then Client:SendCommand(msg); msg = "SEEN"; end
+			msg = msg.." "..words[i];
+		end
+		Client:SendCommand(msg);
+	end
+end
+
 Coop_DefaultClientOnUpdate = ClientStuff.OnUpdate;
 function ClientStuff:OnUpdate()
 	Coop_DefaultClientOnUpdate(self);
 	CoopMonitor("C");
 	CoopShowSpawnWeapon();
+	call(CoopReportSeen, {}, "x", function(msg)
+		if (not COOP_SeenErrorLogged) then COOP_SeenErrorLogged = 1; System:LogAlways("coop: seen sleepers error: "..tostring(msg)); end
+	end);
 	local nxt = COOP_NextBoatSeats or 0;
 	if (not Game:IsServer() and (_time > nxt or _time + 2 < nxt)) then -- the host does it in gamerules
 		COOP_NextBoatSeats = _time + 1; -- second test: _time restarts with every map load
