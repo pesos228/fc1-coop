@@ -1,0 +1,35 @@
+# Training: keycards (and PickupGeneric objects) are never lost (docs/specs/mission-items.md).
+# A player who dies keeps them after the respawn (a new entity); a player who leaves hands them to
+# the nearest living player. Stock co-op: the respawned entity and the next player had none, so a
+# dead or gone key holder could lock a door for good (only one key per door on a map).
+# OPEN: fails until fixed (not started; docs/specs/mission-items.md). Draft: step 17 times out —
+# a dead client stays dead (health 0 after 60 s): find how a co-op client respawns (a key press?
+# Harness:Use / fire through the ASI) before the rest of the scenario can run.
+# Run from the repo root: tools/bin/harness.exe test tests/mission-items.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 5s
+lua server COOP_God=1 COOP_TestOld=Harness:RemotePlayer().id Harness:RemotePlayer().keycards[1]=1 Harness:RemotePlayer().objects[1]=1
+sleep 2s
+
+# 1. The client dies and respawns: same key, same object.
+lua server local t=Harness:RemotePlayer() local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 2s
+expect server Harness:RemotePlayer().cnt.health => 0
+wait client1 me.health>=1 -t 60s
+sleep 3s
+expect server (Harness:RemotePlayer().id ~= COOP_TestOld) and 1 => 1
+expect server Harness:RemotePlayer().keycards[1] => 1
+expect server Harness:RemotePlayer().objects[1] => 1
+
+# 2. The client leaves: the host gets them, and everybody is told.
+expect server _localplayer.keycards[1] => nil
+cmd client1 disconnect
+wait server players=1 -t 30s
+sleep 3s
+expect server _localplayer.keycards[1] => 1
+expect server _localplayer.objects[1] => 1
+expect-log server announce.*key 5s
+expect-no-events
+down
