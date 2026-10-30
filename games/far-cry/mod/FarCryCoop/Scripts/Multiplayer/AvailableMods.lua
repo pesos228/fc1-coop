@@ -127,9 +127,12 @@ function CoopQuickLoad() CoopLoad("quick"); end
 -- with the mod on in the same session gets no level change at a mission end
 function CoopStartLevel(msg)
 	if (type(msg) ~= "string") then return; end
-	local s, e, map = strfind(msg, "^StartLevel%s+(%S+)");
+	-- most maps end with "StartLevelFade <map>" (Game.cpp: the same with a fade out)
+	local s, e, map = strfind(msg, "^StartLevel%a*%s+(%S+)");
 	if (not map) then return; end
-	if (not COOP_Started) then
+	-- a host started by CoopMap (the launcher) has COOP_Map, which stays set after leaving: only
+	-- while it serves a game, or New game from the menu would only set COOP_PendingMap
+	if (not COOP_Started and not (COOP_Map and Game:IsMultiplayer() and Game:IsServer())) then
 		if (COOP_Joined and not Game:IsServer()) then
 			System:LogAlways("coop: ignored "..msg..", the host changes the level");
 			return 1;

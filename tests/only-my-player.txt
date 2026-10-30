@@ -1,0 +1,22 @@
+# Training: a ProximityTrigger with bOnlyMyPlayer=1 fires for any player, not just the host.
+# Stock IsValidSource accepts only _localplayer, i.e. the host (and nobody on a dedicated server).
+# 19 of 20 maps have such triggers, up to 41 per map (Carrier), among them the end of Training:
+# ProximityTrigger111 on the carrier -> DelayTrigger4 -> ProximityTrigger39 -> DelayTrigger3 ->
+# Mission:Event_MissionFinished -> StartLevelFade Carrier.
+# Run from the repo root: tools/bin/harness.exe test tests/only-my-player.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 5s
+lua server COOP_God=1
+expect server System:GetEntityByName("ProximityTrigger111").bTriggered => 0
+# The joined player walks onto the carrier's end trigger (the host stays on the beach).
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=1173.2,y=911.8,z=14.5})
+sleep 3s
+expect server System:GetEntityByName("ProximityTrigger111").bTriggered => 1
+# 2 s + 3 s of delays, then the mission end loads Carrier for both.
+wait server level=carrier -t 120s
+wait client1 level=carrier -t 180s
+wait client1 players>=2 -t 120s
+expect-no-events
+down

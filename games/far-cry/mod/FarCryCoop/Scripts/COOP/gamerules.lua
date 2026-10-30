@@ -251,6 +251,23 @@ function CoopWrapGameEvent(e)
 		_localplayer = saved;
 	end
 end
+-- Proximity triggers with bOnlyMyPlayer (19 of 20 maps, up to 41 on Carrier, the end of Training
+-- among them) accept only _localplayer in IsValidSource: the host on a listen server, nobody on a
+-- dedicated one. Any player is "my player" in coop: check with the entering one as _localplayer.
+-- Not for use-button triggers and ProximityKeyTrigger: the first one in becomes self.Who, the only
+-- one who can press use (and whose keycards count), so a client standing in an elevator or at a
+-- locked door would block the host until it left; those stay host-only as before.
+function CoopWrapProximity(e)
+	e.COOP_ProxWrapped = 1;
+	local old = e.IsValidSource;
+	e.IsValidSource = function(self, entity)
+		local saved = _localplayer;
+		if (entity and entity.type == "Player" and not entity.ai) then _localplayer = entity; end
+		local r = call(%old, {self, entity}, "x", function(msg) System:LogAlways("coop: trigger error: "..tostring(msg)); end);
+		_localplayer = saved;
+		return r or 0;
+	end
+end
 function CoopWrapBehaviour(bname, fname, old)
 	local where = bname.."."..fname;
 	return function(...)
@@ -1006,6 +1023,8 @@ function GameRules:OnUpdate(DeltaTime)
 		if e.ai and not e.COOP_AnimWrapped then CoopWrapAnim(e) end
 		if e.classname == "GameEvent" and not e.COOP_Wrapped then CoopWrapGameEvent(e) end
 		if (e.Event_Hide or e.Event_UnHide) and not e.COOP_HideWrapped then CoopWrapHide(e) end
+		if e.IsValidSource and e.Properties and e.Properties.bOnlyMyPlayer and not e.COOP_ProxWrapped
+			and e.Properties.bActivateWithUseButton ~= 1 and e.classname ~= "ProximityKeyTrigger" then CoopWrapProximity(e) end
 		if e.Behaviour and e.cnt and e.Properties and e.Properties.species and not e.COOP_Awake
 			and e.Enemy_Hidden ~= 1 and e.Properties.bSleepOnSpawn ~= 1 then
 			local t = e:GetPos()

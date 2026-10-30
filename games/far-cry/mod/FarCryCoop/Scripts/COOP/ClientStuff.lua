@@ -21,8 +21,11 @@ function ClientStuff:OnInit()
 	-- A listen host plays the level intro as in single player: Mission:OnMapChange plays it only
 	-- when g_MapChanged is set, which single player's ClientStuff:OnMapChange does on a map change
 	if (Game:IsServer()) then g_MapChanged = 1; end
-	-- a joined player must not start the next level itself at a mission end (CoopStartLevel)
-	if (not Game:IsServer()) then COOP_Joined = 1; CoopWrapStartLevel(); end
+	-- a joined player must not start the next level itself at a mission end (CoopStartLevel); the
+	-- host changes it for everyone (it starts with CoopMap from the launcher, not coop_start, so
+	-- without this a mission end loaded the next map as single player and dropped the clients)
+	if (not Game:IsServer()) then COOP_Joined = 1; end
+	CoopWrapStartLevel();
 	-- the skip key votes (COOP gamerules CoopCountSkipVote) instead of skipping for this player only
 	if (Input) then Input:BindCommandToKey("#CoopSkipVote()", "spacebar", 1); end
 	COOP_SeqPlayed = {}; -- a new map: its sequences (SEQ, SEQAT)
