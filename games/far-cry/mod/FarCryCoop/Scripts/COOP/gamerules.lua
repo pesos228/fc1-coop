@@ -644,6 +644,92 @@ function CoopKeepLoadout(slot)
 	if (COOP_Progress[key]) then COOP_Owed[key] = 1; end -- a dead player gets what was kept last
 end
 
+-- Keycards, mission objects (PickupGeneric) and explosives (PickupExplo) (docs/specs/mission-items.md):
+-- a player respawns as a new entity without them (without even the tables: a pickup then failed on
+-- nil), and a player who leaves took them along. Either could lock a door for good (one key per
+-- door). Once a second each slot's are copied; a new entity of that slot gets them back first. A
+-- leaving player's go to the nearest living player, or to the next one to spawn when nobody is
+-- alive. They belong to the map: this file runs on every map load.
+COOP_ITEM_TABLES = {"keycards", "objects", "explosives"}
+COOP_Items = {} -- server slot id -> {eid = entity id, keycards = {...}, ...}
+COOP_ItemsPool = nil -- a leaver's, while nobody was alive to take them
+function CoopCopyItems(P)
+	local c = {eid = P.id};
+	for i, t in COOP_ITEM_TABLES do
+		c[t] = {};
+		for k, v in (P[t] or {}) do c[t][k] = v; end
+	end
+	return c;
+end
+-- give P the items in c (keys and objects by name; explosives are a list of up to 4 slots)
+function CoopGiveItems(P, c)
+	local got = nil;
+	for i, t in COOP_ITEM_TABLES do
+		P[t] = P[t] or {};
+		for k, v in (c[t] or {}) do
+			if (v == 1) then
+				got = 1;
+				if (t == "explosives") then
+					local j = 1;
+					while (P[t][j] == 1) do j = j + 1; end
+					P[t][j] = 1;
+				else
+					P[t][k] = 1;
+				end
+			end
+		end
+	end
+	return got;
+end
+function CoopKeepItems()
+	for i, slot in Server:GetServerSlotMap() do
+		local P = System:GetEntity(slot:GetPlayerId());
+		if (P and P.type == "Player" and P.cnt) then
+			local id = slot:GetId();
+			for j, t in COOP_ITEM_TABLES do P[t] = P[t] or {}; end
+			if (COOP_Items[id] and COOP_Items[id].eid ~= P.id) then CoopGiveItems(P, COOP_Items[id]); end -- respawned
+			if (COOP_ItemsPool and P.cnt.health > 0) then CoopGiveItems(P, COOP_ItemsPool); COOP_ItemsPool = nil; end
+			COOP_Items[id] = CoopCopyItems(P);
+		end
+	end
+end
+-- In a save they are the team's: the host gets them all after the load (on a dedicated server the
+-- first player to spawn), so they never wait for a player who does not come back.
+function CoopTeamItems()
+	local c = {};
+	for i, P in CoopPlayers() do CoopGiveItems(c, CoopCopyItems(P)); end
+	if (COOP_ItemsPool) then CoopGiveItems(c, COOP_ItemsPool); end
+	return c;
+end
+-- a player leaves: the items go to the nearest living player
+function CoopHandOverItems(slot)
+	local id = slot:GetId();
+	local P = System:GetEntity(slot:GetPlayerId());
+	local c = (P and P.type == "Player") and CoopCopyItems(P) or COOP_Items[id];
+	COOP_Items[id] = nil;
+	if (not c) then return; end
+	local best, bd = nil, nil;
+	local p = P and P:GetPos() or {x = 0, y = 0, z = 0};
+	local px, py, pz = p.x, p.y, p.z; -- GetPos returns a shared table
+	for i, Q in CoopPlayers() do
+		if (Q ~= P and Q.cnt and Q.cnt.health > 0) then
+			local q = Q:GetPos();
+			local d = (q.x-px)*(q.x-px) + (q.y-py)*(q.y-py) + (q.z-pz)*(q.z-pz);
+			if (not bd or d < bd) then best, bd = Q, d; end
+		end
+	end
+	if (best) then
+		if (CoopGiveItems(best, c)) then
+			COOP_Items[Server:GetServerSlotByEntityId(best.id):GetId()] = CoopCopyItems(best);
+			CoopAnnounce(slot:GetName().." left: keys and items go to "..best:GetName());
+		end
+	elseif (COOP_ItemsPool) then
+		CoopGiveItems(COOP_ItemsPool, c);
+	else
+		COOP_ItemsPool = c;
+	end
+end
+
 -- the map changes: everybody's equipment comes along
 function CoopSaveLoadouts()
 	for i, slot in Server:GetServerSlotMap() do CoopKeepLoadout(slot); end -- slots and their keys stay
@@ -703,6 +789,7 @@ COOP_DefaultOnClientDisconnect = GameRules.OnClientDisconnect; -- the single-pla
 function GameRules:OnClientDisconnect(server_slot)
 	if (COOP_SeqSent) then COOP_SeqSent[server_slot:GetId()] = nil; end -- a rejoin gets the sequences again (CoopSendSequences)
 	call(CoopKeepLoadout, {server_slot}, "x", function(msg) System:LogAlways("coop: loadout keep error: "..tostring(msg)); end);
+	call(CoopHandOverItems, {server_slot}, "x", function(msg) System:LogAlways("coop: hand over error: "..tostring(msg)); end);
 	call(CoopWriteProgress, {"player left"}, "x", CoopWriteProgressError);
 	call(CoopAnnounce, {server_slot:GetName().." has left the game"}, "x", function(msg) System:LogAlways("coop: announce error: "..tostring(msg)); end);
 	COOP_SlotKeys[server_slot:GetId()], COOP_KeyWait[server_slot:GetId()] = nil, nil;
@@ -1120,6 +1207,7 @@ function GameRules:OnUpdate(DeltaTime)
 	CoopRun("drops", CoopSyncDrops)
 	CoopRun("join near team", CoopJoinNearTeam)
 	CoopRun("announce connecting", CoopAnnounceConnecting)
+	CoopRun("mission items", CoopKeepItems)
 	call(CoopApplyLoadouts, {}, "x", function(msg) System:LogAlways("coop: loadout error: "..tostring(msg)); end)
 	call(CoopApplyPrefs, {}, "x", function(msg) System:LogAlways("coop: prefs error: "..tostring(msg)); end)
 	call(CoopUpdateBots, {}, "x", function(msg) System:LogAlways("coop: bot error: "..tostring(msg)); end)
@@ -1418,6 +1506,7 @@ function CoopSave(name)
 		save.players[i] = L;
 	end
 	save.progress = COOP_Progress; -- also the players who are not here now
+	save.items = CoopTeamItems();
 	local nd = 0;
 	for i, e in System:GetEntities() do
 		if (e.ai and e.cnt and e.cnt.health and e.cnt.health <= 0) then nd = nd + 1; save.dead[nd] = e.id; end
@@ -1519,6 +1608,11 @@ function CoopApplyLoad()
 			local key = slot and CoopSlotKey(slot);
 			if (key and COOP_Progress[key]) then CoopGiveLoadout(P, COOP_Progress[key]); end
 		end
+	end
+	if (save.items) then
+		local H = list[1];
+		for i, P in list do if (P == _localplayer) then H = P; end end
+		CoopGiveItems(H, save.items);
 	end
 	_LastCheckPPos = new(c.pos);
 	if (c.ang) then _LastCheckPAngles = new(c.ang); end

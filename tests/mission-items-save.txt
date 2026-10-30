@@ -1,0 +1,29 @@
+# Training: keycards, mission objects and explosives are the team's in a save
+# (docs/specs/mission-items.md, point 3): the save keeps them for the team, and after the load the
+# host has them, whoever carried them (that one may never come back). Stock: nobody had them after
+# the load, while the picked-up keycard stayed gone from the map (the save removes picked-up items).
+# Run from the repo root: tools/bin/harness.exe test tests/mission-items-save.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 5s
+lua server Harness:RemotePlayer().keycards[2]=1 Harness:RemotePlayer().objects["Explosives"]=1 _localplayer.keycards=_localplayer.keycards or {} _localplayer.keycards[1]=1
+sleep 2s
+lua server CoopSave("itemtest")
+expect-log server saved.itemtest:.2.players
+down
+
+# A server from that save; the client joins again.
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopLoad("itemtest")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+expect-log server loaded.itemtest 40s
+sleep 3s
+expect server _localplayer.keycards[1] or 0 => 1
+expect server _localplayer.keycards[2] or 0 => 1
+expect server _localplayer.objects["Explosives"] or 0 => 1
+expect server Harness:RemotePlayer().keycards and Harness:RemotePlayer().keycards[2] or 0 => 0
+expect-no-events
+# the save is in the game's install: remove it, and forget it (the shutdown writes the progress into the last save)
+lua server COOP_LastSave=nil remove("Mods/FarCryCoop/save_itemtest.lua")
+down

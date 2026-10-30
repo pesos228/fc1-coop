@@ -3,7 +3,6 @@
 # player who leaves hands them to the nearest living player. Stock co-op: the respawned entity had
 # none (not even the tables) and the leaving player took them along, so a dead or gone key holder
 # could lock a door for good (only one key per door on a map).
-# OPEN: fails until fixed (2026-10-30).
 # A dead client respawns when it presses fire twice, 3 s after dying (SDK XServerSlot.cpp:
 # OnClientRequestRespawn; Default GameRules: TimeRespawn, first_request): the server makes both
 # requests here.
