@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: heal-pickup-scenario
+expected_outcome: |
+  A new tests/*.txt scenario for Training: listen host + 1 client with the FarCryCoop mod and ASI,
+  waits for both players, checks the medkit is there on the client before, makes the remote or host
+  player pick it up on the server, checks it is gone on both sides, ends with expect-no-events and down.
+  The reply says to run it from bash on the current code and expect it to fail before any fix.

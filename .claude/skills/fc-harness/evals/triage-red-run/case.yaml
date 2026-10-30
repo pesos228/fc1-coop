@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: triage-red-run
+expected_outcome: |
+  Finds that client1 failed to create a Direct3D device ("Couldn't find any suitable device") and
+  crashed at 0x38010FA3 in the renderer, an environment problem (RDP minimized/disconnected), not a mod
+  bug; recommends no mod change, moving the session to the console or restoring the RDP window, and a rerun.

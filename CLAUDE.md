@@ -29,7 +29,7 @@
 
 ## Харнес (основной инструмент проверки)
 
-`tools/harness` (см. README): `harness up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start '#COOP_ExpectPlayers=2;#CoopMap("training")'`, потом `state` / `lua` / `cmd` / `diff` / `shot` / `log` / `down`. Нужен запущенный Steam. Пак мода харнес собирает из `games/far-cry/mod/FarCryCoop`. ASI собирается командой `tools\fcc\build-asi.cmd` из `games/far-cry/asi`, харнес — `cd tools && GOARCH=386 go build -o bin/harness.exe ./harness`. Перед заявлением «починено» прогоняй `diff` и сверяй общее число сущностей, а не только целевую метрику.
+`tools/harness` (см. README): `harness up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start '#COOP_ExpectPlayers=2;#CoopMap("training")'`, потом `state` / `lua` / `cmd` / `diff` / `shot` / `log` / `down`. Нужен запущенный Steam. Пак мода харнес собирает из `games/far-cry/mod/FarCryCoop`. ASI собирается командой `tools\fcc\build-asi.cmd` из `games/far-cry/asi`, харнес — `cd tools && GOARCH=386 go build -o bin/harness.exe ./harness`. Перед заявлением «починено» прогоняй `diff` и сверяй общее число сущностей, а не только целевую метрику. Как собирать, гонять полный прогон и читать красные прогоны — скилл `fc-harness` (`.claude/skills/fc-harness`).
 
 ## Жёсткие правила
 

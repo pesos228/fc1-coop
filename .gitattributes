@@ -1,0 +1,2 @@
+# bash scripts break on CRLF
+*.sh text eol=lf

@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: ready-to-commit
+expected_outcome: |
+  Says not yet: needs a second green run of heli-standing after the last edit, a diff with matching
+  entity counts, and the full suite of tests/*.txt (with smoke runs) green before committing; gives the
+  concrete commands (harness test, the suite runner) and says how to treat OPEN scenarios / regressions.
