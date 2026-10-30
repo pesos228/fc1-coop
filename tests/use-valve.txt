@@ -1,0 +1,19 @@
+# Regulator: a client turns a valve at chest height (ProximityTrigger40, a 0.2 m box 1.15 m above
+# the floor; the AI's spot Regulator_One is 0.44 m from it). The use check must measure the
+# player's body against the box, not the feet against its centre (a review found that a feet-
+# centre sphere left these valves dead for everyone, 2026-10-30).
+# Run from the repo root: tools/bin/harness.exe test tests/use-valve.txt
+up -mode host -map regulator -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("regulator")
+wait server players>=2 -t 90s
+wait client1 players>=2 -t 150s
+sleep 5s
+lua server COOP_God=1
+expect server System:GetEntityByName("ProximityTrigger40").bTriggered => 0
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=1890.95,y=673.6,z=43.2})
+sleep 3s
+expect client1 COOP_Label => @regulator_use_valve
+expect client1 Harness:Use() => ok
+sleep 2s
+expect server System:GetEntityByName("ProximityTrigger40").bTriggered => 1
+expect-no-events
+down

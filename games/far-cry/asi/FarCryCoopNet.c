@@ -772,13 +772,31 @@ static void runJoin(const char *file)
 // ISystem::GetIMovieSystem +0x78; IMovieSystem: FindSequence +0x28, IsPlaying +0x54,
 // GetPlayingTime +0x98, SetPlayingTime +0x9c; IAnimSequence: GetName +0x08, GetFlags +0x10
 // (slot 0 is IRefCountBase's virtual destructor). Lua learns the pid from "#COOP_AsiPid=<pid>".
+// The same file takes "use": press the use key on this client (harness scenarios: Lua cannot).
+// CXClient::TriggerUse (0x3307ead1, thiscall (float, XActivationEvent), ret 8: push 0Ah, add ecx 60h,
+// call AddAction) adds ACTION_USE to the next command for the server, as the F key does. CXGame's
+// m_pClient is at +0x34 (Game:Connect, 0x33044222: mov ecx,[m_pGame+34h] before XConnect).
 static char g_seek[600];
 static int g_pidSent;
-static void seekLine(char *s)
+static void pressUse(BYTE *game)
+{
+	void *client = game ? *(void **)(game + 0x34) : 0;
+	if (!client) {
+		logf("use: no client");
+		return;
+	}
+	((void(__fastcall *)(void *, void *, float, int))CG(0x3307ead1))(client, 0, 1.0f, 0);
+	logf("use: pressed");
+}
+static void seekLine(BYTE *game, char *s)
 {
 	void *sys = getISystem(), *mov, *seq;
 	DWORD ms = 0, flags;
 	float t, was;
+	if (s[0] == 'u' && s[1] == 's' && s[2] == 'e' && !s[3]) {
+		pressUse(game);
+		return;
+	}
 	while (*s >= '0' && *s <= '9')
 		ms = ms * 10 + (*s++ - '0');
 	if (*s++ != ' ' || !*s)
@@ -796,7 +814,7 @@ static void seekLine(char *s)
 	logf("seek: %s (%s) flags %x playing %u: %u ms -> %u ms", s, ((const char *(__fastcall *)(void *, void *))VFN(seq, 0x08))(seq, 0),
 	     flags, (DWORD)((BYTE(__fastcall *)(void *, void *, void *))VFN(mov, 0x54))(mov, 0, seq), was < 0 ? 0 : f2ms(was), f2ms(t));
 }
-static void seekTick(void)
+static void seekTick(BYTE *game)
 {
 	static char buf[2048]; // static: no __chkstk without the CRT, main thread only
 	DWORD n = 0, i, from = 0;
@@ -823,7 +841,7 @@ static void seekTick(void)
 		if (buf[i] == '\n' || buf[i] == '\r' || !buf[i]) {
 			buf[i] = 0;
 			if (i > from)
-				seekLine(buf + from);
+				seekLine(game, buf + from);
 			from = i + 1;
 		}
 }
@@ -832,7 +850,7 @@ static BYTE __fastcall hGameUpdate(void *game, void *edx)
 {
 	BYTE r = oGameUpdate(game, edx); // after the frame, as the console runs typed lines
 	jumpTick();
-	seekTick();
+	seekTick((BYTE *)game);
 	if (GetTickCount() - g_joinTick > 500) {
 		g_joinTick = GetTickCount();
 		runJoin(g_joinOwn);

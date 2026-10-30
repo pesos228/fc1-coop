@@ -1,0 +1,59 @@
+# Training: use-button triggers (alarm switches, key doors) work for any player standing in them,
+# as in Sven Co-op: whoever presses use fires it, and a key counts for the one who presses.
+# Stock: the first player in becomes self.Who, the only one checked for use and keys, and with
+# bOnlyMyPlayer only the host gets in at all (936d84f keeps them host-only for that reason).
+# The client presses use through FarCryCoopNet.asi (Harness:Use, "use" in seek_<pid>.txt).
+# Run from the repo root: tools/bin/harness.exe test tests/use-triggers.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 5s
+lua server COOP_God=1
+
+# 1. The client alone at an alarm switch (switched on by the alarm in the mission).
+lua server System:GetEntityByName("alarm_off_trigger"):Event_Enable()
+expect server System:GetEntityByName("alarm_off_trigger").bTriggered => 0
+lua server local t=System:GetEntityByName("alarm_off_trigger"):GetPos() CoopMovePlayer(Harness:RemotePlayer(), {x=t.x,y=t.y,z=t.z-0.5})
+sleep 2s
+# The trigger's hint reaches the client (stock: Hud.label on the server only).
+expect client1 COOP_Label => @disable_alarm
+expect client1 Harness:Use() => ok
+sleep 2s
+expect server System:GetEntityByName("alarm_off_trigger").bTriggered => 1
+
+# 2. Key door: the host is in first, without the key: its use does nothing. The client with the
+# key comes second and opens it; the key is used up (bKeepKeycardAfterUse=0).
+lua server local t=System:GetEntityByName("ProximityKeyTrigger1"):GetPos() CoopMovePlayer(_localplayer, {x=t.x,y=t.y,z=t.z-0.5})
+sleep 2s
+expect server Harness:Use() => ok
+sleep 2s
+expect server System:GetEntityByName("ProximityKeyTrigger1").bTriggered => 0
+lua server Harness:RemotePlayer().keycards[1]=1 local t=System:GetEntityByName("ProximityKeyTrigger1"):GetPos() CoopMovePlayer(Harness:RemotePlayer(), {x=t.x+0.3,y=t.y,z=t.z-0.5})
+sleep 2s
+expect client1 Harness:Use() => ok
+sleep 2s
+expect server System:GetEntityByName("ProximityKeyTrigger1").bTriggered => 1
+expect server Harness:RemotePlayer().keycards[1] => 0
+
+# 3. A reusable trigger (the door, now unlocked) pressed from the edge, outside the box itself:
+# it fires and goes back to Empty (no leave event comes from outside the box to end Occupied).
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=660,y=800,z=21})
+lua server CoopMovePlayer(_localplayer, {x=660,y=803,z=21})
+sleep 3s
+expect server System:GetEntityByName("ProximityKeyTrigger1"):GetState() => Empty
+lua server local t=System:GetEntityByName("ProximityKeyTrigger1") COOP_TestN=0 local o=t.Event_Enter t.Event_Enter=function(s,a) COOP_TestN=COOP_TestN+1 return %o(s,a) end
+lua server local t=System:GetEntityByName("ProximityKeyTrigger1"):GetPos() CoopMovePlayer(_localplayer, {x=t.x,y=t.y,z=t.z-0.5})
+sleep 2s
+expect server System:GetEntityByName("ProximityKeyTrigger1"):GetState() => OccupiedUse
+# The client, 25 m away, presses use: not at the box, nothing fires.
+expect client1 Harness:Use() => ok
+sleep 2s
+expect server COOP_TestN => 0
+lua server local t=System:GetEntityByName("ProximityKeyTrigger1"):GetPos() CoopMovePlayer(_localplayer, {x=t.x+1.2,y=t.y,z=t.z-0.5})
+sleep 2s
+expect server Harness:Use() => ok
+sleep 2s
+expect server COOP_TestN => 1
+expect server System:GetEntityByName("ProximityKeyTrigger1"):GetState() => Empty
+expect-no-events
+down

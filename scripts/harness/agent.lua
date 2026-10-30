@@ -258,6 +258,16 @@ function Harness:RemotePlayer()
 	end
 end
 
+-- Press the use key on this game, as the F key does (FarCryCoopNet.asi, "use" in seek_<pid>.txt):
+-- on a client it goes to the server with the next player command.
+function Harness:Use()
+	if (not COOP_AsiPid) then return "no asi"; end
+	appendto("Mods/FarCryCoop/seek_"..COOP_AsiPid..".txt");
+	write("use\n");
+	writeto();
+	return "ok";
+end
+
 -- The player with this name (harness clients are named after their instance: client1, ...).
 function Harness:Player(name)
 	for i, e in System:GetEntities() do

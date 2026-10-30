@@ -254,9 +254,6 @@ end
 -- Proximity triggers with bOnlyMyPlayer (19 of 20 maps, up to 41 on Carrier, the end of Training
 -- among them) accept only _localplayer in IsValidSource: the host on a listen server, nobody on a
 -- dedicated one. Any player is "my player" in coop: check with the entering one as _localplayer.
--- Not for use-button triggers and ProximityKeyTrigger: the first one in becomes self.Who, the only
--- one who can press use (and whose keycards count), so a client standing in an elevator or at a
--- locked door would block the host until it left; those stay host-only as before.
 function CoopWrapProximity(e)
 	e.COOP_ProxWrapped = 1;
 	local old = e.IsValidSource;
@@ -266,6 +263,75 @@ function CoopWrapProximity(e)
 		local r = call(%old, {self, entity}, "x", function(msg) System:LogAlways("coop: trigger error: "..tostring(msg)); end);
 		_localplayer = saved;
 		return r or 0;
+	end
+end
+-- Use-button triggers (alarm switches, elevators, key doors: bActivateWithUseButton) remember the
+-- first player in as self.Who and check only its use key and keycards: a second player could not
+-- use it (their boxes are often 0.2-1 m, two players do not even fit), and a dead Who held it for
+-- good. As in Sven Co-op, every living player at the box can press use, and a key counts for the
+-- one who presses; the box empties when nobody is left there. The state tables are shared by every
+-- entity of a class, so their functions are wrapped once (on the server).
+-- CoopUseNear: does P's body (0.45 m around its feet, 1.8 m up) reach the trigger's box grown by m?
+-- In the box's own frame (Lua 4: sin/cos take degrees); the box is centred on the entity.
+function CoopUseNear(self, P, m)
+	local p = self:GetPos(); -- GetPos/GetAngles return one shared table: copy before the next call
+	local px, py, pz = p.x, p.y, p.z;
+	local az = self:GetAngles().z;
+	local q = P:GetPos();
+	local dx, dy = q.x - px, q.y - py;
+	local x, y = dx*cos(az) + dy*sin(az), dy*cos(az) - dx*sin(az);
+	local hz = self.Properties.DimZ / 2 + m;
+	return abs(x) <= self.Properties.DimX / 2 + m + 0.45 and abs(y) <= self.Properties.DimY / 2 + m + 0.45
+		and q.z <= pz + hz and q.z + 1.8 >= pz - hz;
+end
+function CoopWrapUseStates(e)
+	local U, O = e.OccupiedUse, e.Occupied;
+	U.COOP_UseWrapped = 1;
+	-- pressed from the edge, outside the box itself: no leave event will come to end the Occupied
+	-- state of a reusable trigger, so start its leave timer (Occupied.OnTimer) when it begins
+	-- (GotoState from OnUpdate takes effect after the update returns)
+	local begin = O.OnBeginState;
+	O.OnBeginState = function(self)
+		local r = %begin(self);
+		if (self.COOP_EdgePress) then
+			self.COOP_EdgePress = nil;
+			self:SetTimer(max(self.Properties.ExitDelay, 0.01) * 1000);
+		end
+		return r;
+	end
+	U.OnLeaveArea = function(self, entity, areaId) end -- the update decides who is still there
+	local update = U.OnUpdate;
+	U.OnUpdate = function(self)
+		self.WhoID = nil; -- a Who saved by OnSave may name a player of another session
+		self.COOP_EdgePress = nil; -- still here: the last press did not fire (no key)
+		local presser, n, inside = nil, 0, nil;
+		local key = self.bLocked == 1 and self.Properties.iNeededKey;
+		local text = self.Properties.TextInstruction or "";
+		local hint = (self.COOP_HintAt or 0) <= _time;
+		for i, P in CoopPlayers() do
+			if (P.cnt and P.cnt.health > 0 and CoopUseNear(self, P, 0.5)) then
+				n = n + 1;
+				if (CoopUseNear(self, P, -0.45)) then inside = 1; end
+				-- two pressing at a locked door: the one with the key
+				if (P.cnt.use_pressed and not (presser and key and P.keycards and P.keycards[key] ~= 1)) then presser = P; end
+				if (text ~= "") then
+					if (P == _localplayer) then
+						Hud.label = text;
+					elseif (hint) then
+						local slot = Server:GetServerSlotByEntityId(P.id);
+						if (slot) then slot:SendCommand("MHUD label "..text); end
+					end
+				end
+			end
+		end
+		if (hint) then self.COOP_HintAt = _time + 1; end
+		if (n == 0) then
+			self:GotoState("Empty");
+		elseif (presser) then
+			self.Who = presser; -- the stock update goes on with its use key and keycards
+			if (not inside and self.Properties.bTriggerOnce ~= 1) then self.COOP_EdgePress = 1; end
+			return %update(self);
+		end
 	end
 end
 function CoopWrapBehaviour(bname, fname, old)
@@ -1023,8 +1089,8 @@ function GameRules:OnUpdate(DeltaTime)
 		if e.ai and not e.COOP_AnimWrapped then CoopWrapAnim(e) end
 		if e.classname == "GameEvent" and not e.COOP_Wrapped then CoopWrapGameEvent(e) end
 		if (e.Event_Hide or e.Event_UnHide) and not e.COOP_HideWrapped then CoopWrapHide(e) end
-		if e.IsValidSource and e.Properties and e.Properties.bOnlyMyPlayer and not e.COOP_ProxWrapped
-			and e.Properties.bActivateWithUseButton ~= 1 and e.classname ~= "ProximityKeyTrigger" then CoopWrapProximity(e) end
+		if e.IsValidSource and e.Properties and e.Properties.bOnlyMyPlayer and not e.COOP_ProxWrapped then CoopWrapProximity(e) end
+		if e.OccupiedUse and e.OccupiedUse.OnUpdate and e.Empty and e.Occupied and not e.OccupiedUse.COOP_UseWrapped then CoopWrapUseStates(e) end
 		if e.Behaviour and e.cnt and e.Properties and e.Properties.species and not e.COOP_Awake
 			and e.Enemy_Hidden ~= 1 and e.Properties.bSleepOnSpawn ~= 1 then
 			local t = e:GetPos()

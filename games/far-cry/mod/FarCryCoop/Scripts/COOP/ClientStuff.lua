@@ -126,6 +126,8 @@ end
 Coop_DefaultClientOnUpdate = ClientStuff.OnUpdate;
 function ClientStuff:OnUpdate()
 	Coop_DefaultClientOnUpdate(self);
+	-- a use-trigger hint the server sends once a second while we stand in it (MHUD label)
+	if (COOP_LabelUntil and _time < COOP_LabelUntil and _time + 3 > COOP_LabelUntil and Hud) then Hud.label = COOP_Label; end
 	CoopMonitor("C");
 	CoopShowSpawnWeapon();
 	call(CoopReportSeen, {}, "x", function(msg)
@@ -188,6 +190,10 @@ ClientStuff.ServerCommandTable["MHUD"] = function(String, toktable)
 	if (Game:IsServer() or not Hud) then return; end
 	local op = toktable[2];
 	local text = strsub(String, strlen("MHUD "..tostring(op).." ") + 1);
+	if (op == "label") then -- as is: Hud.label takes "@name" like the stock trigger gives it
+		COOP_Label, COOP_LabelUntil = text, _time + 1.5;
+		return;
+	end
 	-- the dedicated server has no string table: Localize("X") gave it "@X", translate here
 	if (strsub(text, 1, 1) == "@" and op ~= "radar") then text = Localize(strsub(text, 2)); end
 	CoopMonEvent("C", "hud "..tostring(op).." "..text);
