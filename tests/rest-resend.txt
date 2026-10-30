@@ -1,0 +1,15 @@
+# River: a prop whose client copy moved off on its own (a pontoon floats on the client's own water;
+# drops-river failed now and then with Pontoon_3/Pontoon_7 0.66-0.78 m off) comes back to where the
+# server has it. The server sent a resting prop's place only when it moved there, so a copy that
+# drifted afterwards stayed off for good (2026-10-30). Here the client's copy is pushed by hand.
+# OPEN: fails until fixed (2026-10-30).
+# Run from the repo root: tools/bin/harness.exe test tests/rest-resend.txt
+up -mode host -map river -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("river")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 40s
+lua client1 local e=System:GetEntityByName("Pontoon_3") local p=e:GetPos() e:SetPos({x=p.x,y=p.y-0.8,z=p.z})
+sleep 13s
+expect-diff max=0.5 class=^(BasicEntity|DestroyableObject)$ missing=0
+expect-no-events
+down
