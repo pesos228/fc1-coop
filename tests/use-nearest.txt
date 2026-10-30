@@ -1,0 +1,41 @@
+# Bunker: two use buttons 1.44 m apart, either side of a wall: the lift call button outside
+# (ProximityTrigger1445) and the panel in the cab (ProximityTrigger1446). A player at the panel is
+# still within reach of the call button through the wall (a use button counts a player 0.5 m around
+# its box), so with somebody at the call button one press fired both (2026-10-30). A press goes to
+# the nearest button only.
+# OPEN: fails until fixed (2026-10-30).
+# Run from the repo root: tools/bin/harness.exe test tests/use-nearest.txt
+up -mode host -map bunker -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("bunker")
+wait server players>=2 -t 90s
+wait client1 players>=2 -t 150s
+sleep 5s
+lua server COOP_God=1
+# The panel is switched on by the mission once the lift is down.
+lua server System:GetEntityByName("ProximityTrigger1446"):Event_Enable()
+lua server COOP_TestA=0 COOP_TestB=0 local a=System:GetEntityByName("ProximityTrigger1445") local o=a.Event_Enter a.Event_Enter=function(s,x) COOP_TestA=COOP_TestA+1 return %o(s,x) end local b=System:GetEntityByName("ProximityTrigger1446") local q=b.Event_Enter b.Event_Enter=function(s,x) COOP_TestB=COOP_TestB+1 return %q(s,x) end
+
+# The client waits at the call button, the host is at the panel in the cab, by the wall. Their
+# entering the 0.2 m boxes is given as the engine reports it (Empty.OnEnterArea): put next to such
+# a box by CoopMovePlayer, a player is pushed back off the wall and comes in only now and then.
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=1164.42,y=1396.5,z=53.3})
+lua server CoopMovePlayer(_localplayer, {x=1165.85,y=1396.06,z=53.6})
+sleep 3s
+lua server local t=System:GetEntityByName("ProximityTrigger1445") t.Empty.OnEnterArea(t, Harness:RemotePlayer(), 0)
+lua server local t=System:GetEntityByName("ProximityTrigger1446") t.Empty.OnEnterArea(t, _localplayer, 0)
+sleep 2s
+expect server System:GetEntityByName("ProximityTrigger1445"):GetState() => OccupiedUse
+expect server System:GetEntityByName("ProximityTrigger1446"):GetState() => OccupiedUse
+expect server (CoopUseNear(System:GetEntityByName("ProximityTrigger1445"), _localplayer, 0.5) and CoopUseNear(System:GetEntityByName("ProximityTrigger1446"), _localplayer, 0.5)) and 1 => 1
+
+# The host presses: the panel goes, the call button does not.
+expect server Harness:Use() => ok
+sleep 3s
+expect server COOP_TestB => 1
+expect server COOP_TestA => 0
+
+# The client at the call button still calls the lift.
+expect client1 Harness:Use() => ok
+sleep 3s
+expect server COOP_TestA => 1
+expect-no-events
+down
