@@ -299,6 +299,21 @@ function CoopUseCloser(self, P)
 		if (o ~= self and o.COOP_UseAt >= _time - 0.5 and System:GetEntity(id) == o and max(CoopUseGap(o, P), 0) < g) then return 1; end
 	end
 end
+-- Is a living player other than except in the trigger's box (the body reaching 0.2 m around it:
+-- the engine counts the player's bounding box)?
+function CoopPlayerIn(self, except)
+	for i, P in CoopPlayers() do
+		if (P ~= except and P.cnt and P.cnt.health > 0 and CoopUseGap(self, P) <= 0.2 and self:IsValidSource(P) ~= 0) then return 1; end
+	end
+end
+-- Once a second: an Occupied trigger held by a player with no living player left in it starts its
+-- leave timer, as the stock leave would.
+function CoopSweepOccupied(e)
+	local w = e.Who;
+	if (e.COOP_Leaving or not (w and w.type == "Player" and not w.ai) or e:GetState() ~= "Occupied" or CoopPlayerIn(e)) then return end
+	e.COOP_Leaving = 1;
+	e:SetTimer(max(e.Properties.ExitDelay, 0.01) * 1000);
+end
 function CoopWrapUseStates(e)
 	local U, O = e.OccupiedUse, e.Occupied;
 	U.COOP_UseWrapped = 1;
@@ -307,12 +322,25 @@ function CoopWrapUseStates(e)
 	-- (GotoState from OnUpdate takes effect after the update returns)
 	local begin = O.OnBeginState;
 	O.OnBeginState = function(self)
+		self.COOP_Leaving = nil;
 		local r = %begin(self);
 		if (self.COOP_EdgePress) then
 			self.COOP_EdgePress = nil;
+			self.COOP_Leaving = 1;
 			self:SetTimer(max(self.Properties.ExitDelay, 0.01) * 1000);
 		end
 		return r;
+	end
+	-- Occupied keeps one player (Who), and anybody leaving starts the leave timer: with another
+	-- player still inside it emptied. A player still inside keeps it now; the sweep
+	-- (CoopSweepOccupied) ends it once no living player is left, which also covers a player
+	-- dying inside (the dead are not valid sources, no leave comes for them).
+	local leave = O.OnLeaveArea;
+	O.COOP_LeaveWrapped = 1;
+	O.OnLeaveArea = function(self, entity, areaId)
+		if (entity and entity.type == "Player" and not entity.ai and CoopPlayerIn(self, entity)) then return end
+		if (self:IsValidSource(entity) ~= 0) then self.COOP_Leaving = 1; end -- the stock one starts the timer
+		return %leave(self, entity, areaId);
 	end
 	U.OnLeaveArea = function(self, entity, areaId) end -- the update decides who is still there
 	local update = U.OnUpdate;
@@ -1109,6 +1137,7 @@ function GameRules:OnUpdate(DeltaTime)
 		if (e.Event_Hide or e.Event_UnHide) and not e.COOP_HideWrapped then CoopWrapHide(e) end
 		if e.IsValidSource and e.Properties and e.Properties.bOnlyMyPlayer and not e.COOP_ProxWrapped then CoopWrapProximity(e) end
 		if e.OccupiedUse and e.OccupiedUse.OnUpdate and e.Empty and e.Occupied and not e.OccupiedUse.COOP_UseWrapped then CoopWrapUseStates(e) end
+		if e.Occupied and e.Occupied.COOP_LeaveWrapped then CoopSweepOccupied(e) end
 		if e.Behaviour and e.cnt and e.Properties and e.Properties.species and not e.COOP_Awake
 			and e.Enemy_Hidden ~= 1 and e.Properties.bSleepOnSpawn ~= 1 then
 			local t = e:GetPos()

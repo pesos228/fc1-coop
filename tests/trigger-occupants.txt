@@ -2,9 +2,8 @@
 # while any living player is in it. Stock: only one occupant is kept (Who). (1) Anybody leaving
 # starts the leave timer, so with the host still inside the client walking out emptied it. (2) A
 # player dying inside sends no valid leave (the dead are not valid sources): it stayed Occupied, and
-# the next player to walk in emptied it without an Enter. The same holds for a use button after a
+# the next player to walk in got no Enter. The same holds for a use button after a
 # press (its presser is Who): dying in its box left a lift or a door dead for everyone.
-# OPEN: fails until fixed (2026-10-30).
 # Run from the repo root: tools/bin/harness.exe test tests/trigger-occupants.txt
 up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
 wait server players>=2 -t 60s
