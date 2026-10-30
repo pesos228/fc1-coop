@@ -11,7 +11,7 @@ up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoop
 wait server players>=2 -t 60s
 wait client1 players>=2 -t 120s
 sleep 5s
-lua server COOP_God=1 COOP_TestOld=Harness:RemotePlayer().id Harness:RemotePlayer().keycards[1]=1 Harness:RemotePlayer().objects["Explosives"]=1 Harness:RemotePlayer().explosives[1]=1
+lua server COOP_God=1 COOP_TestOld=Harness:RemotePlayer().id Harness:RemotePlayer().keycards[1]=1 Harness:RemotePlayer().objects["2"]=1 Harness:RemotePlayer().explosives[1]=1
 sleep 2s
 
 # 1. The client dies and respawns: same key, same object, same explosive.
@@ -23,14 +23,14 @@ wait client1 me.health>=1 -t 30s
 sleep 3s
 expect server (Harness:RemotePlayer().id ~= COOP_TestOld) and 1 => 1
 expect server Harness:RemotePlayer().keycards and Harness:RemotePlayer().keycards[1] => 1
-expect server Harness:RemotePlayer().objects and Harness:RemotePlayer().objects["Explosives"] => 1
+expect server Harness:RemotePlayer().objects and Harness:RemotePlayer().objects["2"] => 1
 expect server Harness:RemotePlayer().explosives and Harness:RemotePlayer().explosives[1] => 1
 
 # 1b. Right after a respawn (before the once-a-second copy) the new entity already has them: a save
 # or a leave in that second lost the key (review, 2026-10-30).
 lua server local t=Harness:RemotePlayer() local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
 sleep 4s
-lua server COOP_TestOld=Harness:RemotePlayer().id local s=Server:GetServerSlotByEntityId(COOP_TestOld) GameRules:OnClientRequestRespawn(s,1) if Harness:RemotePlayer().id==COOP_TestOld then GameRules:OnClientRequestRespawn(s,1) end local P=Harness:RemotePlayer() COOP_TestK=CoopTeamItems().keycards[1] or 0 COOP_TestT=(P.id~=COOP_TestOld and P.keycards and P.keycards[1]) or 0
+lua server COOP_TestOld=Harness:RemotePlayer().id local s=Server:GetServerSlotByEntityId(COOP_TestOld) GameRules:OnClientRequestRespawn(s,1) if s:GetPlayerId()==COOP_TestOld then GameRules:OnClientRequestRespawn(s,1) end local P=System:GetEntity(s:GetPlayerId()) COOP_TestK=CoopTeamItems().keycards[1] or 0 COOP_TestT=(P.id~=COOP_TestOld and P.keycards and P.keycards[1]) or 0
 expect server COOP_TestK => 1
 expect server COOP_TestT => 1
 wait client1 me.health>=1 -t 30s
@@ -39,7 +39,7 @@ sleep 3s
 # 1c. A key picked up, then death and respawn before the once-a-second copy saw it: the key was
 # left on the removed body (a client has no respawn delay: GameRules.TimeDied is set for the
 # host's player only).
-lua server local t=Harness:RemotePlayer() t.keycards[3]=1 local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0}) COOP_TestOld=t.id local s=Server:GetServerSlotByEntityId(COOP_TestOld) GameRules:OnClientRequestRespawn(s,1) if Harness:RemotePlayer().id==COOP_TestOld then GameRules:OnClientRequestRespawn(s,1) end local P=Harness:RemotePlayer() COOP_TestT=(P.id~=COOP_TestOld and P.keycards and P.keycards[3]) or 0
+lua server local t=Harness:RemotePlayer() t.keycards[3]=1 local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0}) COOP_TestOld=t.id local s=Server:GetServerSlotByEntityId(COOP_TestOld) GameRules:OnClientRequestRespawn(s,1) if s:GetPlayerId()==COOP_TestOld then GameRules:OnClientRequestRespawn(s,1) end local P=System:GetEntity(s:GetPlayerId()) COOP_TestT=(P.id~=COOP_TestOld and P.keycards and P.keycards[3]) or 0
 expect server COOP_TestT => 1
 wait client1 me.health>=1 -t 30s
 sleep 3s
@@ -50,7 +50,7 @@ cmd client1 disconnect
 wait server players=1 -t 30s
 sleep 3s
 expect server _localplayer.keycards[1] => 1
-expect server _localplayer.objects["Explosives"] => 1
+expect server _localplayer.objects["2"] => 1
 expect server _localplayer.explosives[1] => 1
 expect-log server announce.*key 5s
 expect-no-events
