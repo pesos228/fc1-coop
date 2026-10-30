@@ -1,0 +1,15 @@
+# Training: the client-side copy of our items (ITEMS from the server, COOP_MyItems) is never put on
+# a host's player. A game that was a client before and hosts now (the launcher does not restart it)
+# kept the last copy: it replaced the host's real keycards on the server entity, after each respawn
+# too (review, 2026-10-30). The stale copy is set by hand here.
+# OPEN: fails until fixed (2026-10-30).
+# Run from the repo root: tools/bin/harness.exe test tests/items-hud-host.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 5s
+lua server COOP_MyItems={keycards={},objects={},explosives={}} COOP_MyItemsOn=nil _localplayer.keycards[1]=1
+sleep 2s
+expect server _localplayer.keycards[1] or 0 => 1
+expect-no-events
+down
