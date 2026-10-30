@@ -272,17 +272,14 @@ end
 -- one who presses; the box empties when nobody is left there. The state tables are shared by every
 -- entity of a class, so their functions are wrapped once (on the server).
 -- CoopUseGap: how far P's body (0.45 m around its feet, 1.8 m up) is from the trigger's box, below 0
--- when it reaches into it. In the box's own frame (Lua 4: sin/cos take degrees); the box is centred
--- on the entity.
+-- when it reaches into it. The box is centred on the entity and lies along the world axes, turned
+-- or not: the engine lets players in that way (observed on turned boxes, tests/use-rotated.txt).
 function CoopUseGap(self, P)
-	local p = self:GetPos(); -- GetPos/GetAngles return one shared table: copy before the next call
+	local p = self:GetPos(); -- GetPos returns one shared table: copy before the next call
 	local px, py, pz = p.x, p.y, p.z;
-	local az = self:GetAngles().z;
 	local q = P:GetPos();
-	local dx, dy = q.x - px, q.y - py;
-	local x, y = dx*cos(az) + dy*sin(az), dy*cos(az) - dx*sin(az);
 	local d = self.Properties;
-	return max(abs(x) - d.DimX / 2 - 0.45, abs(y) - d.DimY / 2 - 0.45, q.z - pz - d.DimZ / 2, pz - d.DimZ / 2 - q.z - 1.8);
+	return max(abs(q.x - px) - d.DimX / 2 - 0.45, abs(q.y - py) - d.DimY / 2 - 0.45, q.z - pz - d.DimZ / 2, pz - d.DimZ / 2 - q.z - 1.8);
 end
 -- CoopUseNear: does P's body reach the trigger's box grown by m?
 function CoopUseNear(self, P, m)
@@ -753,19 +750,35 @@ function CoopHandOverItems(slot)
 	local c = (P and P.type == "Player") and CoopCopyItems(P) or COOP_Items[id];
 	COOP_Items[id], COOP_ItemsSent[id] = nil, nil;
 	if (not c) then return; end
-	local best, bd = nil, nil;
 	local p = P and P:GetPos() or {x = 0, y = 0, z = 0};
 	local px, py, pz = p.x, p.y, p.z; -- GetPos returns a shared table
+	local near, n = {}, 0; -- the living others, nearest first
 	for i, Q in CoopPlayers() do
 		if (Q ~= P and Q.cnt and Q.cnt.health > 0) then
 			local q = Q:GetPos();
-			local d = (q.x-px)*(q.x-px) + (q.y-py)*(q.y-py) + (q.z-pz)*(q.z-pz);
-			if (not bd or d < bd) then best, bd = Q, d; end
+			n = n + 1;
+			near[n] = {Q, (q.x-px)*(q.x-px) + (q.y-py)*(q.y-py) + (q.z-pz)*(q.z-pz)};
 		end
 	end
+	sort(near, function(a, b) return a[2] < b[2]; end);
+	local best = near[1] and near[1][1];
 	if (best) then
-		if (CoopGiveItems(best, c)) then
-			COOP_Items[Server:GetServerSlotByEntityId(best.id):GetId()] = CoopCopyItems(best);
+		-- explosives up to 4 a player (PickupExplo takes no more), nearest first; the rest to the nearest
+		local left = 0;
+		for k, v in (c.explosives or {}) do if (v == 1) then left = left + 1; end end
+		local had = (left > 0) and 1;
+		c.explosives = {};
+		for i = 1, n do
+			local Q, held = near[i][1], 0;
+			for k, v in (Q.explosives or {}) do if (v == 1) then held = held + 1; end end
+			local give = min(left, max(4 - held, 0));
+			for j = 1, give do CoopGiveItems(Q, {explosives = {1}}); end
+			left = left - give;
+		end
+		for j = 1, left do c.explosives[j] = 1; end
+		if (CoopGiveItems(best, c)) then had = 1; end
+		if (had) then
+			for i = 1, n do COOP_Items[Server:GetServerSlotByEntityId(near[i][1].id):GetId()] = CoopCopyItems(near[i][1]); end
 			CoopAnnounce(slot:GetName().." left: keys and items go to "..best:GetName());
 		end
 	elseif (COOP_ItemsPool) then

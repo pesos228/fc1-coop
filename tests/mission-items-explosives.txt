@@ -1,7 +1,6 @@
 # Training: a leaving player's explosives go out up to 4 a player (PickupExplo takes no more than
 # 4), the nearest first; what does not fit still goes to the nearest (nothing is lost). Before:
 # all to the nearest, who then held more than 4 and could pick up no more while the others had none.
-# OPEN: fails until fixed (2026-10-30).
 # Run from the repo root: tools/bin/harness.exe test tests/mission-items-explosives.txt
 up -mode host -map training -clients 2 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=3;#CoopMap("training")
 wait server players>=3 -t 60s
