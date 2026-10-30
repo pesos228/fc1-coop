@@ -1068,6 +1068,10 @@ end
 COOP_REST_CLASSES = {BasicEntity = 1, RigidBody = 1, DestroyableObject = 1}
 COOP_Drops = {} -- id -> {x, y, z (last sample), sx, sy, sz, s (sent), t (sent at), born, drop}; this file runs on every map load
 COOP_DropResend = {}
+-- And to everybody every COOP_REST_RESEND seconds: a client's copy may drift off after it was set
+-- (a pontoon on the client's own water) while the server's lies still and is not sent again.
+COOP_REST_RESEND = 10
+COOP_RestResendAt = 0
 -- Server commands reach the clients cut at 255 characters (harness: a 400-character command
 -- arrived as 255): pack the words of one kind into messages under COOP_CMD_MAX.
 COOP_CMD_MAX = 240
@@ -1097,8 +1101,13 @@ function CoopRestTracked(e)
 end
 function CoopSyncDrops()
 	local out, k = {}, 0;
+	local again = _time >= COOP_RestResendAt;
 	if (COOP_DropResend[1] and _time >= COOP_DropResend[1]) then
 		COOP_DropResend[1], COOP_DropResend[2] = COOP_DropResend[2], nil;
+		again = 1;
+	end
+	if (again) then
+		COOP_RestResendAt = _time + COOP_REST_RESEND;
 		for id, d in COOP_Drops do if (d.s) then k = k + 1; out[k] = id.." "..d.s; end end
 	end
 	for i, e in System:GetEntities() do
