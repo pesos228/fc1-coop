@@ -3,7 +3,6 @@
 # still within reach of the call button through the wall (a use button counts a player 0.5 m around
 # its box), so with somebody at the call button one press fired both (2026-10-30). A press goes to
 # the nearest button only.
-# OPEN: fails until fixed (2026-10-30).
 # Run from the repo root: tools/bin/harness.exe test tests/use-nearest.txt
 up -mode host -map bunker -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("bunker")
 wait server players>=2 -t 90s

@@ -271,18 +271,33 @@ end
 -- good. As in Sven Co-op, every living player at the box can press use, and a key counts for the
 -- one who presses; the box empties when nobody is left there. The state tables are shared by every
 -- entity of a class, so their functions are wrapped once (on the server).
--- CoopUseNear: does P's body (0.45 m around its feet, 1.8 m up) reach the trigger's box grown by m?
--- In the box's own frame (Lua 4: sin/cos take degrees); the box is centred on the entity.
-function CoopUseNear(self, P, m)
+-- CoopUseGap: how far P's body (0.45 m around its feet, 1.8 m up) is from the trigger's box, below 0
+-- when it reaches into it. In the box's own frame (Lua 4: sin/cos take degrees); the box is centred
+-- on the entity.
+function CoopUseGap(self, P)
 	local p = self:GetPos(); -- GetPos/GetAngles return one shared table: copy before the next call
 	local px, py, pz = p.x, p.y, p.z;
 	local az = self:GetAngles().z;
 	local q = P:GetPos();
 	local dx, dy = q.x - px, q.y - py;
 	local x, y = dx*cos(az) + dy*sin(az), dy*cos(az) - dx*sin(az);
-	local hz = self.Properties.DimZ / 2 + m;
-	return abs(x) <= self.Properties.DimX / 2 + m + 0.45 and abs(y) <= self.Properties.DimY / 2 + m + 0.45
-		and q.z <= pz + hz and q.z + 1.8 >= pz - hz;
+	local d = self.Properties;
+	return max(abs(x) - d.DimX / 2 - 0.45, abs(y) - d.DimY / 2 - 0.45, q.z - pz - d.DimZ / 2, pz - d.DimZ / 2 - q.z - 1.8);
+end
+-- CoopUseNear: does P's body reach the trigger's box grown by m?
+function CoopUseNear(self, P, m)
+	return CoopUseGap(self, P) <= m;
+end
+-- Is another use button that P is at nearer to P? A press goes to the nearest one: buttons close
+-- together (a lift's call button and its panel either side of a wall) would all fire at once.
+-- Inside two boxes at once both fire, as in the stock game. A button counts while it was waiting
+-- for use in the last half second: the nearer one may have fired earlier in this very frame.
+COOP_UseOn = {};
+function CoopUseCloser(self, P)
+	local g = max(CoopUseGap(self, P), 0);
+	for id, o in COOP_UseOn do
+		if (o ~= self and o.COOP_UseAt >= _time - 0.5 and System:GetEntity(id) == o and max(CoopUseGap(o, P), 0) < g) then return 1; end
+	end
 end
 function CoopWrapUseStates(e)
 	local U, O = e.OccupiedUse, e.Occupied;
@@ -308,12 +323,14 @@ function CoopWrapUseStates(e)
 		local key = self.bLocked == 1 and self.Properties.iNeededKey;
 		local text = self.Properties.TextInstruction or "";
 		local hint = (self.COOP_HintAt or 0) <= _time;
+		COOP_UseOn[self.id], self.COOP_UseAt = self, _time;
 		for i, P in CoopPlayers() do
 			if (P.cnt and P.cnt.health > 0 and CoopUseNear(self, P, 0.5)) then
 				n = n + 1;
 				if (CoopUseNear(self, P, -0.45)) then inside = 1; end
 				-- two pressing at a locked door: the one with the key
-				if (P.cnt.use_pressed and not (presser and key and P.keycards and P.keycards[key] ~= 1)) then presser = P; end
+				if (P.cnt.use_pressed and not (presser and key and P.keycards and P.keycards[key] ~= 1)
+					and not CoopUseCloser(self, P)) then presser = P; end
 				if (text ~= "") then
 					if (P == _localplayer) then
 						Hud.label = text;
@@ -326,6 +343,7 @@ function CoopWrapUseStates(e)
 		end
 		if (hint) then self.COOP_HintAt = _time + 1; end
 		if (n == 0) then
+			COOP_UseOn[self.id] = nil;
 			self:GotoState("Empty");
 		elseif (presser) then
 			self.Who = presser; -- the stock update goes on with its use key and keycards
