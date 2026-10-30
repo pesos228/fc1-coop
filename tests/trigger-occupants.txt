@@ -1,0 +1,44 @@
+# Training: a reusable ProximityTrigger (ProximityTrigger109, 1x5x5 m, no use button) is occupied
+# while any living player is in it. Stock: only one occupant is kept (Who). (1) Anybody leaving
+# starts the leave timer, so with the host still inside the client walking out emptied it. (2) A
+# player dying inside sends no valid leave (the dead are not valid sources): it stayed Occupied, and
+# the next player to walk in emptied it without an Enter. The same holds for a use button after a
+# press (its presser is Who): dying in its box left a lift or a door dead for everyone.
+# OPEN: fails until fixed (2026-10-30).
+# Run from the repo root: tools/bin/harness.exe test tests/trigger-occupants.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 5s
+lua server COOP_God=1 COOP_TestN=0 local t=System:GetEntityByName("ProximityTrigger109") local o=t.Event_Enter t.Event_Enter=function(s,a) COOP_TestN=COOP_TestN+1 return %o(s,a) end
+expect server System:GetEntityByName("ProximityTrigger109"):GetState() => Empty
+
+# 1. Both in; the client walks out first: still occupied by the host until the host leaves too.
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=305.79,y=1036.82,z=22.5})
+sleep 3s
+expect server System:GetEntityByName("ProximityTrigger109"):GetState() => Occupied
+expect server COOP_TestN => 1
+lua server CoopMovePlayer(_localplayer, {x=305.79,y=1038.6,z=22.5})
+sleep 2s
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=300,y=1036.82,z=22.5})
+sleep 3s
+expect server System:GetEntityByName("ProximityTrigger109"):GetState() => Occupied
+lua server CoopMovePlayer(_localplayer, {x=300,y=1039,z=22.5})
+sleep 3s
+expect server System:GetEntityByName("ProximityTrigger109"):GetState() => Empty
+expect server COOP_TestN => 1
+
+# 2. The client walks in and dies there: the trigger empties; the host walking in enters it.
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=305.79,y=1036.82,z=22.5})
+sleep 3s
+expect server COOP_TestN => 2
+lua server local t=Harness:RemotePlayer() local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 4s
+expect server Harness:RemotePlayer().cnt.health => 0
+expect server System:GetEntityByName("ProximityTrigger109"):GetState() => Empty
+lua server CoopMovePlayer(_localplayer, {x=305.79,y=1038.6,z=22.5})
+sleep 3s
+expect server System:GetEntityByName("ProximityTrigger109"):GetState() => Occupied
+expect server COOP_TestN => 3
+expect-no-events
+down
