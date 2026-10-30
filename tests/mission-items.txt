@@ -36,6 +36,14 @@ expect server COOP_TestT => 1
 wait client1 me.health>=1 -t 30s
 sleep 3s
 
+# 1c. A key picked up, then death and respawn before the once-a-second copy saw it: the key was
+# left on the removed body (a client has no respawn delay: GameRules.TimeDied is set for the
+# host's player only).
+lua server local t=Harness:RemotePlayer() t.keycards[3]=1 local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0}) COOP_TestOld=t.id local s=Server:GetServerSlotByEntityId(COOP_TestOld) GameRules:OnClientRequestRespawn(s,1) if Harness:RemotePlayer().id==COOP_TestOld then GameRules:OnClientRequestRespawn(s,1) end local P=Harness:RemotePlayer() COOP_TestT=(P.id~=COOP_TestOld and P.keycards and P.keycards[3]) or 0
+expect server COOP_TestT => 1
+wait client1 me.health>=1 -t 30s
+sleep 3s
+
 # 2. The client leaves: the host gets them, and everybody is told.
 expect server _localplayer.keycards and _localplayer.keycards[1] or 0 => 0
 cmd client1 disconnect
