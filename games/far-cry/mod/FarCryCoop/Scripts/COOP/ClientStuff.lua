@@ -9,6 +9,7 @@ COOP_UPDATE_RATE = 50
 Coop_DefaultClientOnInit = ClientStuff.OnInit;
 function ClientStuff:OnInit()
 	Coop_DefaultClientOnInit(self);
+	COOP_MyItems, COOP_MyItemsOn = nil, nil; -- the last session's or map's (ITEMS)
 	-- written by the launcher: COOP_Color, COOP_Weapons, COOP_LoadoutMode (used by the host only).
 	-- The launcher's console line (join_<pid>.txt) sets them first: two games on one PC share this file.
 	if (not COOP_Color) then Script:LoadScript("Mods/FarCryCoop/prefs.lua"); end
@@ -192,7 +193,8 @@ ClientStuff.ServerCommandTable["ITEMS"] = function(String, tk)
 	CoopApplyMyItems();
 end
 function CoopApplyMyItems()
-	if (not COOP_MyItems or not _localplayer or COOP_MyItemsOn == _localplayer) then return; end
+	-- never on a host: its player is the server's entity, with the real items
+	if (Game:IsServer() or not COOP_MyItems or not _localplayer or COOP_MyItemsOn == _localplayer) then return; end
 	COOP_MyItemsOn = _localplayer;
 	_localplayer.keycards, _localplayer.objects, _localplayer.explosives = COOP_MyItems.keycards, COOP_MyItems.objects, COOP_MyItems.explosives;
 end

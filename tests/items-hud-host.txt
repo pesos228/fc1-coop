@@ -2,7 +2,6 @@
 # a host's player. A game that was a client before and hosts now (the launcher does not restart it)
 # kept the last copy: it replaced the host's real keycards on the server entity, after each respawn
 # too (review, 2026-10-30). The stale copy is set by hand here.
-# OPEN: fails until fixed (2026-10-30).
 # Run from the repo root: tools/bin/harness.exe test tests/items-hud-host.txt
 up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
 wait server players>=2 -t 60s
