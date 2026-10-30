@@ -130,6 +130,7 @@ function ClientStuff:OnUpdate()
 	if (COOP_LabelUntil and _time < COOP_LabelUntil and _time + 3 > COOP_LabelUntil and Hud) then Hud.label = COOP_Label; end
 	CoopMonitor("C");
 	CoopShowSpawnWeapon();
+	CoopApplyMyItems();
 	call(CoopReportSeen, {}, "x", function(msg)
 		if (not COOP_SeenErrorLogged) then COOP_SeenErrorLogged = 1; System:LogAlways("coop: seen sleepers error: "..tostring(msg)); end
 	end);
@@ -177,6 +178,23 @@ function CoopReportHit(hit)
 	local mat = hit.target_material and hit.target_material.type or "flesh";
 	Client:SendCommand(format("CHIT %d %.2f %d %s %.2f %.2f %.2f %.3f %.3f %.3f", t.id, hit.damage or 0,
 		hit.ipart or -1, mat, p.x, p.y, p.z, d.x, d.y, d.z));
+end
+
+-- our keycards, mission objects and explosives (COOP gamerules CoopSendItems), for the HUD: put on
+-- our player now, and again on a new one (a respawn)
+ClientStuff.ServerCommandTable["ITEMS"] = function(String, tk)
+	if (Game:IsServer()) then return; end
+	local c = {keycards = {}, objects = {}, explosives = {}};
+	gsub(tk[2] or "-", "([^,]+)", function(k) if (k ~= "-") then %c.keycards[tonumber(k) or k] = 1; end end);
+	gsub(tk[3] or "-", "([^,]+)", function(k) if (k ~= "-") then %c.objects[k] = 1; end end);
+	for i = 1, (tonumber(tk[4]) or 0) do c.explosives[i] = 1; end
+	COOP_MyItems, COOP_MyItemsOn = c, nil;
+	CoopApplyMyItems();
+end
+function CoopApplyMyItems()
+	if (not COOP_MyItems or not _localplayer or COOP_MyItemsOn == _localplayer) then return; end
+	COOP_MyItemsOn = _localplayer;
+	_localplayer.keycards, _localplayer.objects, _localplayer.explosives = COOP_MyItems.keycards, COOP_MyItems.objects, COOP_MyItems.explosives;
 end
 
 -- coop_noclip from the server: switch fly mode for our own (predicted) player too

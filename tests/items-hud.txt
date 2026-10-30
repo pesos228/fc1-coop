@@ -1,7 +1,6 @@
 # Training: a client sees its own keycards, mission objects and explosives in its HUD
 # (Hud:DrawItems reads the local player's keycards/objects/explosives). The pickups and doors work
 # on the server's player entity; the client's own copy of its player never got them.
-# OPEN: fails until fixed (2026-10-30).
 # Run from the repo root: tools/bin/harness.exe test tests/items-hud.txt
 up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
 wait server players>=2 -t 60s

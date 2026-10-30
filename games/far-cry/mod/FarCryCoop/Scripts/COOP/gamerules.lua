@@ -690,8 +690,27 @@ function CoopKeepItems()
 			if (COOP_Items[id] and COOP_Items[id].eid ~= P.id) then CoopGiveItems(P, COOP_Items[id]); end -- respawned
 			if (COOP_ItemsPool and P.cnt.health > 0) then CoopGiveItems(P, COOP_ItemsPool); COOP_ItemsPool = nil; end
 			COOP_Items[id] = CoopCopyItems(P);
+			if (P ~= _localplayer) then CoopSendItems(slot, P); end
 		end
 	end
+end
+-- A client's HUD draws its own player's items, which only the server's entity has (the pickups and
+-- doors run there): send them on every change, and again to a new entity. "ITEMS <keys> <objects>
+-- <explosives>": comma lists of what is held ("-" for none), the number of explosives.
+COOP_ItemsSent = {} -- server slot id -> {eid =, s = the last line}
+function CoopSendItems(slot, P)
+	local csv = function(t)
+		local s = "";
+		for k, v in (t or {}) do if (v == 1) then s = s..((s == "") and "" or ",")..k; end end
+		return (s == "") and "-" or s;
+	end
+	local n = 0;
+	for k, v in (P.explosives or {}) do if (v == 1) then n = n + 1; end end
+	local s = "ITEMS "..csv(P.keycards).." "..csv(P.objects).." "..n;
+	local id, sent = slot:GetId(), COOP_ItemsSent[slot:GetId()];
+	if (sent and sent.eid == P.id and sent.s == s) then return; end
+	COOP_ItemsSent[id] = {eid = P.id, s = s};
+	slot:SendCommand(s);
 end
 -- A respawn gets them back at once: a second later a save or a leave in between had lost them. The
 -- stock respawn calls this before the slot points to the new entity.
@@ -732,7 +751,7 @@ function CoopHandOverItems(slot)
 	local id = slot:GetId();
 	local P = System:GetEntity(slot:GetPlayerId());
 	local c = (P and P.type == "Player") and CoopCopyItems(P) or COOP_Items[id];
-	COOP_Items[id] = nil;
+	COOP_Items[id], COOP_ItemsSent[id] = nil, nil;
 	if (not c) then return; end
 	local best, bd = nil, nil;
 	local p = P and P:GetPos() or {x = 0, y = 0, z = 0};
