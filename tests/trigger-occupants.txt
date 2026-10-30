@@ -14,29 +14,34 @@ lua server COOP_God=1 COOP_TestN=0 local t=System:GetEntityByName("ProximityTrig
 expect server System:GetEntityByName("ProximityTrigger109"):GetState() => Empty
 
 # 1. Both in; the client walks out first: still occupied by the host until the host leaves too.
-lua server CoopMovePlayer(Harness:RemotePlayer(), {x=305.79,y=1036.82,z=22.5})
+# (The client first stops next to the box: moved in straight from its spawn, it came in and was
+# let out again at once now and then.)
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=300,y=1036.82,z=25.2})
+lua server CoopMovePlayer(_localplayer, {x=300,y=1039,z=25.2})
+sleep 3s
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=305.79,y=1036.82,z=24.4})
 sleep 3s
 expect server System:GetEntityByName("ProximityTrigger109"):GetState() => Occupied
 expect server COOP_TestN => 1
-lua server CoopMovePlayer(_localplayer, {x=305.79,y=1038.6,z=22.5})
+lua server CoopMovePlayer(_localplayer, {x=305.79,y=1038.6,z=24.4})
 sleep 2s
-lua server CoopMovePlayer(Harness:RemotePlayer(), {x=300,y=1036.82,z=22.5})
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=300,y=1036.82,z=25.2})
 sleep 3s
 expect server System:GetEntityByName("ProximityTrigger109"):GetState() => Occupied
-lua server CoopMovePlayer(_localplayer, {x=300,y=1039,z=22.5})
+lua server CoopMovePlayer(_localplayer, {x=300,y=1039,z=25.2})
 sleep 3s
 expect server System:GetEntityByName("ProximityTrigger109"):GetState() => Empty
 expect server COOP_TestN => 1
 
 # 2. The client walks in and dies there: the trigger empties; the host walking in enters it.
-lua server CoopMovePlayer(Harness:RemotePlayer(), {x=305.79,y=1036.82,z=22.5})
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=305.79,y=1036.82,z=24.4})
 sleep 3s
 expect server COOP_TestN => 2
 lua server local t=Harness:RemotePlayer() local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
 sleep 4s
 expect server Harness:RemotePlayer().cnt.health => 0
 expect server System:GetEntityByName("ProximityTrigger109"):GetState() => Empty
-lua server CoopMovePlayer(_localplayer, {x=305.79,y=1038.6,z=22.5})
+lua server CoopMovePlayer(_localplayer, {x=305.79,y=1038.6,z=24.4})
 sleep 3s
 expect server System:GetEntityByName("ProximityTrigger109"):GetState() => Occupied
 expect server COOP_TestN => 3
