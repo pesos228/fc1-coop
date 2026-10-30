@@ -693,6 +693,21 @@ function CoopKeepItems()
 		end
 	end
 end
+-- A respawn gets them back at once: a second later a save or a leave in between had lost them. The
+-- stock respawn calls this before the slot points to the new entity.
+COOP_DefaultRespawnPlayer = GameRules.RespawnPlayer; -- the single-player rules, loaded above
+function GameRules:RespawnPlayer(server_slot, player)
+	local r = COOP_DefaultRespawnPlayer(self, server_slot, player);
+	call(function(slot, P)
+		for i, t in COOP_ITEM_TABLES do P[t] = P[t] or {}; end
+		local c = COOP_Items[slot:GetId()];
+		if (c and c.eid ~= P.id) then
+			CoopGiveItems(P, c);
+			COOP_Items[slot:GetId()] = CoopCopyItems(P);
+		end
+	end, {server_slot, player}, "x", function(msg) System:LogAlways("coop: respawn items error: "..tostring(msg)); end);
+	return r;
+end
 -- In a save they are the team's: the host gets them all after the load (on a dedicated server the
 -- first player to spawn), so they never wait for a player who does not come back.
 function CoopTeamItems()
