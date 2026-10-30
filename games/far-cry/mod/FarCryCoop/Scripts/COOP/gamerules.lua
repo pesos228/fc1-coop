@@ -708,6 +708,17 @@ function GameRules:RespawnPlayer(server_slot, player)
 	end, {server_slot, player}, "x", function(msg) System:LogAlways("coop: respawn items error: "..tostring(msg)); end);
 	return r;
 end
+-- The copy may be up to a second old (a key picked up just before dying, and a client respawns at
+-- once: GameRules.TimeDied is set for the host's player only): take it from the dead body first,
+-- which the stock respawn removes.
+COOP_DefaultRequestRespawn = GameRules.OnClientRequestRespawn;
+function GameRules:OnClientRequestRespawn(server_slot, requested_classid)
+	call(function(slot)
+		local P = System:GetEntity(slot:GetPlayerId());
+		if (P and P.type == "Player") then COOP_Items[slot:GetId()] = CoopCopyItems(P); end
+	end, {server_slot}, "x", function(msg) System:LogAlways("coop: respawn items error: "..tostring(msg)); end);
+	return COOP_DefaultRequestRespawn(self, server_slot, requested_classid);
+end
 -- In a save they are the team's: the host gets them all after the load (on a dedicated server the
 -- first player to spawn), so they never wait for a player who does not come back.
 function CoopTeamItems()
