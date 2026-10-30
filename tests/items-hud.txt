@@ -1,0 +1,23 @@
+# Training: a client sees its own keycards, mission objects and explosives in its HUD
+# (Hud:DrawItems reads the local player's keycards/objects/explosives). The pickups and doors work
+# on the server's player entity; the client's own copy of its player never got them.
+# OPEN: fails until fixed (2026-10-30).
+# Run from the repo root: tools/bin/harness.exe test tests/items-hud.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 5s
+lua server COOP_God=1 Harness:RemotePlayer().keycards[1]=1 Harness:RemotePlayer().objects["2"]=1 Harness:RemotePlayer().explosives[1]=1
+sleep 3s
+expect client1 _localplayer.keycards and _localplayer.keycards[1] or 0 => 1
+expect client1 _localplayer.objects and _localplayer.objects["2"] or 0 => 1
+expect client1 _localplayer.explosives and _localplayer.explosives[1] or 0 => 1
+
+# Used up on the server: gone on the client too.
+lua server Harness:RemotePlayer().keycards[1]=0 Harness:RemotePlayer().explosives[1]=0
+sleep 3s
+expect client1 _localplayer.keycards[1] or 0 => 0
+expect client1 _localplayer.explosives[1] or 0 => 0
+expect client1 _localplayer.objects["2"] or 0 => 1
+expect-no-events
+down
