@@ -905,23 +905,25 @@ end
 
 -- AI health reaches no client: CPlayer::Write sends health only to the client whose own player
 -- it is (SDK XPlayer.cpp, bLocalHostEntity), so clients kept every enemy at full health until it
--- died (harness: mutants sv 198-245 / cl 255 on Treehouse and Cooler). The server sends what
+-- died (harness: mutants sv 198-245 / cl 255 on Treehouse and Cooler). The other players' health
+-- neither (the name and health under the crosshair, tests/player-info.txt). The server sends what
 -- changed ("AIHP <id> <hp> ...", COOP ClientStuff): in the frame of a hit (GameRules:OnDamage
 -- marks the target), once a second for any other change, and all of it to a joining client
 -- (CoopHudSync). Deaths reach the clients by themselves and are not sent.
 COOP_HPDirty = {}
+function CoopSyncsHP(e) return e.ai or e.classname == "Player"; end
 function CoopSendHP(list, slot)
 	local words = {};
 	for i = 1, getn(list) do words[i] = list[i].id.." "..list[i].cnt.health; end
 	CoopSendPacked("AIHP", words, slot);
 end
 
--- AI whose health is not what the clients got last; ents: the marked ones (by id), else all.
--- An AI seen the first time by the sweep is where the clients have it too (the level's health).
+-- AI and players whose health is not what the clients got last; ents: the marked ones (by id),
+-- else all. One seen the first time by the sweep is where the clients have it too (the level's health).
 function CoopSyncAIHealth(ents)
 	local list, k = {}, 0;
 	for i, e in (ents or System:GetEntities()) do
-		if (type(e) == "table" and e.ai and e.cnt and e.cnt.health and e.COOP_HP ~= e.cnt.health) then
+		if (type(e) == "table" and CoopSyncsHP(e) and e.cnt and e.cnt.health and e.COOP_HP ~= e.cnt.health) then
 			if (e.cnt.health > 0 and (ents or e.COOP_HP)) then k = k + 1; list[k] = e; end
 			e.COOP_HP = e.cnt.health;
 		end
@@ -929,11 +931,11 @@ function CoopSyncAIHealth(ents)
 	if (k > 0) then CoopSendHP(list); end
 end
 
--- a joining client: every AI that is hurt
+-- a joining client: every AI and player that is hurt
 function CoopSendAllHP(server_slot)
 	local list, k = {}, 0;
 	for i, e in System:GetEntities() do
-		if (e.ai and e.cnt and e.cnt.health and e.cnt.health > 0 and e.COOP_HP) then k = k + 1; list[k] = e; end
+		if (CoopSyncsHP(e) and e.cnt and e.cnt.health and e.cnt.health > 0 and e.COOP_HP) then k = k + 1; list[k] = e; end
 	end
 	if (k > 0) then CoopSendHP(list, server_slot); end
 end
@@ -1503,7 +1505,7 @@ function GameRules:OnDamage(hit)
 		call(CoopWake, {t}, "x", CoopWakeError); -- a sleeper that gets shot wakes up
 	end
 	local r = COOP_OldOnDamage(self, hit);
-	if (t and t.ai) then COOP_HPDirty[t.id] = t; end -- the clients get the new health this frame (CoopSyncAIHealth)
+	if (t and CoopSyncsHP(t)) then COOP_HPDirty[t.id] = t; end -- the clients get the new health this frame (CoopSyncAIHealth)
 	return r;
 end
 

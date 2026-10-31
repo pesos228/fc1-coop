@@ -1,0 +1,43 @@
+# Training: the name and health of the player under the crosshair, "<name> <health>%" under it
+# (docs/specs/player-info.md). The stock multiplayer name (Hud:DrawCrosshairName) asks
+# GetViewIntersection for the entity, but on a client its ray goes through the other players:
+# the host 3.1 m ahead gave no entity, only the wall 3.7 m behind him (2026-10-31).
+# COOP_InfoText is the text drawn this frame (nil: nothing).
+# Run from the repo root: tools/bin/harness.exe test tests/player-info.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+# the intro: no HUD for the first ~20 s
+sleep 30s
+# The client 4 m south of the host, looking north at him (yaw 180 looks along +y, 0 along -y).
+lua server COOP_God=1 local h=_localplayer:GetPos() CoopMovePlayer(Harness:Player("client1"), {x=h.x,y=h.y-4,z=h.z+0.2})
+sleep 3s
+lua client1 _localplayer:SetAngles({x=0,y=0,z=180})
+sleep 1s
+expect client1 COOP_InfoText => Jack Carver 100%
+
+# Hurt: the number follows the server's health.
+lua server COOP_God=0 _localplayer.cnt.health=floor(_localplayer.cnt.max_health/2)
+sleep 2s
+expect client1 COOP_InfoText => Jack Carver 50%
+lua server COOP_God=1
+
+# Looking away: gone shortly after.
+lua client1 _localplayer:SetAngles({x=0,y=0,z=0})
+sleep 2s
+expect client1 COOP_InfoText or "none" => none
+
+# The host sees the client the same way (looking south and a little down at him: the client
+# stands lower on the slope, a level look goes over his head; pitch 10 looks down).
+lua server _localplayer:SetAngles({x=10,y=0,z=0})
+sleep 1s
+expect server COOP_InfoText => client1 100%
+
+# A dead player has no health to show: the client looks at the host's body.
+lua server COOP_God=0 local t=_localplayer local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 3s
+lua client1 _localplayer:SetAngles({x=20,y=0,z=180})
+sleep 1s
+expect client1 COOP_InfoText or "none" => none
+expect-no-events
+down

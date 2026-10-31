@@ -132,6 +132,7 @@ function ClientStuff:OnUpdate()
 	CoopMonitor("C");
 	CoopShowSpawnWeapon();
 	CoopApplyMyItems();
+	CoopHookHud();
 	call(CoopReportSeen, {}, "x", function(msg)
 		if (not COOP_SeenErrorLogged) then COOP_SeenErrorLogged = 1; System:LogAlways("coop: seen sleepers error: "..tostring(msg)); end
 	end);
@@ -197,6 +198,85 @@ function CoopApplyMyItems()
 	if (Game:IsServer() or not COOP_MyItems or not _localplayer or COOP_MyItemsOn == _localplayer) then return; end
 	COOP_MyItemsOn = _localplayer;
 	_localplayer.keycards, _localplayer.objects, _localplayer.explosives = COOP_MyItems.keycards, COOP_MyItems.objects, COOP_MyItems.explosives;
+end
+
+-- The name and health of the player under the crosshair, "<name> <health>%" (docs/specs/player-info.md);
+-- drawn after Hud:OnUpdate every frame. GetViewIntersection gives no entity for another player on a
+-- client (its ray goes through them), so we take only its point, which stops the ray at walls, and
+-- look for a player whose body the ray passes on the way: a standing cylinder around the feet.
+-- COOP_InfoText is the text drawn this frame (nil: nothing), read by tests/player-info.txt.
+COOP_INFO_RANGE = 50
+COOP_INFO_RADIUS = 0.5 -- around the body axis
+COOP_INFO_HEIGHT = 1.9
+COOP_INFO_FADE = 0.5 -- seconds it stays, fading, after the crosshair leaves
+function CoopAimedPlayer(me)
+	local c = me:GetCameraPosition();
+	local cx, cy, cz = c.x, c.y, c.z; -- a shared table
+	local o = me.cnt:GetViewIntersection();
+	-- one by one: a multiple assignment here gave dx the value meant for dy (Lua 4)
+	local dx, dy, dz, far = 0, 0, 0, COOP_INFO_RANGE;
+	-- the host's ray stops at a player: take him (a client's goes through)
+	if (o and type(o.ent) == "table" and o.ent.classname == "Player" and o.ent ~= me and not o.ent.ai and o.ent.cnt and (o.ent.cnt.health or 0) > 0) then return o.ent; end
+	-- len is counted from the eye, not the camera: the distance from the camera
+	local d = o and sqrt((o.x - cx) * (o.x - cx) + (o.y - cy) * (o.y - cy) + (o.z - cz) * (o.z - cz)) or 0;
+	if (d > 0.01) then
+		dx = (o.x - cx) / d;
+		dy = (o.y - cy) / d;
+		dz = (o.z - cz) / d;
+		far = min(d + 0.6, COOP_INFO_RANGE);
+	else -- nothing in the way (sky): along the view; yaw 0 looks along -y, 90 along +x; pitch 10 looks down
+		local a = me:GetAngles();
+		dx = sin(a.z) * cos(a.x);
+		dy = -cos(a.z) * cos(a.x);
+		dz = -sin(a.x);
+	end
+	local hh = dx * dx + dy * dy;
+	if (hh < 0.0001) then return; end -- straight up or down
+	if (not COOP_InfoPlayers or _time > COOP_InfoPlayersAt + 1 or _time < COOP_InfoPlayersAt) then
+		COOP_InfoPlayers, COOP_InfoPlayersAt = CoopMonPlayers(), _time; -- _time restarts with every map load
+	end
+	local best, bestT;
+	for i, P in COOP_InfoPlayers do
+		if (P ~= me and System:GetEntity(P.id) == P and P.cnt and P.cnt.health and P.cnt.health > 0) then -- the list is up to 1 s old
+			local p = P:GetPos();
+			local wx, wy = p.x - cx, p.y - cy;
+			local t = (wx * dx + wy * dy) / hh; -- along the ray, where it passes the body axis closest
+			local mx, my = wx - t * dx, wy - t * dy;
+			local z = cz + t * dz - p.z;
+			if (t > 0 and t <= far and mx * mx + my * my <= COOP_INFO_RADIUS * COOP_INFO_RADIUS and z >= 0 and z <= COOP_INFO_HEIGHT and (not bestT or t < bestT)) then
+				best, bestT = P, t;
+			end
+		end
+	end
+	return best;
+end
+function CoopDrawPlayerInfo(hud)
+	if (COOP_InfoDrawnAt == _time) then return; end -- once a frame: another wrapper of Hud.OnUpdate (the harness) can make ours run twice
+	COOP_InfoDrawnAt = _time;
+	COOP_InfoText = nil;
+	if (COOP_InfoAt and _time < COOP_InfoAt) then COOP_InfoLast = nil; end -- from the last map (_time restarts)
+	local me = _localplayer;
+	if (tonumber(cl_display_hud) == 0 or hud.bHide or not me or not me.cnt or not me.cnt.GetViewIntersection or (me.cnt.health or 0) <= 0) then return; end
+	local P = CoopAimedPlayer(me);
+	if (P) then
+		local name = P:GetName() or "";
+		if (name ~= "") then name = name.." "; end
+		COOP_InfoLast, COOP_InfoAt = name..max(1, floor(P.cnt.health * 100 / max(P.cnt.max_health or 255, 1) + 0.5)).."%", _time; -- alive: never 0%
+	end
+	if (not COOP_InfoLast or _time < COOP_InfoAt or _time > COOP_InfoAt + COOP_INFO_FADE) then return; end
+	local a = 1 - (_time - COOP_InfoAt) / COOP_INFO_FADE;
+	Game:SetHUDFont("default", "default");
+	local w = Game:GetHudStringSize(COOP_InfoLast, 16, 16);
+	Game:WriteHudString(400 - w * 0.5, 320, COOP_InfoLast, 1, 1, 1, a, 16, 16);
+	COOP_InfoText = COOP_InfoLast;
+end
+-- Hud.OnUpdate gets replaced after the COOP Hud script ran (the Hud is reloaded with the level,
+-- the harness agent wraps it too): wrap whatever is there now.
+function CoopHookHud()
+	if (not Hud or not Hud.OnUpdate or Hud.OnUpdate == Hud.COOP_DrawsInfo) then return; end
+	local stock = Hud.OnUpdate;
+	Hud.OnUpdate = function(self) %stock(self); CoopDrawPlayerInfo(self); end
+	Hud.COOP_DrawsInfo = Hud.OnUpdate;
 end
 
 -- coop_noclip from the server: switch fly mode for our own (predicted) player too
@@ -288,14 +368,15 @@ ClientStuff.ServerCommandTable["HIDE"] = function(String, toktable)
 	CoopMonEvent("C", "hide "..e:GetName().." "..tostring(toktable[3]));
 end
 
--- AI health from the server ("AIHP <id> <hp> ...", COOP gamerules CoopSyncAIHealth): the engine
--- sends health only for our own player. A dead AI stays dead: deaths come by themselves.
+-- AI and other players' health from the server ("AIHP <id> <hp> ...", COOP gamerules
+-- CoopSyncAIHealth): the engine sends health only for our own player, and ours we leave to it.
+-- The dead stay dead: deaths come by themselves.
 ClientStuff.ServerCommandTable["AIHP"] = function(String, tk)
 	if (Game:IsServer()) then return; end
 	local i = 2;
 	while (tk[i + 1]) do
 		local e, hp = System:GetEntity(tonumber(tk[i]) or 0), tonumber(tk[i + 1]);
-		if (e and e.ai and e.cnt and e.cnt.health and e.cnt.health > 0 and hp and hp > 0) then e.cnt.health = hp; end
+		if (e and (e.ai or (e.classname == "Player" and e ~= _localplayer)) and e.cnt and e.cnt.health and e.cnt.health > 0 and hp and hp > 0) then e.cnt.health = hp; end
 		i = i + 2;
 	end
 end
