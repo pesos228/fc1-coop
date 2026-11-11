@@ -8,13 +8,14 @@ up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoop
 wait server players>=2 -t 60s
 wait client1 players>=2 -t 120s
 sleep 5s
-lua server COOP_God=1
+lua server COOP_God=1 COOP_ExitTime=10
 expect server System:GetEntityByName("ProximityTrigger111").bTriggered => 0
 # The joined player walks onto the carrier's end trigger (the host stays on the beach).
 lua server CoopMovePlayer(Harness:RemotePlayer(), {x=1173.2,y=911.8,z=14.5})
 sleep 3s
 expect server System:GetEntityByName("ProximityTrigger111").bTriggered => 1
-# 2 s + 3 s of delays, then the mission end loads Carrier for both.
+# 2 s + 3 s of delays, then the mission end opens the exit (COOP LevelEnd); with the host away
+# the level changes when its countdown (10 s here) runs out, for both.
 wait server level=carrier -t 120s
 wait client1 level=carrier -t 180s
 wait client1 players>=2 -t 120s
