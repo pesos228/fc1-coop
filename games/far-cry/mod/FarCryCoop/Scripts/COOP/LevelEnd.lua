@@ -88,8 +88,12 @@ function CoopExitTick()
 				-- carrier's hull (tests/level-end.txt). A spot taken mid-jump only drops him once: falling
 				-- does not move him off it sideways. Never a seated player: SetPos in a seat killed him
 				-- (CoopLeaveSeat)
-				if (P == _localplayer and not P.theVehicle and (px - h.x) * (px - h.x) + (py - h.y) * (py - h.y) > COOP_EXIT_HOLD * COOP_EXIT_HOLD) then
-					P:SetPos({x = h.x, y = h.y, z = h.z}); -- a remote player holds himself (EXIT command, CoopExitClientTick)
+				-- A remote player holds himself (EXIT command, CoopExitClientTick), but his SetPos does
+				-- not reach the server's copy of him: on a slope it slid off for the server (and so
+				-- for the others) while he stood on his spot (runs/20261112-001707). Put that copy
+				-- back too; a server SetPos does not move the client himself.
+				if (not P.theVehicle and (px - h.x) * (px - h.x) + (py - h.y) * (py - h.y) > COOP_EXIT_HOLD * COOP_EXIT_HOLD) then
+					P:SetPos({x = h.x, y = h.y, z = h.z});
 				end
 			end
 		end

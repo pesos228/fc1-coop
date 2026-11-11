@@ -24,11 +24,12 @@ expect server strfind(COOP_ExitText or "", "^Next level in 1[01]%d s$") and 1 or
 # Held: walking off puts him back; a hit does nothing, God mode off.
 lua client1 local p=_localplayer:GetPos() _localplayer:SetPos({x=p.x+4,y=p.y,z=p.z})
 sleep 2s
-# Checked in the client's own game, which holds him: the server's view of him can stay 2 m off
-# after a SetPos of his (runs/20261111-225450: the client at its spot to the end, the server had
-# him 2.1 m away and he no longer saw the host move; an open network problem, docs/changelog.md).
+# Back on his spot in his own game, which holds him, and on the server. (Red runs on 2026-11-11 with
+# the server's view 1-2 m off were the owner walking the client around in the window meanwhile.)
 lua client1 function COOP_TestOff() local h=COOP_ExitView.hold local p=_localplayer:GetPos() return format("%.1f", sqrt((p.x-h.x)*(p.x-h.x)+(p.y-h.y)*(p.y-h.y))) end
 expect client1 tonumber(COOP_TestOff()) < 1 and 1 or COOP_TestOff() => 1
+lua server function COOP_TestOff(P) local h=COOP_Exit.hold[P.id] local p=P:GetPos() return format("%.1f", sqrt((p.x-h.x)*(p.x-h.x)+(p.y-h.y)*(p.y-h.y))) end
+expect server tonumber(COOP_TestOff(Harness:Player("client1"))) < 1 and 1 or COOP_TestOff(Harness:Player("client1")) => 1
 lua server COOP_God=0 local t=Harness:Player("client1") local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=50,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
 sleep 1s
 expect server Harness:Player("client1").cnt.health == Harness:Player("client1").cnt.max_health and 1 or Harness:Player("client1").cnt.health => 1
