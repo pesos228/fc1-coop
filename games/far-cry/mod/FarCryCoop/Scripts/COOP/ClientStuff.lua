@@ -1,6 +1,7 @@
 -- FarCryCoop: client side of the co-op rules = single-player ClientStuff plus weapon preload.
 Script:LoadScript("scripts/Default/ClientStuff.lua");
 Script:LoadScript("scripts/COOP/Monitor.lua");
+Script:LoadScript("scripts/COOP/LevelEnd.lua");
 
 -- Campaign missions list only a few weapons in <Weapons><Used>; the server loads the rest on demand,
 -- a remote client never does, so it cannot select, draw or fire them. OnInit runs after the level
@@ -133,6 +134,9 @@ function ClientStuff:OnUpdate()
 	CoopShowSpawnWeapon();
 	CoopApplyMyItems();
 	CoopHookHud();
+	call(CoopExitClientTick, {}, "x", function(msg)
+		if (not COOP_ExitErrorLogged) then COOP_ExitErrorLogged = 1; System:LogAlways("coop: exit zone error: "..tostring(msg)); end
+	end);
 	call(CoopReportSeen, {}, "x", function(msg)
 		if (not COOP_SeenErrorLogged) then COOP_SeenErrorLogged = 1; System:LogAlways("coop: seen sleepers error: "..tostring(msg)); end
 	end);
@@ -251,8 +255,6 @@ function CoopAimedPlayer(me)
 	return best;
 end
 function CoopDrawPlayerInfo(hud)
-	if (COOP_InfoDrawnAt == _time) then return; end -- once a frame: another wrapper of Hud.OnUpdate (the harness) can make ours run twice
-	COOP_InfoDrawnAt = _time;
 	COOP_InfoText = nil;
 	if (COOP_InfoAt and _time < COOP_InfoAt) then COOP_InfoLast = nil; end -- from the last map (_time restarts)
 	local me = _localplayer;
@@ -275,8 +277,14 @@ end
 function CoopHookHud()
 	if (not Hud or not Hud.OnUpdate or Hud.OnUpdate == Hud.COOP_DrawsInfo) then return; end
 	local stock = Hud.OnUpdate;
-	Hud.OnUpdate = function(self) %stock(self); CoopDrawPlayerInfo(self); end
+	Hud.OnUpdate = function(self) %stock(self); CoopDrawHud(self); end
 	Hud.COOP_DrawsInfo = Hud.OnUpdate;
+end
+function CoopDrawHud(hud)
+	if (COOP_HudDrawnAt == _time) then return; end -- once a frame: another wrapper of Hud.OnUpdate (the harness) can make ours run twice
+	COOP_HudDrawnAt = _time;
+	CoopDrawPlayerInfo(hud);
+	CoopDrawExit();
 end
 
 -- coop_noclip from the server: switch fly mode for our own (predicted) player too

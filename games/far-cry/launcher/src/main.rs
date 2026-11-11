@@ -163,11 +163,12 @@ fn prefs(me: &Value, loadout: bool) -> String {
     let name = lobby::clean_name(me["name"].as_str().unwrap_or(""));
     let key = lobby::clean_name(me["key"].as_str().unwrap_or(name.as_str()));
     format!(
-        "COOP_Color={} COOP_Weapons=\"{}\" COOP_LoadoutMode={} COOP_Difficulty={} COOP_PlayerKey=\"{}\" setglobal(\"p_name\",\"{}\")",
+        "COOP_Color={} COOP_Weapons=\"{}\" COOP_LoadoutMode={} COOP_Difficulty={} COOP_ExitTime={} COOP_PlayerKey=\"{}\" setglobal(\"p_name\",\"{}\")",
         me["color"].as_u64().unwrap_or(1),
         weapons.join(" "),
         loadout as u8,
         me["difficulty"].as_u64().unwrap_or(1),
+        me["exit_time"].as_u64().unwrap_or(120),
         key,
         name
     )
@@ -372,9 +373,10 @@ mod tests {
     // reads this PC's Steam login: cargo test -- --ignored --nocapture
     #[test]
     fn host_line_waits_for_the_lobby() {
-        let me = serde_json::json!({"name": "A", "color": 1, "weapons": [], "difficulty": 1});
+        let me = crate::lobby::clean_me(&serde_json::json!({"name": "A", "color": 1, "weapons": [], "difficulty": 1}));
         let line = super::expect_players(&super::host_line("pier", &me, false).unwrap(), 3);
         assert!(line.starts_with("#COOP_ExpectPlayers=3 COOP_Color=1 "), "{}", line);
+        assert!(line.contains(" COOP_ExitTime=120 "), "{}", line); // the default when never set
         assert!(line.ends_with("CoopMap(\"pier\")"), "{}", line);
     }
 

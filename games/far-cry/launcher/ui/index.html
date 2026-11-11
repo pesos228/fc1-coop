@@ -84,6 +84,8 @@
     <select id="map"></select>
     <label class="cap">Сложность / Difficulty</label>
     <select id="diff"></select>
+    <label class="cap">Ожидание у выхода, с / Exit wait, s</label>
+    <input type="number" id="exittime" min="10" max="1800" step="10">
     <label class="check"><input type="checkbox" id="loadout"> Выкладка / Loadout</label>
     <button class="item" id="host">› Создать лобби / Host lobby</button>
     <label class="cap">IP хоста / Host IP</label>
@@ -116,7 +118,7 @@ const COLORS = ['#000', '#fff', '#00f', '#0f0', '#f00', '#0ff', '#ff0', '#f0f', 
 const WEAPONS = ['Machete', 'Falcon', 'MP5', 'P90', 'M4', 'AG36', 'OICW', 'Shotgun', 'SniperRifle', 'M249', 'RL'];
 const $ = id => document.getElementById(id);
 const DIFFS = ['Лёгкий / Easy', 'Средний / Medium', 'Сложный / Challenging', 'Ветеран / Veteran', 'Реализм / Realistic'];
-let s = { name: '', color: 1, weapons: [], loadout: false, map: '', ip: '', difficulty: 1 };
+let s = { name: '', color: 1, weapons: [], loadout: false, map: '', ip: '', difficulty: 1, exit_time: 120 };
 let room = null; // last lobby state from the host
 let hosting = false; // set before lobby_host: its first state arrives during the call
 
@@ -143,6 +145,7 @@ function renderMe() {
   $('map').value = s.map; $('rmap').value = s.map;
   $('loadout').checked = s.loadout; $('rloadout').checked = s.loadout;
   $('diff').value = s.difficulty;
+  $('exittime').value = s.exit_time ?? 120;
   $('ip').value = s.ip;
 }
 
@@ -194,6 +197,7 @@ const act = (cmd, args, ok) => invoke(cmd, args).then(() => ok && status(ok)).ca
 $('name').onchange = e => { s.name = e.target.value.trim(); changed(); };
 $('map').onchange = $('rmap').onchange = e => { s.map = e.target.value; changed(); };
 $('diff').onchange = e => { s.difficulty = +e.target.value; changed(); };
+$('exittime').onchange = e => { s.exit_time = Math.min(1800, Math.max(10, Math.round(+e.target.value) || 120)); changed(); };
 $('loadout').onchange = $('rloadout').onchange = e => { s.loadout = e.target.checked; changed(); };
 $('ip').onchange = e => { s.ip = e.target.value.trim(); changed(); };
 $('host').onclick = () => (hosting = true) && act('lobby_host', { map: s.map, loadout: s.loadout }, 'Лобби создано, ждём игроков / Lobby is up');

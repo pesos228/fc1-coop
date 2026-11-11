@@ -37,7 +37,9 @@ pub fn clean_me(me: &Value) -> Value {
         .map(|a| a.iter().filter_map(|w| w.as_str()).filter(|w| crate::WEAPONS.contains(w)).take(4).collect())
         .unwrap_or_default();
     let difficulty = me["difficulty"].as_u64().filter(|d| *d <= 4).unwrap_or(1);
-    json!({ "name": name, "color": color, "weapons": weapons, "difficulty": difficulty })
+    // seconds the level end waits at the exit (the host's; COOP gamerules COOP_ExitTime)
+    let exit_time = me["exit_time"].as_u64().filter(|t| (10..=1800).contains(t)).unwrap_or(120);
+    json!({ "name": name, "color": color, "weapons": weapons, "difficulty": difficulty, "exit_time": exit_time })
 }
 
 // a player name the game can take: it goes into a console line (p_name, a Lua string) and the

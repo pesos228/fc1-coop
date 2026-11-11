@@ -1,0 +1,44 @@
+# Training: the level end as in Synergy (docs/specs/level-end.md). The client walks into the
+# mission's last trigger (ProximityTrigger111 -> DelayTrigger4 -> ProximityTrigger39 ->
+# DelayTrigger3 -> StartLevelFade Carrier): the level does not change yet. The trigger's box
+# becomes the exit zone, he stays
+# on his spot and takes no damage, both see the countdown, he also "waiting for 1 more player".
+# The host walks in: more than half of 2 is 2, the next level loads.
+# Before (2026-10-30, tests/only-my-player.txt) the level changed for all at once.
+# Run from the repo root: tools/bin/harness.exe test tests/level-end.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+# the intro: no HUD for the first ~20 s
+sleep 30s
+lua server COOP_God=1
+lua server CoopMovePlayer(Harness:Player("client1"), {x=1173.2,y=911.8,z=15.5})
+sleep 12s
+expect server Game:GetLevelName() => training
+expect server COOP_Exit and COOP_Exit.map or "none" => Carrier
+expect server COOP_Exit.hold[Harness:Player("client1").id] and 1 or 0 => 1
+expect client1 COOP_ExitView and COOP_ExitView.hold and 1 or 0 => 1
+expect client1 strfind(COOP_ExitText or "", "^Next level in 1[01]%d s %- waiting for 1 more player$") and 1 or COOP_ExitText or "none" => 1
+expect server strfind(COOP_ExitText or "", "^Next level in 1[01]%d s$") and 1 or COOP_ExitText or "none" => 1
+
+# Held: walking off puts him back; a hit does nothing, God mode off.
+lua client1 local p=_localplayer:GetPos() _localplayer:SetPos({x=p.x+4,y=p.y,z=p.z})
+sleep 2s
+# Checked in the client's own game, which holds him: the server's view of him can stay 2 m off
+# after a SetPos of his (runs/20261111-225450: the client at its spot to the end, the server had
+# him 2.1 m away and he no longer saw the host move; an open network problem, docs/changelog.md).
+lua client1 function COOP_TestOff() local h=COOP_ExitView.hold local p=_localplayer:GetPos() return format("%.1f", sqrt((p.x-h.x)*(p.x-h.x)+(p.y-h.y)*(p.y-h.y))) end
+expect client1 tonumber(COOP_TestOff()) < 1 and 1 or COOP_TestOff() => 1
+lua server COOP_God=0 local t=Harness:Player("client1") local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=50,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 1s
+expect server Harness:Player("client1").cnt.health == Harness:Player("client1").cnt.max_health and 1 or Harness:Player("client1").cnt.health => 1
+lua server COOP_God=1
+
+# The host walks in: the next level for both.
+lua server CoopMovePlayer(_localplayer, {x=COOP_Exit.x+1,y=COOP_Exit.y+1,z=COOP_Exit.z+0.3})
+wait server level=carrier -t 30s
+wait client1 level=carrier -t 180s
+wait server players>=2 -t 120s
+expect server COOP_Exit and 1 or 0 => 0
+expect-no-events
+down

@@ -1,0 +1,12 @@
+# Training, the host alone: at the mission end he is more than half of the players, so the level
+# changes at once, the exit zone does not wait (COOP LevelEnd, docs/specs/level-end.md).
+# Run from the repo root: tools/bin/harness.exe test tests/level-end-solo.txt
+up -mode host -map training -clients 0 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=1;#CoopMap("training")
+wait server players>=1 -t 60s
+sleep 10s
+lua server COOP_God=1
+lua server CoopMovePlayer(_localplayer, {x=1173.2,y=911.8,z=15.5})
+wait server level=carrier -t 120s
+expect-log server exit:.1.of.1.in
+expect-no-events
+down

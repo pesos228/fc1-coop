@@ -2,6 +2,7 @@
 -- they already handle per-slot connect, disconnect and checkpoint respawn.
 Script:LoadScript("scripts/Default/gamerules.lua");
 Script:LoadScript("scripts/COOP/Monitor.lua");
+Script:LoadScript("scripts/COOP/LevelEnd.lua");
 CoopMonEvent("S", "map "..tostring(COOP_Map)); -- this file runs on every map load
 
 -- Load every weapon class on the server before players spawn: a player's weapon table
@@ -1229,6 +1230,7 @@ function GameRules:OnUpdate(DeltaTime)
 		CoopMap(map)
 		return
 	end
+	CoopRun("level end", CoopExitTick)
 	CoopRun("preload weapons", CoopPreloadWeapons)
 	if next(COOP_HPDirty) then
 		CoopRun("ai health", function() CoopSyncAIHealth(COOP_HPDirty) end)
@@ -1500,6 +1502,7 @@ end
 if (not COOP_OldOnDamage) then COOP_OldOnDamage = GameRules.OnDamage; end -- once: this file reloads on coop_restart
 function GameRules:OnDamage(hit)
 	local s, t = hit.shooter, hit.target;
+	if (CoopExitHeld(t) or CoopExitHeld(s)) then return end -- waiting at the exit (COOP LevelEnd)
 	if (s and not s.ai and s ~= _localplayer and t and t.ai and not hit.COOP_ClientHit) then return end
 	if (t and t.ai and not t.COOP_Awake and t.Enemy_Hidden ~= 1) then
 		call(CoopWake, {t}, "x", CoopWakeError); -- a sleeper that gets shot wakes up
@@ -1558,6 +1561,9 @@ function CoopSave(name)
 	name = name or "quick";
 	if (not Game:IsServer()) then return; end
 	if (not COOP_Map) then System:LogAlways("coop_save: no co-op map running"); return; end
+	-- the mission end has fired and its triggers are spent: a save from now on would load a level
+	-- that never ends (COOP LevelEnd)
+	if (COOP_Exit) then CoopSaveMessage("no saving at the level exit"); return; end
 	if (strfind(name, "[^%w_]")) then System:LogAlways("coop_save: the name may have only letters, digits and _"); return; end
 	local save = {version = 2, map = COOP_Map, name = name, difficulty = COOP_Difficulty, players = {}, dead = {},
 		present = {}, ai = {}, state = {}, hidden = new(COOP_HideState), objectives = {}, radar = Hud and Hud.COOP_Radar};

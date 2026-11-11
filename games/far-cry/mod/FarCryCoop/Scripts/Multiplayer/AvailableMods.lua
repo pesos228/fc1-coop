@@ -59,6 +59,7 @@ Game:AddCommand("coop_difficulty", "CoopDifficulty(%%)", "coop_difficulty [0-4|n
 
 -- FarCryCoop: start a campaign map as a co-op server, e.g. "coop_map Pier"
 function CoopMap(name)
+	COOP_Exit, COOP_ExitView = nil, nil; -- an exit left open (COOP LevelEnd) ends with its level
 	if (COOP_Difficulty) then CoopApplyDifficulty(tonumber(COOP_Difficulty)); end -- the launcher sets it
 	local mission = Game:GetMapDefaultMission(name);
 	if (not mission) then
@@ -143,8 +144,13 @@ function CoopStartLevel(msg)
 	if (COOP_Map) then
 		-- a mission end calls this from a level entity's script: unloading the level under it
 		-- crashed the host in CryEntitySystem. COOP gamerules load it on their next update,
-		-- as the multiplayer map cycle does
-		COOP_PendingMap = map;
+		-- as the multiplayer map cycle does; first the players gather at the exit (COOP LevelEnd)
+		local held = nil;
+		if (CoopExitOpen and Game:IsServer()) then
+			-- an error there must not lose the mission end: then the level changes at once
+			held = call(CoopExitOpen, {map}, "x", function(msg) System:LogAlways("coop: exit error: "..tostring(msg)); end);
+		end
+		if (not held) then COOP_PendingMap = map; end
 	else
 		CoopMap(map); -- from the menu: no level running yet
 	end
