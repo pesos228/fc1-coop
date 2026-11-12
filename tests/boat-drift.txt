@@ -1,0 +1,15 @@
+# River: far boats (over 500 m from the players) drift slowly on the server (0.06-0.12 m/s). Their
+# send priority is 100 (CNetEntityInfo::Update, SDK) against +100000 for every AI, so the server
+# sent one about once in 45 s, and the client's copy stayed 1.8-3.6 m off (Zodiac2, RiverBoat_One,
+# Zodiac7; the same numbers every run). ASI FIX 14 only lifted entities moving over 5 cm per 0.25 s.
+# Run from the repo root: tools/bin/harness.exe test tests/boat-drift.txt
+up -mode host -map river -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("river")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+lua server COOP_God=1
+sleep 60s
+expect-diff max=1 class=Boat$
+sleep 5s
+expect-diff max=1 class=Boat$
+expect-no-events
+down
