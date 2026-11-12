@@ -73,6 +73,10 @@ function CoopMap(name)
 	-- CMovieUser::BeginCutScene and CryMovie sound tracks); remote clients never see them anyway.
 	-- A listen host (it has Input) plays them as in single player.
 	if (not Input) then setglobal("mov_NoCutscenes", 1); end
+	-- a sequence still playing runs on into the new level and the host crashes in CryMovie.dll
+	-- (a Pier exit right after heli_fly_by, tests/level-change-sequence.txt); SDK CXGame::SoftReset
+	-- stops them the same way
+	if (Movie and Movie.StopAllSequences) then Movie:StopAllSequences(); end
 	local running = COOP_Map;
 	COOP_Map = name; -- before loading: the COOP gamerules (and the monitor) read it on load
 	if (running) then

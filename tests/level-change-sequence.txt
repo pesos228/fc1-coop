@@ -1,0 +1,19 @@
+# A level change while a sequence plays must not crash the host. On Pier the exit opened by the
+# mission end trigger came right after heli_fly_by, and the host fell in CryMovie.dll (read from
+# 0x416E4F3A, called from 0x340146CA) as both players stood in it: the sequence kept running into
+# the new level. The same change long after the sequence, or a teleport and a change in one frame,
+# did not crash (docs/findings.md, 2026-11-12).
+# Run from the repo root: tools/bin/harness.exe test tests/level-change-sequence.txt
+up -mode host -map pier -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("pier")
+wait server players>=2 -t 150s
+wait client1 players>=2 -t 240s
+lua server COOP_God=1
+sleep 30s
+lua server Movie:PlaySequence("heli_fly_by")
+sleep 1s
+lua server COOP_PendingMap="Research"
+wait server level=research -t 120s
+wait client1 level=research -t 240s
+wait client1 players>=2 -t 120s
+expect-no-events
+down
