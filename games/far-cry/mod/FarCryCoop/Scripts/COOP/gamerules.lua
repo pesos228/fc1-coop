@@ -708,6 +708,31 @@ end
 -- doors run there): send them on every change, and again to a new entity. "ITEMS <keys> <objects>
 -- <explosives>": comma lists of what is held ("-" for none), the number of explosives.
 COOP_ItemsSent = {} -- server slot id -> {eid =, s = the last line}
+
+-- Each client's danger meter (COOP ClientStuff "PERC"): the AI perceive every player on their own,
+-- and AI:GetPerception(<entity id>) gives that player's value (ASI FIX 15; nil for an id with no AI
+-- object, so without the ASI, where the id is ignored and every client would get the host's, nothing
+-- is sent). Asking also keeps the value updated, the host's too: the AI system updates its first
+-- player only, a client once the host respawned. Four times a second, on a change.
+COOP_PercSent, COOP_PercNext = {}, 0 -- server slot id -> {eid =, s = the last line}
+function CoopSendPerception()
+	if (_time < COOP_PercNext and COOP_PercNext - _time <= 0.25) then return; end
+	COOP_PercNext = _time + 0.25;
+	if (AI:GetPerception(0) ~= nil) then return; end
+	if (_localplayer) then AI:GetPerception(_localplayer.id); end
+	for i, slot in Server:GetServerSlotMap() do
+		local P = System:GetEntity(slot:GetPlayerId());
+		if (P and P ~= _localplayer and P.type == "Player") then
+			local v = AI:GetPerception(P.id) or 0; -- nil: no AI object yet
+			local s = format("PERC %.1f", (v < 0.05) and 0 or v); -- an unseen player's value starts as a denormal
+			local id, sent = slot:GetId(), COOP_PercSent[slot:GetId()];
+			if (not sent or sent.eid ~= P.id or sent.s ~= s) then
+				COOP_PercSent[id] = {eid = P.id, s = s};
+				slot:SendCommand(s);
+			end
+		end
+	end
+end
 function CoopSendItems(slot, P)
 	local csv = function(t)
 		local s = "";
@@ -1274,6 +1299,7 @@ function GameRules:OnUpdate(DeltaTime)
 	end
 	COOP_AIPlayers = CoopPlayers() -- for CoopAIPlayer; every frame, players respawn as new entities
 	CoopRun("monitor", function() CoopMonitor("S") end)
+	CoopRun("danger meters", CoopSendPerception)
 	CoopRun("update keys", CoopUpdateKeys)
 	-- nobody gets hurt while waiting for the players (CoopWaitTick) or while the host is in a
 	-- cutscene (its NO_HUD flag): single player hides its player then (NO_PLAYER), here the players

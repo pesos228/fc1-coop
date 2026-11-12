@@ -3,7 +3,8 @@
 # about the game's own player only (ScriptObjectAI.cpp GetPerception, SDK) and there is no AI on a
 # client: a client spotted and shot at kept it empty. Who is seen: the AI perceive each player
 # separately (IAISystem::GetPerceptionValue takes the player's AI object), so the host, unseen,
-# keeps his own empty. OPEN until the fix.
+# keeps his own empty. Fixed 2026-11-12 (ASI FIX 15, PERC): the client's meter 0 before, filled after.
+# The host's meter after a respawn (review): 0 before, filled after.
 # Setup as in tests/sleepers-seen.txt: the client faces the first village, the boxcarrier wakes
 # and comes for it; the host is ~95 m away with its back to the village.
 # Run from the repo root: tools/bin/harness.exe test tests/danger-meter.txt
@@ -25,5 +26,20 @@ sleep 15s
 expect server System:GetEntityByName("boxcarrier").COOP_Awake => 1
 expect client1 (Hud.curr_stealth > 40) and 1 or Hud.curr_stealth => 1
 expect server (Hud.curr_stealth < 10) and 1 or Hud.curr_stealth => 1
+
+# The host dies and comes back while the client is alive: its new AI object is registered after the
+# client's, and the AI system updates the perception of its first player only (CryAISystem.dll,
+# docs/findings.md). The village sees the host: its own meter fills.
+lua server COOP_God=0
+lua server local t=_localplayer local p=t:GetPos() t:Damage({shooter=t,target=t,weapon=t.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 4s
+expect server _localplayer.cnt.health => 0
+sleep 6s
+lua server local s=Server:GetServerSlotByEntityId(_localplayer.id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
+wait server me.health>=1 -t 30s
+lua server COOP_God=1
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=482,y=927,z=30}, {x=0,y=0,z=280}) _localplayer:SetPos({x=TX,y=TY,z=TZ+1}) _localplayer:SetAngles({x=0,y=0,z=100})
+sleep 15s
+expect server (Hud.curr_stealth > 40) and 1 or Hud.curr_stealth => 1
 expect-no-events
 down

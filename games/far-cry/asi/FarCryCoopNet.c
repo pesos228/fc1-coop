@@ -11,6 +11,8 @@
 //   CMovieUser::Begin/EndCutScene     0x330cfd25 / 0x330cfed6 (dedicated server: skipped, it has no input)
 //   CryMovie.dll sound track key      0x3401a396 (skipped when there is no sound system)
 //   CrySystem.dll node alloc / free   0x36505c27 / 0x365055c8 (under a lock: the sound thread uses them too)
+//   CScriptObjectAI::GetPerception    0x3303df4e (server: AI:GetPerception(<entity id>), FIX 15)
+//   CryAISystem.dll perception update 0x3100e89e (server: every player's danger meter, FIX 15)
 // Fix: sorts the snapshot entity list by priority and keeps each snapshot under the 8992-bit
 // unreliable buffer of CryNetwork, so nothing is dropped and held-back entities rotate in.
 // Built without the Windows SDK and CRT (none on this PC outside drive C:), see build.ps1.
@@ -77,6 +79,8 @@ void *__cdecl memcpy(void *d, const void *s, unsigned n)
 #define CRYMOVIE_TIMESTAMP 0x44ae37b4u
 #define CRYINPUT_BASE 0x33500000u
 #define CRYINPUT_TIMESTAMP 0x44ae37bbu
+#define CRYAISYSTEM_BASE 0x31000000u
+#define CRYAISYSTEM_TIMESTAMP 0x44ae35c2u
 #define CG(va) (g_base + ((va) - CRYGAME_BASE))
 
 static HANDLE g_log = (HANDLE)-1;
@@ -385,6 +389,81 @@ static BYTE __fastcall hWr(void *self, void *edx, void *server, void *stm)
 	if (*(DWORD *)((BYTE *)self + 0x1c) >= 1000000) // m_nPriority: slot's own player
 		s.wrOwn++;
 	return oWr(self, edx, server, stm);
+}
+
+// FIX 15: the danger meter by the radar (Hud:DrawStealthMeter) reads AI:GetPerception(), which
+// asks about the game's own player only (CScriptObjectAI::GetPerception 0x3303df4e: m_pGame +0x70
+// GetMyPlayer, IEntity +0x250 GetAI, IAISystem +0x7c GetPerceptionValue), and a client has no AI:
+// a client that was seen and shot at kept it empty. AI:GetPerception(<entity id>) answers for that
+// player, and the server sends each client its own value (COOP gamerules CoopSendPerception).
+// Offsets from CScriptObjectAI::GetAttentionTargetOf (0x3303daed): IFunctionHandler +0x0c
+// GetParamCount, +0x28 GetParam(int, int &), +0x34 EndFunctionNull; CScriptObjectAI +0x10
+// m_pAISystem, +0x18 m_pEntitySystem; IEntitySystem +0x18 GetEntity; from GetPerception:
+// IFunctionHandler +0x58 EndFunction(float). No AI object for the id: nil, so Lua can tell the
+// hook is there (AI:GetPerception(0)): the stock function ignores the id and gives the host's.
+// The AI register perception on any player's AI object (an accumulator at +0x124), but once a frame
+// the AI system turns it into the value (+0x128) and clears it for its one player only
+// (CryAISystem.dll 0x3100e89e, called from 0x3102049b with the player's object; that is the first
+// player registered with the AI, not always the host: a respawn registers anew): a remote player's
+// value was never set (a constant 1.66e-41 in the harness). hPercFrame does the same for the
+// players Lua asked about in the last 2 s, found by entity id every frame (they respawn as new
+// entities) and taken only if their AI object is of the same class as the AI system's player.
+// Puppets keep the biggest value in the accumulator: a player taken anew starts it empty.
+#define PERC_MAX 32
+static int g_percId[PERC_MAX];
+static DWORD g_percAsked[PERC_MAX];
+static void *g_percEs, *g_percVt; // CScriptObjectAI::m_pEntitySystem, the AI player's vtable
+static void *percAI(int id)
+{
+	void *ent = ((void *(__fastcall *)(void *, void *, int))VFN(g_percEs, 0x18))(g_percEs, 0, id);
+	return ent ? ((void *(__fastcall *)(void *, void *))VFN(ent, 0x250))(ent, 0) : 0; // IEntity::GetAI
+}
+static int(__fastcall *oPerc)(void *, void *, void *);
+static int __fastcall hPerc(BYTE *self, void *edx, void *pH)
+{
+	int id = 0, i, free = -1;
+	void *aisys = *(void **)(self + 0x10), *ai;
+	if (((int(__fastcall *)(void *, void *))VFN(pH, 0x0c))(pH, 0) < 1)
+		return oPerc(self, edx, pH);
+	((BYTE(__fastcall *)(void *, void *, int, int *))VFN(pH, 0x28))(pH, 0, 1, &id);
+	g_percEs = *(void **)(self + 0x18);
+	ai = g_percEs && id ? percAI(id) : 0;
+	if (!ai || !aisys)
+		return ((int(__fastcall *)(void *, void *))VFN(pH, 0x34))(pH, 0);
+	for (i = 0; i < PERC_MAX && g_percId[i] != id; i++)
+		if (free < 0 && (!g_percId[i] || GetTickCount() - g_percAsked[i] > 2000))
+			free = i;
+	if (i < PERC_MAX && GetTickCount() - g_percAsked[i] > 2000)
+		free = i; // asked for again after a gap
+	else if (i < PERC_MAX)
+		free = -1;
+	if (free >= 0 && g_percVt && *(void **)ai == g_percVt)
+		*(float *)((BYTE *)ai + 0x124) = 0;
+	if (i == PERC_MAX)
+		i = free;
+	if (i >= 0) {
+		g_percId[i] = id;
+		g_percAsked[i] = GetTickCount();
+	}
+	return ((int(__fastcall *)(void *, void *, float))VFN(pH, 0x58))(
+		pH, 0, ((float(__fastcall *)(void *, void *, void *))VFN(aisys, 0x7c))(aisys, 0, ai));
+}
+static void(__fastcall *oPercFrame)(void *, void *);
+static void __fastcall hPercFrame(BYTE *player, void *edx)
+{
+	int i;
+	BYTE *ai;
+	oPercFrame(player, edx);
+	g_percVt = *(void **)player;
+	for (i = 0; i < PERC_MAX && g_percEs; i++) {
+		if (!g_percId[i] || GetTickCount() - g_percAsked[i] > 2000)
+			continue;
+		ai = (BYTE *)percAI(g_percId[i]);
+		if (!ai || ai == player || *(void **)ai != *(void **)player)
+			continue;
+		*(float *)(ai + 0x128) = *(float *)(ai + 0x124);
+		*(float *)(ai + 0x124) = 0;
+	}
 }
 
 static BYTE(__fastcall *oRx)(void *, void *, void *);
@@ -1123,6 +1202,16 @@ static DWORD __stdcall worker(void *unused)
 	hook(CG(0x33080227), 5, ts, hTs, (void **)&oTs, "CXClient::OnServerMsgTimeStamp");
 	hook(CG(0x330816ef), 6, ue, hUe, (void **)&oUe, "CXClient::OnServerMsgUpdateEntity");
 	hook(CG(0x3307019e), 8, gw, hWarn, &oWarn, "GameWarning");
+	{
+		static const BYTE pc[] = {0x56, 0x57, 0x8b, 0xf1, 0x33, 0xff}; // push esi; push edi; mov esi,ecx; xor edi,edi
+		static const BYTE pf[] = {0xd9, 0x81, 0x24, 0x01, 0x00, 0x00}; // fld dword ptr [ecx+124h]
+		BYTE *ais = (BYTE *)GetModuleHandleA("CryAISystem.dll");
+		if (ais && *(DWORD *)(ais + *(DWORD *)(ais + 0x3c) + 8) == CRYAISYSTEM_TIMESTAMP && hook(ais + (0x3100e89e - CRYAISYSTEM_BASE), 6, pf, hPercFrame, (void **)&oPercFrame,
+		                "CryAISystem player perception update"))
+			hook(CG(0x3303df4e), 6, pc, hPerc, (void **)&oPerc, "CScriptObjectAI::GetPerception");
+		else
+			logf("CryAISystem.dll missing or not the 1.4 build, danger meter per player off");
+	}
 	{
 		static const BYTE fl[] = {0xd9, 0x05, 0xff, 0xff, 0xff, 0xff}; // fld dword ptr [0x330ee61c] (absolute, relocatable)
 		hook(CG(0x330ba317), 6, fl, hJump, &oJump, "CXPuppetProxy jump registered");

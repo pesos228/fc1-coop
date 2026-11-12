@@ -134,6 +134,7 @@ function ClientStuff:OnUpdate()
 	CoopShowSpawnWeapon();
 	CoopApplyMyItems();
 	CoopHookHud();
+	CoopHookPerception();
 	CoopWrapClientSeat();
 	call(CoopExitClientTick, {}, "x", function(msg)
 		if (not COOP_ExitErrorLogged) then COOP_ExitErrorLogged = 1; System:LogAlways("coop: exit zone error: "..tostring(msg)); end
@@ -314,6 +315,27 @@ function CoopDrawHud(hud)
 	COOP_HudDrawnAt = _time;
 	CoopDrawPlayerInfo(hud);
 	CoopDrawExit();
+end
+
+-- The danger meter by the radar (Hud:DrawStealthMeter) reads AI:GetPerception(): on a client, no AI
+-- runs and the value is the server's for our player (COOP gamerules CoopSendPerception, "PERC <v>").
+-- Never on a host: its AI is the real one (a game that was a client before gets the stock one back).
+ClientStuff.ServerCommandTable["PERC"] = function(String, tk)
+	if (Game:IsServer()) then return; end
+	COOP_MyPerc = tonumber(tk[2]) or 0;
+end
+function CoopMyPerception(self)
+	return COOP_MyPerc or 0;
+end
+function CoopHookPerception()
+	if (not AI) then return; end
+	if (AI.GetPerception ~= CoopMyPerception) then COOP_StockPerception = AI.GetPerception; end
+	if (Game:IsServer()) then
+		if (AI.GetPerception == CoopMyPerception and COOP_StockPerception) then AI.GetPerception = COOP_StockPerception; end
+		COOP_MyPerc = nil;
+	elseif (AI.GetPerception ~= CoopMyPerception) then
+		AI.GetPerception = CoopMyPerception;
+	end
 end
 
 -- coop_noclip from the server: switch fly mode for our own (predicted) player too
