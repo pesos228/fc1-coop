@@ -230,6 +230,24 @@ static void netPresenceIfMoved(void *ent)
 // Mods\FarCryCoop\watchid.txt (see hUe): on the server, the watched entity's place in the snapshot list
 static DWORD g_watchId, g_watchSnaps;
 #define MAX_NET 4096
+#define STALE_SEC 0.25f // FIX 14; ponytail: one value for near and far entities
+static float g_movePos[65536][3], g_moveT[65536]; // FIX 14: position and time of the last look
+static BYTE g_moving[65536];                      // moved more than 5 cm over the last look
+static int moving(void *ent, float now)
+{ // shared by the slots: whether the entity moved, looked at no more often than STALE_SEC
+	WORD id = ((WORD(__fastcall *)(void *, void *))VFN(ent, 0xc4))(ent, 0);
+	Vec3 *p;
+	float *q, dx, dy, dz;
+	if (now - g_moveT[id] < STALE_SEC && now >= g_moveT[id])
+		return g_moving[id];
+	p = ((Vec3 * (__fastcall *)(void *, void *, int))VFN(ent, 0x04))(ent, 0, 1);
+	q = g_movePos[id];
+	dx = p->x - q[0], dy = p->y - q[1], dz = p->z - q[2];
+	g_moving[id] = g_moveT[id] != 0 && dx * dx + dy * dy + dz * dz > 0.0025f;
+	q[0] = p->x, q[1] = p->y, q[2] = p->z;
+	g_moveT[id] = now;
+	return g_moving[id];
+}
 static BYTE *v[MAX_NET];    // list nodes in send order
 static float k[MAX_NET], lu[MAX_NET]; // sort key, m_fLastUpdate before the snapshot
 static int g_n;             // nodes in v, 0 if the list was not sorted
@@ -238,7 +256,7 @@ static void sortNetEntities(BYTE *snap)
 	BYTE *head = *(BYTE **)(snap + 8), *n, *prev; // m_lstNetEntities
 	void *timer = *(void **)(snap + 0x18);        // m_pTimer
 	float now = ((float(__fastcall *)(void *, void *))VFN(timer, 0x08))(timer, 0), dt, key; // ITimer::GetCurrTime
-	int c = 0, i, j;
+	int c = 0, i, j, pr;
 	g_n = 0;
 	for (n = *(BYTE **)head; n != head; n = *(BYTE **)n) {
 		if (c == MAX_NET)
@@ -253,7 +271,15 @@ static void sortNetEntities(BYTE *snap)
 				     *(int *)(n + 0x24), (int)(dt * 1000), (DWORD)((BYTE(__fastcall *)(void *, void *))VFN(we, 0xd0))(we, 0));
 		}
 		v[c] = n;
-		k[c++] = (float)*(int *)(n + 0x24) * (dt > 0 ? dt : 0);
+		pr = *(int *)(n + 0x24);
+		// FIX 14: every CPlayer, so every AI, gets +100000 (CPlayer::OnEntityNetworkUpdate), any other
+		// entity 1..501 by distance (CNetEntityInfo::Update). With a map's worth of AI the budget went
+		// to them and a sailing boat waited 9-10 s, standing still on the clients in between. An
+		// entity that moves and was not sent for STALE_SEC competes as an AI does. Only moving ones:
+		// every synced prop and far object in that pool took the AI's share (review).
+		if (pr > 0 && pr < 100000 && dt > STALE_SEC && *(void **)(n + 0xc) && moving(*(void **)(n + 0xc), now))
+			pr += 100000;
+		k[c++] = (float)pr * (dt > 0 ? dt : 0);
 	}
 	for (i = 1; i < c; i++) { // ponytail: insertion sort, list is nearly sorted after the first frame
 		n = v[i];

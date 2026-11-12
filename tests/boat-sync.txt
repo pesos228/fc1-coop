@@ -2,7 +2,8 @@
 # it sails (~6 m/s, map time ~47-72 s). The server sent it about once in 9-10 s: every AI gets
 # +100000 send priority (CPlayer::OnEntityNetworkUpdate, SDK), a boat 1-501 by distance, and our
 # snapshot budget (ASI) sends the biggest priority x time first. Between updates the client's copy
-# slowed down and stood: 3-26 m off. OPEN until the fix.
+# slowed down and stood: 3-26 m off. Fixed 2026-11-12 (ASI FIX 14): 5 of 8 checks red before, green
+# after.
 # Checked once the client's copy is near the players (its monitor logs "V <id> <name>"): a client that
 # came in after the boat had stopped keeps it at its level spot until it sails again (250 m, about
 # 15 s), a separate desync (docs/changelog.md, open problems). The same one keeps the parked
