@@ -1,0 +1,17 @@
+# Steam: the parked attack boat AB01_attackboat2 (class Boat) is 3.4 m above the water on a client that
+# came in after it settled on the server (z 45.85, the level's spot, against 42.4), for 12 s and more,
+# then jumps down. With the MP fixed step the server sent it checksums only until the client marked
+# it off-sync; a far entity is sent rarely, and that takes two sends.
+# Run from the repo root: tools/bin/harness.exe test tests/boat-parked.txt
+up -mode host -map steam -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("steam")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+lua server COOP_God=1
+sleep 3s
+expect-diff max=1 class=^Boat$ exclude=AB04_patrolboat_b
+sleep 3s
+expect-diff max=1 class=^Boat$ exclude=AB04_patrolboat_b
+sleep 3s
+expect-diff max=1 class=^Boat$ exclude=AB04_patrolboat_b
+expect-no-events
+down
