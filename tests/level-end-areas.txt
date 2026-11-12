@@ -1,0 +1,29 @@
+# A real walk into an AreaTrigger's shape opens the exit for the player who walked in. The engine
+# passes the trigger itself to OnEnterArea (SDK XArea.cpp CXArea::EnterArea), so Who is never the
+# player; the ASI names the player whose areas it is updating (COOP_AreaUser). Before: "exit skipped:
+# no player set it off" and the level changed at once (sweep of the mission ends, 2026-11-12).
+# Factory: the client walks into AreaTrigger3 (the mission end); Dam: the host walks into
+# AreaTrigger_ID4_savegame (the client walked into an area last, so a stale name would be the client).
+up -mode host -map factory -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("factory")
+wait server players>=2 -t 150s
+wait client1 players>=2 -t 240s
+sleep 40s
+# the shape: x 594.5-597, y 712-719
+lua server COOP_God=1 CoopMovePlayer(Harness:Player("client1"), {x=595.75,y=715.5,z=34})
+sleep 5s
+expect server COOP_Exit and COOP_Exit.map or "none" => dam
+expect-log server exit.open.by.client1..AreaTrigger3.
+expect server COOP_Exit.hold[Harness:Player("client1").id] and 1 or 0 => 1
+lua server CoopMovePlayer(_localplayer, {x=COOP_Exit.x+1,y=COOP_Exit.y+1,z=COOP_Exit.z+0.3})
+wait server level=dam -t 120s
+wait client1 level=dam -t 240s
+wait client1 players>=2 -t 120s
+sleep 40s
+# the shape: a strip x 701.4-702.6, y 1416.7-1424.5
+lua server COOP_God=1 _localplayer:SetPos({x=702,y=1420.6,z=52})
+sleep 5s
+expect server COOP_Exit and COOP_Exit.map or "none" => Volcano
+expect-log server exit.open.by.Jack.Carver..AreaTrigger_ID4_savegame.
+expect server COOP_Exit.hold[_localplayer.id] and 1 or 0 => 1
+expect-no-events
+down

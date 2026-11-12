@@ -487,11 +487,49 @@ static void __fastcall hSoundKey(void *self, void *edx, void *a, DWORD b, DWORD 
 // in the last 2 s): on a pure client, other players must not switch its music or EAX areas.
 static BYTE *g_areaBlock, *g_areaSkip; // 0x330ae184 (own player's block), 0x330ae218 (after it)
 static void(__fastcall *areaUpdatePlayer)(void *, void *, void *); // CXAreaMgr::UpdatePlayer 0x330d3ee8
+// Lua global COOP_AreaUser = the id of the player whose areas are about to be updated. An area
+// enter calls the trigger's OnEnterArea with the trigger itself in place of the player
+// (XArea.cpp CXArea::EnterArea), so a script cannot tell who walked in; it runs inside this
+// update, so the global names him then (COOP LevelEnd.lua CoopExitCause).
+// ISystem +0x64 GetIScriptSystem, IScriptSystem +0x0c ExecuteBuffer (no overloads), IEntity +0xc4 GetId.
+static void areaUser(BYTE *player)
+{
+	static void *ss;
+	static const char prefix[] = "COOP_AreaUser=", digits[] = "0123456789";
+	char buf[32], tmp[12];
+	void *ent = *(void **)(player + 4), *sys;
+	DWORD id, n = 0, k = 0;
+	while (prefix[n]) {
+		buf[n] = prefix[n];
+		n++;
+	}
+	if (!ent)
+		return;
+	if (!ss) {
+		sys = getISystem ? getISystem() : 0;
+		ss = sys ? ((void *(__fastcall *)(void *, void *))VFN(sys, 0x64))(sys, 0) : 0;
+		if (!ss)
+			return;
+	}
+	id = ((WORD(__fastcall *)(void *, void *))VFN(ent, 0xc4))(ent, 0);
+	do
+		tmp[k++] = digits[id % 10];
+	while (id /= 10);
+	while (k)
+		buf[n++] = tmp[--k];
+	buf[n] = 0;
+	((BYTE(__fastcall *)(void *, void *, const char *, DWORD))VFN(ss, 0x0c))(ss, 0, buf, n);
+}
+static void __cdecl ownAreas(BYTE *player)
+{ // not only while hosting(): a gap in the snapshots would leave the last remote player named
+	areaUser(player);
+}
 static void __cdecl remoteAreas(BYTE *player)
 {
 	static int logged;
 	if (!hosting() || player[0x3bc]) // m_bIsAI
 		return;
+	areaUser(player);
 	*(void **)(player + 0x690) = *(void **)(player + 4); // m_AreaUser.SetEntity(m_pEntity)
 	areaUpdatePlayer(*(BYTE **)(player + 0x268) + 0x3ac, 0, player + 0x674); // m_pGame->m_XAreaMgr
 	if (!logged++)
@@ -510,6 +548,13 @@ static __declspec(naked) void hArea(void)
 		popad
 		jmp dword ptr [g_areaSkip]
 	mine:
+		pushad
+		pushfd
+		push ebx
+		call ownAreas
+		add esp, 4
+		popfd
+		popad
 		jmp dword ptr [g_areaBlock]
 	}
 }

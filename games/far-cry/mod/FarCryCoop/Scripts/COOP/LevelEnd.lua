@@ -28,9 +28,14 @@ COOP_Exit = nil -- this file runs on every map load
 -- that is).
 COOP_EXIT_CAUSE_AGE = 60
 if (BroadcastEvent and BroadcastEvent ~= COOP_BroadcastEvent) then COOP_OrigBroadcastEvent = BroadcastEvent; end -- common.lua's (this file runs on every map load)
-function CoopExitCause(sender)
+function CoopExitCause(sender, event)
 	if (COOP_CurrentCause) then return COOP_CurrentCause; end
 	local P = sender.Who;
+	-- an area enter calls the trigger's OnEnterArea with the trigger itself as the player (SDK
+	-- XArea.cpp CXArea::EnterArea), and AreaTrigger goes on to broadcast Enter in that call, inside
+	-- one player's area update: the ASI names that player in COOP_AreaUser just before. Only then:
+	-- the global stays at whoever was updated last (OnLoad clears Who, Entered stops a second Enter)
+	if (P == sender and event == "Enter" and COOP_AreaUser) then P = System:GetEntity(COOP_AreaUser); end
 	if (type(P) == "table" and P.classname == "Player" and not P.ai) then
 		local p = P:GetPos();
 		local c = {P = P, x = p.x, y = p.y, z = p.z, t = _time, name = sender:GetName()};
@@ -47,7 +52,7 @@ function CoopExitCause(sender)
 	return sender.COOP_Cause;
 end
 function COOP_BroadcastEvent(sender, event)
-	local cause = type(sender) == "table" and CoopExitCause(sender);
+	local cause = type(sender) == "table" and CoopExitCause(sender, event);
 	local list = cause and sender.Events and sender.Events[event];
 	if (list) then
 		for i, target in list do
