@@ -134,6 +134,7 @@ function ClientStuff:OnUpdate()
 	CoopShowSpawnWeapon();
 	CoopApplyMyItems();
 	CoopHookHud();
+	CoopWrapClientSeat();
 	call(CoopExitClientTick, {}, "x", function(msg)
 		if (not COOP_ExitErrorLogged) then COOP_ExitErrorLogged = 1; System:LogAlways("coop: exit zone error: "..tostring(msg)); end
 	end);
@@ -163,6 +164,27 @@ ClientStuff.ServerCommandTable["VEHOUT"] = function(String, toktable)
 		end
 	end
 end
+
+-- A crew the server seats when the map loads (VC:OnBind: AddUserT with time -20) reaches a client
+-- only as the bind. The seat position comes from VC:UserEntered, which VC:UpdateEnteringUser calls
+-- from the server's vehicle update alone (VC:UpdateEnteringLeaving), so the client's copy stayed
+-- bound with no place in the vehicle: Steam's boat gunner stood at its level spot, 240 m from the
+-- boat, and logged "pos is invalid" every frame (tests/steam-boat-crew.txt). Seat it as
+-- UserEntered does. VehicleCommon.lua loads at startup (main.lua), the per-frame call only wraps a
+-- reloaded VC again.
+function CoopWrapClientSeat()
+	if (not VC or VC.COOP_ClientSeat or Game:IsServer()) then return; end
+	VC.COOP_ClientSeat = 1;
+	local old = VC.AddUserT;
+	VC.AddUserT = function(self, tbl)
+		local r = %old(self, tbl);
+		if (type(tbl) == "table" and tbl.entity and tbl.state == 1 and tbl.time and tbl.time <= -10) then
+			tbl.entity:SetPos(self:GetHelperPos(tbl.in_helper, 1));
+		end
+		return r;
+	end
+end
+CoopWrapClientSeat();
 
 -- Client-side hit detection: the shooter's own client decides what its bullets hit and tells
 -- the server ("CHIT", handled in COOP GameRules:OnClientCmd), so aiming does not depend on the
