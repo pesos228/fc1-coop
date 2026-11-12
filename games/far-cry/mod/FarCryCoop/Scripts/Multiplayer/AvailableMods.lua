@@ -59,6 +59,9 @@ Game:AddCommand("coop_difficulty", "CoopDifficulty(%%)", "coop_difficulty [0-4|n
 
 -- FarCryCoop: start a campaign map as a co-op server, e.g. "coop_map Pier"
 function CoopMap(name)
+	-- a new game (not the next level, CoopSaveLoadouts): the last game's save points are gone
+	if (not COOP_MapChanging) then COOP_SavePoint, COOP_RespawnOwed = {}, {}; end
+	COOP_MapChanging = nil;
 	if (COOP_Difficulty) then CoopApplyDifficulty(tonumber(COOP_Difficulty)); end -- the launcher sets it
 	local mission = Game:GetMapDefaultMission(name);
 	if (not mission) then

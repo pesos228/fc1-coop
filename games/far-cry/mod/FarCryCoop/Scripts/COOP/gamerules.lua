@@ -526,6 +526,12 @@ end
 -- What single player keeps (SDK ScriptObjectPlayer.cpp): weapons, ammo, the rounds in every
 -- weapon's clips and its fire mode, the selected weapon, armor, binoculars, flashlight and the
 -- items table (cryvision goggles); health comes back full.
+-- What P carries, or the save point a respawn is owed while CoopApplyLoadouts has not given it yet
+-- (up to a second): a save or a map change in that second kept the mission's starting equipment.
+function CoopKeyLoadout(key, P)
+	if (key and COOP_RespawnOwed[key] and COOP_SavePoint[key]) then return COOP_SavePoint[key]; end
+	return CoopCollectLoadout(P);
+end
 function CoopCollectLoadout(P)
 	if (not (P and P.cnt and P.cnt.GetWeaponsSlots)) then return; end
 	-- the selected weapon keeps its ammo in cnt.ammo / cnt.ammo_in_clip, not in P.Ammo
@@ -611,6 +617,12 @@ if (not COOP_SlotKeys) then COOP_SlotKeys = {}; end -- server slot id -> key
 if (not COOP_KeyWait) then COOP_KeyWait = {}; end -- server slot id -> _time its player was first seen without a key
 if (not COOP_Progress) then COOP_Progress = {}; end -- key -> loadout (CoopCollectLoadout)
 if (not COOP_Owed) then COOP_Owed = {}; end -- key -> 1: give COOP_Progress[key] to that player's next spawn
+-- key -> loadout at the last save point (a save, F6, a checkpoint, the map change, a loaded save's
+-- record): what a respawn gives, as single player reloads it (owner's decision 2026-11-12). Not
+-- COOP_Progress, which also takes everybody's current equipment when anyone leaves (CoopWriteProgress).
+-- CoopMap empties it for a new game.
+if (not COOP_SavePoint) then COOP_SavePoint = {}; end
+if (not COOP_RespawnOwed) then COOP_RespawnOwed = {}; end -- key -> 1: give COOP_SavePoint[key] to the new entity
 COOP_KEY_WAIT = 5 -- seconds to wait for COOPID before falling back to the slot number
 
 function CoopSetKey(server_slot, cmd)
@@ -638,7 +650,7 @@ end
 function CoopKeepLoadout(slot)
 	local key = COOP_SlotKeys[slot:GetId()] or "slot"..slot:GetId();
 	local P = System:GetEntity(slot:GetPlayerId());
-	if (P and P.cnt and BasicPlayer.IsAlive(P)) then COOP_Progress[key] = CoopCollectLoadout(P); end
+	if (P and P.cnt and BasicPlayer.IsAlive(P)) then COOP_Progress[key] = CoopKeyLoadout(key, P); end
 	if (COOP_Progress[key]) then COOP_Owed[key] = 1; end -- a dead player gets what was kept last
 end
 
@@ -730,11 +742,21 @@ end
 -- which the stock respawn removes.
 COOP_DefaultRequestRespawn = GameRules.OnClientRequestRespawn;
 function GameRules:OnClientRequestRespawn(server_slot, requested_classid)
+	local old = server_slot:GetPlayerId();
 	call(function(slot)
 		local P = System:GetEntity(slot:GetPlayerId());
 		if (P and P.type == "Player") then COOP_Items[slot:GetId()] = CoopCopyItems(P); end
 	end, {server_slot}, "x", function(msg) System:LogAlways("coop: respawn items error: "..tostring(msg)); end);
-	return COOP_DefaultRequestRespawn(self, server_slot, requested_classid);
+	local r = COOP_DefaultRequestRespawn(self, server_slot, requested_classid);
+	call(CoopOweSavePoint, {server_slot, old}, "x", function(msg) System:LogAlways("coop: respawn loadout error: "..tostring(msg)); end);
+	return r;
+end
+-- the stock respawn gives the mission's starting equipment (on Training nothing): owe the save
+-- point's instead, CoopApplyLoadouts gives it
+function CoopOweSavePoint(slot, old)
+	if (slot:GetPlayerId() == old) then return; end -- not respawned yet (the first request, or too early)
+	local key = CoopSlotKey(slot);
+	if (key and COOP_SavePoint[key]) then COOP_RespawnOwed[key] = 1; end
 end
 -- In a save they are the team's: the host gets them all after the load (on a dedicated server the
 -- first player to spawn), so they never wait for a player who does not come back.
@@ -791,7 +813,13 @@ end
 
 -- the map changes: everybody's equipment comes along
 function CoopSaveLoadouts()
-	for i, slot in Server:GetServerSlotMap() do CoopKeepLoadout(slot); end -- slots and their keys stay
+	for i, slot in Server:GetServerSlotMap() do
+		CoopKeepLoadout(slot); -- slots and their keys stay
+		-- the next map starts with what CoopKeepLoadout kept, a dead player's included
+		local key = COOP_SlotKeys[slot:GetId()] or "slot"..slot:GetId();
+		if (COOP_Progress[key]) then COOP_SavePoint[key] = COOP_Progress[key]; end
+	end
+	COOP_MapChanging = 1; -- CoopMap: not a new game
 	CoopWriteProgress("map change");
 end
 
@@ -807,7 +835,7 @@ function CoopWriteProgress(why)
 	for i, slot in Server:GetServerSlotMap() do
 		local key = COOP_SlotKeys[slot:GetId()];
 		local P = System:GetEntity(slot:GetPlayerId());
-		if (key and P and P.cnt and BasicPlayer.IsAlive(P)) then COOP_Progress[key] = CoopCollectLoadout(P); end
+		if (key and P and P.cnt and BasicPlayer.IsAlive(P)) then COOP_Progress[key] = CoopKeyLoadout(key, P); end
 	end
 	save.progress = COOP_Progress;
 	save.t0 = nil; -- CoopApplyLoad's wait, not part of the save
@@ -947,9 +975,17 @@ function CoopApplyLoadouts()
 		local P = System:GetEntity(slot:GetPlayerId());
 		if (P and P.cnt and P.cnt.GetWeaponsSlots and BasicPlayer.IsAlive(P)) then
 			local key = CoopSlotKey(slot);
-			if (key and COOP_Owed[key] and COOP_Progress[key]) then
+			if (key and COOP_RespawnOwed[key]) then
+				COOP_RespawnOwed[key], COOP_Owed[key] = nil, nil; -- the save point is the newer one
+				if (COOP_SavePoint[key]) then
+					CoopGiveLoadout(P, COOP_SavePoint[key]);
+					CoopMonEvent("S", "respawn loadout "..P:GetName().." ("..key..") "..getn(COOP_SavePoint[key].weapons).." weapons");
+				end
+			elseif (key and COOP_Owed[key] and COOP_Progress[key]) then
 				COOP_Owed[key] = nil;
 				CoopGiveLoadout(P, COOP_Progress[key]);
+				-- before any save point here, what the player came in with is the one to respawn with
+				COOP_SavePoint[key] = COOP_SavePoint[key] or COOP_Progress[key];
 				CoopMonEvent("S", "loadout "..P:GetName().." ("..key..") "..getn(COOP_Progress[key].weapons).." weapons");
 			end
 		end
@@ -992,7 +1028,7 @@ function CoopApplyPrefs()
 	for i, slot in Server:GetServerSlotMap() do
 		local p, P = COOP_Prefs[slot:GetId()], System:GetEntity(slot:GetPlayerId());
 		local key = CoopSlotKey(slot);
-		local waiting = not key or COOP_Owed[key]; -- carried weapons not given yet
+		local waiting = not key or COOP_Owed[key] or COOP_RespawnOwed[key]; -- carried weapons not given yet
 		if (p and P and not P.COOP_Prefed and not waiting and P.cnt and BasicPlayer.IsAlive(P)) then
 			P.COOP_Prefed = 1;
 			Server:BroadcastCommand("PCOLOR "..P.id.." "..p.color);
@@ -1570,10 +1606,14 @@ function CoopSave(name)
 	if (date) then save.date = date("%Y-%m-%d %H:%M"); end
 	for i, P in CoopPlayers() do
 		local t, a = P:GetPos(), P:GetAngles();
-		local L = CoopCollectLoadout(P) or {weapons = {}, ammo = new(P.Ammo or {})};
 		local slot = Server:GetServerSlotByEntityId(P.id);
-		L.key = slot and (COOP_SlotKeys[slot:GetId()] or "slot"..slot:GetId());
-		if (L.key and P.cnt.health > 0) then COOP_Progress[L.key] = CoopCollectLoadout(P); end
+		local key = slot and (COOP_SlotKeys[slot:GetId()] or "slot"..slot:GetId());
+		local L = (key and new(CoopKeyLoadout(key, P))) or CoopCollectLoadout(P) or {weapons = {}, ammo = new(P.Ammo or {})};
+		L.key = key;
+		if (key and P.cnt.health > 0) then
+			COOP_Progress[key] = CoopKeyLoadout(key, P);
+			COOP_SavePoint[key] = CoopKeyLoadout(key, P);
+		end
 		L.pos = {x = t.x, y = t.y, z = t.z};
 		L.ang = {x = a.x, y = a.y, z = a.z};
 		L.health = (P.cnt.health > 0) and P.cnt.health or P.cnt.max_health; -- a dead player is saved alive
@@ -1653,6 +1693,11 @@ function CoopApplyLoad()
 	-- everyone the save knows is owed their equipment; who is here gets it below, the rest on joining
 	COOP_Progress, COOP_Owed = save.progress or {}, {};
 	for key, L in COOP_Progress do COOP_Owed[key] = 1; end
+	COOP_SavePoint, COOP_RespawnOwed = {}, {}; -- the save point is the save's own records, not its progress part
+	for j = 1, getn(save.players) do
+		local L = save.players[j];
+		if (L.key and L.weapons) then COOP_SavePoint[L.key] = L; end
+	end
 	local keyed = save.players[1] and save.players[1].key; -- older saves give the records by join order
 	for i = 1, getn(save.dead) do
 		local e = System:GetEntity(save.dead[i]);
@@ -1681,7 +1726,10 @@ function CoopApplyLoad()
 			CoopMovePlayer(P, c.pos, c.ang);
 			local slot = Server:GetServerSlotByEntityId(P.id);
 			local key = slot and CoopSlotKey(slot);
-			if (key and COOP_Progress[key]) then CoopGiveLoadout(P, COOP_Progress[key]); end
+			if (key and COOP_Progress[key]) then
+				CoopGiveLoadout(P, COOP_Progress[key]);
+				COOP_SavePoint[key] = COOP_SavePoint[key] or COOP_Progress[key];
+			end
 		end
 	end
 	if (save.items) then

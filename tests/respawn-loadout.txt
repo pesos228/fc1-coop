@@ -1,6 +1,6 @@
 # A player who dies comes back with the equipment of the last save point (a checkpoint, F6, the map
 # start), as single player reloads it (owner's decision 2026-11-12); before, a respawn got the
-# mission's starting equipment, on Training nothing at all.
+# mission's starting equipment, on Training nothing at all. A new game forgets the last game's.
 # Run from the repo root: tools/bin/harness.exe test tests/respawn-loadout.txt
 up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
 wait server players>=2 -t 60s
@@ -24,13 +24,17 @@ lua server COOP_God=0
 lua server local t=Harness:RemotePlayer() local p=t:GetPos() t:Damage({shooter=t,target=t,weapon=t.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
 sleep 4s
 expect server Harness:RemotePlayer().cnt.health => 0
-lua server local s=Server:GetServerSlotByEntityId(Harness:RemotePlayer().id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
+# a save in the same frame as the respawn, before the save point is given back (review 2026-11-12):
+# it must keep the save point, not Training's nothing
+lua server local s=Server:GetServerSlotByEntityId(Harness:RemotePlayer().id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1) CoopSave("rltest")
 wait client1 me.health>=1 -t 30s
 sleep 3s
 expect server strfind(Harness:Loadout(Harness:RemotePlayer()), "^Shotgun,SniperRifle, cur=Shotgun ammo=17 clip=5") and 1 or Harness:Loadout(Harness:RemotePlayer()) => 1
 expect client1 strfind(Harness:Loadout(_localplayer), "^Shotgun,SniperRifle, cur=Shotgun ammo=17 clip=5") and 1 or Harness:Loadout(_localplayer) => 1
 
-# the host the same (its respawn waits GameRules.TimeRespawn after the death)
+# the host the same (its respawn waits GameRules.TimeRespawn after the death): its save point is
+# the MP5 of the second save, not the M4 picked up after it
+lua server CoopGiveLoadout(_localplayer, {weapons={"M4"}, ammo={Assault=90}, current="M4", clips={M4={fm=0, clip={30}}}})
 lua server local t=_localplayer local p=t:GetPos() t:Damage({shooter=t,target=t,weapon=t.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
 sleep 4s
 expect server _localplayer.cnt.health => 0
@@ -38,7 +42,46 @@ sleep 6s
 lua server local s=Server:GetServerSlotByEntityId(_localplayer.id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
 wait server me.health>=1 -t 30s
 sleep 3s
-expect server strfind(Harness:Loadout(_localplayer), "^Falcon,P90, cur=P90 ammo=77 clip=20") and 1 or Harness:Loadout(_localplayer) => 1
+expect server strfind(Harness:Loadout(_localplayer), "^MP5, cur=MP5 ammo=50 clip=30") and 1 or Harness:Loadout(_localplayer) => 1
+lua server COOP_God=1
+
+# the next level: what the client came with is its save point (Carrier's starting M4 and Falcon are
+# dropped again on the respawn)
+lua server CoopGiveLoadout(Harness:RemotePlayer(), {weapons={"Shotgun"}, ammo={Shotgun=11}, current="Shotgun", clips={Shotgun={fm=0, clip={3}}}})
+sleep 2s
+lua server COOP_PendingMap="carrier"
+wait server level=carrier -t 180s
+wait client1 level=carrier -t 240s
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 120s
+sleep 15s
+lua server COOP_God=1
+expect server strfind(Harness:Loadout(Harness:RemotePlayer()), "^Shotgun, cur=Shotgun ammo=11 clip=3") and 1 or Harness:Loadout(Harness:RemotePlayer()) => 1
+lua server COOP_God=0 local t=Harness:RemotePlayer() local p=t:GetPos() t:Damage({shooter=t,target=t,weapon=t.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 4s
+expect server Harness:RemotePlayer().cnt.health => 0
+lua server local s=Server:GetServerSlotByEntityId(Harness:RemotePlayer().id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
+wait client1 me.health>=1 -t 30s
+sleep 3s
+expect server strfind(Harness:Loadout(Harness:RemotePlayer()), "^Shotgun, cur=Shotgun ammo=11 clip=3") and 1 or Harness:Loadout(Harness:RemotePlayer()) => 1
+lua server COOP_God=1
+
+# a new game (coop_map, not the next level): the last game's save points are gone, a death before
+# the first one gives Training's own equipment (nothing)
+lua server CoopMap("training")
+wait server level=training -t 180s
+wait client1 level=training -t 240s
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 120s
+sleep 15s
+lua server COOP_God=1
+lua server COOP_God=0 local t=Harness:RemotePlayer() local p=t:GetPos() t:Damage({shooter=t,target=t,weapon=t.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 4s
+expect server Harness:RemotePlayer().cnt.health => 0
+lua server local s=Server:GetServerSlotByEntityId(Harness:RemotePlayer().id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
+wait client1 me.health>=1 -t 30s
+sleep 3s
+expect server Harness:Loadout(Harness:RemotePlayer()) => none cur=nil ammo=0 clip=0 armor=0 gren=1/0 bino=0 light=0
 expect-no-events
 lua server COOP_God=1 COOP_LastSave=nil remove("Mods/FarCryCoop/save_rltest.lua")
 down
