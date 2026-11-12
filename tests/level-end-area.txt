@@ -1,0 +1,32 @@
+# Carrier ends with an AreaTrigger (Area_Finish -> Mission:Event_MissionFinished -> StartLevelFade
+# Fort), as half the campaign maps do. The exit opens around the player who walked in (an area has
+# no box of its own: COOP_EXIT_MIN square) and waits for the others (COOP LevelEnd).
+# Then on Fort a mission end that no player set off (no trigger fired for 15 s: a cutscene's or
+# a timer's) changes the level at once, as before.
+# Run from the repo root: tools/bin/harness.exe test tests/level-end-area.txt
+up -mode host -map carrier -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("carrier")
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 180s
+sleep 30s
+lua server COOP_God=1
+lua server CoopMovePlayer(Harness:Player("client1"), {x=1393.7,y=1173.5,z=29.6})
+sleep 4s
+# The area is switched on by the story (Message_TheEnd); the client is in it.
+lua server local e=System:GetEntityByName("Area_Finish") e:Event_Enable() e.Empty.OnEnterArea(e, Harness:Player("client1"), 0)
+sleep 3s
+expect server COOP_Exit and COOP_Exit.map or "none" => Fort
+expect server COOP_Exit.hold[Harness:Player("client1").id] and 1 or 0 => 1
+expect server format("%.0f %.0f", COOP_Exit.hx*2, COOP_Exit.hy*2) => 6 6
+expect client1 COOP_ExitView and COOP_ExitView.hold and 1 or 0 => 1
+lua server CoopMovePlayer(_localplayer, {x=COOP_Exit.x+1,y=COOP_Exit.y+1,z=COOP_Exit.z+0.3})
+wait server level=fort -t 60s
+wait server players>=2 -t 120s
+wait client1 level=fort -t 180s
+wait client1 players>=2 -t 120s
+sleep 30s
+lua server COOP_God=1 Game:SendMessage("StartLevelFade Pier")
+sleep 1s
+expect server COOP_Exit and 1 or 0 => 0
+wait server level=pier -t 120s
+expect-no-events
+down

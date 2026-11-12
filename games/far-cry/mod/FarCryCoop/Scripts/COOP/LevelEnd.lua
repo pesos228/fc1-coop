@@ -13,42 +13,86 @@ COOP_EXIT_HOLD = 0.3 -- a held player who got farther than this from his spot is
 -- server ------------------------------------------------------------------------------------
 
 COOP_Exit = nil -- this file runs on every map load
--- The player who set off the mission end: the one in a trigger that is Occupied now (Training:
--- ProximityTrigger39 -> DelayTrigger3 -> Mission:Event_MissionFinished -> StartLevelFade). An
--- inactive trigger keeps its last Who, so only Occupied ones count; one the player has left
--- (Occupied until its leave timer runs out) only if none holds him now.
-function CoopExitOpener()
-	local P1, e1;
-	for i, e in System:GetEntities() do
-		local P = e.Who;
-		if (type(P) == "table" and P.classname == "Player" and not P.ai and BasicPlayer.IsAlive(P) and e:GetState() == "Occupied") then
-			if (e.Properties and e.Properties.DimX and CoopUseNear(e, P, 0.2)) then return P, e; end
-			if (not P1) then P1, e1 = P, e; end
+-- Who set off the mission end, carried along the chain of trigger events (Training:
+-- ProximityTrigger111 -> DelayTrigger4, 3 s -> ProximityTrigger39 -> DelayTrigger3, 2 s ->
+-- Mission:Event_MissionFinished; half the maps end with an AreaTrigger right away). Every trigger
+-- fires with BroadcastEvent(self, event), which calls its targets' Event_ functions at once:
+-- - a trigger a player walked into has him in Who: he is the cause, with where he stood and the
+--   trigger's box, taken now (he may have walked off by the end of the chain);
+-- - an event fired from inside another one's (COOP_CurrentCause) keeps that one's cause: a
+--   trigger set off by an event keeps an old Who, or none;
+-- - its targets get the cause (COOP_Cause), for when they fire later (a DelayTrigger).
+-- So a mission end set off by nobody (after a cutscene, a timer) opens no exit, and another player
+-- crossing some other trigger meanwhile is not taken for the opener. A cause older than
+-- COOP_EXIT_CAUSE_AGE s does not count (Boat: the end comes 25 s after a gunship dies, whenever
+-- that is).
+COOP_EXIT_CAUSE_AGE = 60
+if (BroadcastEvent and BroadcastEvent ~= COOP_BroadcastEvent) then COOP_OrigBroadcastEvent = BroadcastEvent; end -- common.lua's (this file runs on every map load)
+function CoopExitCause(sender)
+	if (COOP_CurrentCause) then return COOP_CurrentCause; end
+	local P = sender.Who;
+	if (type(P) == "table" and P.classname == "Player" and not P.ai) then
+		local p = P:GetPos();
+		local c = {P = P, x = p.x, y = p.y, z = p.z, t = _time, name = sender:GetName()};
+		local d = sender.Properties;
+		if (d and d.DimX and d.DimY) then -- a box trigger (the engine lets players in by it along the world axes)
+			local q = sender:GetPos();
+			c.bx = q.x;
+			c.by = q.y;
+			c.hx = d.DimX / 2;
+			c.hy = d.DimY / 2;
+		end
+		return c;
+	end
+	return sender.COOP_Cause;
+end
+function COOP_BroadcastEvent(sender, event)
+	local cause = type(sender) == "table" and CoopExitCause(sender);
+	local list = cause and sender.Events and sender.Events[event];
+	if (list) then
+		for i, target in list do
+			local e = target[1] ~= 0 and System:GetEntity(target[1]);
+			if (e) then e.COOP_Cause = cause; end
 		end
 	end
-	return P1, e1;
+	local prev = COOP_CurrentCause;
+	COOP_CurrentCause = cause or prev;
+	-- call: an error in a target's script must not leave its cause behind for every later event
+	local r = call(COOP_OrigBroadcastEvent, {sender, event}, "x", function(msg) System:LogAlways("coop: event error: "..tostring(msg)); end);
+	COOP_CurrentCause = prev;
+	return r;
+end
+BroadcastEvent = COOP_BroadcastEvent
+COOP_CurrentCause = nil
+
+-- the cause of this mission end, if it is a living player and recent enough (nil: change at once)
+function CoopExitOpener()
+	local c = COOP_CurrentCause;
+	local why = nil;
+	if (not c) then why = "no player set it off";
+	elseif (_time < c.t or _time > c.t + COOP_EXIT_CAUSE_AGE) then why = format("set off %.0f s ago", _time - c.t); -- (_time restarts on a map load)
+	elseif (System:GetEntity(c.P.id) ~= c.P or not BasicPlayer.IsAlive(c.P)) then why = "the opener is gone or dead"; end
+	if (why) then CoopMonEvent("S", "exit skipped: "..why); return; end
+	return c;
 end
 
 -- From CoopStartLevel (the mission end, on the server): 1 when the exit takes over the level
--- change, nil to change it now (nobody in a trigger: an end after a cutscene or a timer).
+-- change, nil to change it now.
 function CoopExitOpen(map)
 	if (COOP_Exit) then COOP_Exit.map = map; return 1; end
-	local P, e = CoopExitOpener();
-	if (not P) then return; end
-	local p = new(P:GetPos()); -- a copy: e:GetPos() below returns the same shared table
-	local x = {map = map, x = p.x, y = p.y, z = p.z, hx = COOP_EXIT_MIN / 2, hy = COOP_EXIT_MIN / 2, ends = _time + COOP_ExitTime, hold = {}, sendAt = 0};
-	local d = e.Properties;
-	if (d and d.DimX and d.DimY) then -- a box trigger (the engine lets players in by it along the world axes)
-		local t = e:GetPos();
-		x.x = t.x;
-		x.y = t.y;
-		x.hx = max(d.DimX / 2, x.hx); -- one by one (Lua 4, see CoopAimedPlayer)
-		x.hy = max(d.DimY / 2, x.hy);
+	local c = CoopExitOpener();
+	if (not c) then return; end
+	local x = {map = map, x = c.x, y = c.y, z = c.z, hx = COOP_EXIT_MIN / 2, hy = COOP_EXIT_MIN / 2, ends = _time + COOP_ExitTime, hold = {}, sendAt = 0};
+	if (c.bx) then
+		x.x = c.bx;
+		x.y = c.by;
+		x.hx = max(c.hx, x.hx); -- one by one (Lua 4, see CoopAimedPlayer)
+		x.hy = max(c.hy, x.hy);
 	end
-	-- the opener is in, even from the edge of a wide trigger (counted by his body, the zone by his feet)
-	x.hold[P.id] = {x = p.x, y = p.y, z = p.z, P = P};
+	-- the opener is in, on the spot he set it off from (counted by his body there, the zone by feet)
+	x.hold[c.P.id] = {x = c.x, y = c.y, z = c.z, P = c.P};
 	COOP_Exit = x;
-	CoopMonEvent("S", format("exit open by %s (%s) at %.1f,%.1f,%.1f, %.0f x %.0f m, %d s", P:GetName(), e:GetName(), x.x, x.y, x.z, x.hx * 2, x.hy * 2, COOP_ExitTime));
+	CoopMonEvent("S", format("exit open by %s (%s) at %.1f,%.1f,%.1f, %.0f x %.0f m, %d s", c.P:GetName(), c.name, x.x, x.y, x.z, x.hx * 2, x.hy * 2, COOP_ExitTime));
 	CoopExitTick(); -- more than half there already (alone): the level changes at once
 	return 1;
 end
@@ -95,6 +139,7 @@ function CoopExitTick()
 				if (not P.theVehicle and (px - h.x) * (px - h.x) + (py - h.y) * (py - h.y) > COOP_EXIT_HOLD * COOP_EXIT_HOLD) then
 					P:SetPos({x = h.x, y = h.y, z = h.z});
 				end
+				CoopExitFreeze(P);
 			end
 		end
 	end
@@ -116,13 +161,33 @@ function CoopExitTick()
 	end
 end
 
+-- A held player can neither walk (speedscale: CPlayer scales the input speed by it) nor fire
+-- (weapon_busy > 0: no shot, grenade or melee, the weapon stays in his hands), on the machine
+-- that moves him (his own: CoopExitClientTick) and on the server's copy. Every frame: the
+-- weapon_busy counts down by itself.
+function CoopExitFreeze(P)
+	local c = P and P.cnt;
+	if (not c) then return; end
+	if (c.speedscale and c.speedscale ~= 0) then P.COOP_ExitSpeed = c.speedscale; c.speedscale = 0; end
+	if (c.weapon_busy and c.weapon_busy < 0.5) then c.weapon_busy = 0.5; end
+end
+function CoopExitUnfreeze(P)
+	if (P and P.cnt and P.COOP_ExitSpeed) then P.cnt.speedscale = P.COOP_ExitSpeed; P.COOP_ExitSpeed = nil; end
+end
+
 function CoopExitClose(x, why)
-	CoopMonEvent("S", format("exit: %s, %d s left: %s", why, max(0, floor(x.ends - _time)), x.map));
 	COOP_Exit = nil;
 	COOP_ExitView = nil;
+	COOP_PendingMap = x.map; -- GameRules:OnUpdate loads it next frame; first: an error below must not keep the level
+	CoopMonEvent("S", format("exit: %s, %d s left: %s", why, max(0, floor(x.ends - _time)), x.map));
 	Server:BroadcastCommand("EXIT -");
-	COOP_PendingMap = x.map; -- GameRules:OnUpdate loads it next frame
+	CoopExitUnfreezeAll(x);
 	return 1;
+end
+function CoopExitUnfreezeAll(x)
+	for id, h in x.hold do
+		if (System:GetEntity(id) == h.P) then CoopExitUnfreeze(h.P); end
+	end
 end
 
 Game:AddCommand("coop_exittime", "COOP_ExitTime = tonumber(%%) or 120", "coop_exittime <s>: how long the exit waits for the players at a level end (120)");
@@ -133,7 +198,7 @@ Game:AddCommand("coop_exittime", "COOP_ExitTime = tonumber(%%) or 120", "coop_ex
 -- <hold z>]", once a second while the exit is open; "EXIT -" when it closes.
 if (ClientStuff and ClientStuff.ServerCommandTable) then ClientStuff.ServerCommandTable["EXIT"] = function(String, tk)
 	if (Game:IsServer()) then return; end
-	if (tk[2] == "-") then COOP_ExitView = nil; return; end
+	if (tk[2] == "-") then COOP_ExitView = nil; CoopExitUnfreeze(_localplayer); return; end
 	local v = {x = tonumber(tk[2]) or 0, y = tonumber(tk[3]) or 0, z = tonumber(tk[4]) or 0, hx = tonumber(tk[5]) or 3, hy = tonumber(tk[6]) or 3};
 	v.ends = _time + (tonumber(tk[7]) or 0);
 	v.need = tonumber(tk[8]) or 0;
@@ -201,7 +266,7 @@ end
 function CoopExitClientTick()
 	local v = COOP_ExitView;
 	if (not v) then return; end
-	if (_time > v.at + 3 or _time < v.at) then COOP_ExitView = nil; return; end -- the server stopped (a map change)
+	if (_time > v.at + 3 or _time < v.at) then COOP_ExitView = nil; CoopExitUnfreeze(_localplayer); return; end -- the server stopped (a map change)
 	if (_time >= (COOP_ExitDrawAt or 0) or _time + 1 < COOP_ExitDrawAt) then
 		COOP_ExitDrawAt = _time + 0.3;
 		CoopExitDraw(v);
@@ -213,6 +278,7 @@ function CoopExitClientTick()
 			P:SetPos(v.hold);
 		end
 	end
+	if (v.hold and P and not Game:IsServer()) then CoopExitFreeze(P); end
 end
 
 -- From the COOP Hud hook every frame: the countdown at the top, in the zone also who is missing.

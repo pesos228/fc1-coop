@@ -59,13 +59,14 @@ Game:AddCommand("coop_difficulty", "CoopDifficulty(%%)", "coop_difficulty [0-4|n
 
 -- FarCryCoop: start a campaign map as a co-op server, e.g. "coop_map Pier"
 function CoopMap(name)
-	COOP_Exit, COOP_ExitView = nil, nil; -- an exit left open (COOP LevelEnd) ends with its level
 	if (COOP_Difficulty) then CoopApplyDifficulty(tonumber(COOP_Difficulty)); end -- the launcher sets it
 	local mission = Game:GetMapDefaultMission(name);
 	if (not mission) then
 		System:LogAlways("coop_map: map '"..tostring(name).."' not found");
 		return;
 	end
+	if (COOP_Exit and CoopExitUnfreezeAll) then CoopExitUnfreezeAll(COOP_Exit); end -- an exit left open (COOP LevelEnd) ends with its level
+	COOP_Exit, COOP_ExitView = nil, nil;
 	AvailableMODList.COOP.mission = mission;
 	setglobal("g_GameType", "COOP");
 	-- cutscene sequences need input and sound, which a dedicated server lacks (crashes in

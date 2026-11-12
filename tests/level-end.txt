@@ -21,7 +21,11 @@ expect client1 COOP_ExitView and COOP_ExitView.hold and 1 or 0 => 1
 expect client1 strfind(COOP_ExitText or "", "^Next level in 1[01]%d s %- waiting for 1 more player$") and 1 or COOP_ExitText or "none" => 1
 expect server strfind(COOP_ExitText or "", "^Next level in 1[01]%d s$") and 1 or COOP_ExitText or "none" => 1
 
-# Held: walking off puts him back; a hit does nothing, God mode off.
+# Held: he cannot walk or fire (his own game and the server's copy).
+expect client1 _localplayer.cnt.speedscale => 0
+expect client1 _localplayer.cnt.weapon_busy > 0 and 1 or 0 => 1
+expect server Harness:Player("client1").cnt.speedscale => 0
+# Walking off anyway puts him back; a hit does nothing, God mode off.
 lua client1 local p=_localplayer:GetPos() _localplayer:SetPos({x=p.x+4,y=p.y,z=p.z})
 sleep 2s
 # Back on his spot in his own game, which holds him, and on the server. (Red runs on 2026-11-11 with
@@ -40,6 +44,10 @@ lua server CoopMovePlayer(_localplayer, {x=COOP_Exit.x+1,y=COOP_Exit.y+1,z=COOP_
 wait server level=carrier -t 30s
 wait client1 level=carrier -t 180s
 wait server players>=2 -t 120s
+wait client1 players>=2 -t 120s
 expect server COOP_Exit and 1 or 0 => 0
+# free again on the next level
+expect client1 _localplayer.cnt.speedscale > 0 and 1 or 0 => 1
+expect server _localplayer.cnt.speedscale > 0 and 1 or 0 => 1
 expect-no-events
 down
