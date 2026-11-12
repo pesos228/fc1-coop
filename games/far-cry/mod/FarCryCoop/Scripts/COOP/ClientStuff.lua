@@ -170,8 +170,8 @@ end
 -- from the server's vehicle update alone (VC:UpdateEnteringLeaving), so the client's copy stayed
 -- bound with no place in the vehicle: Steam's boat gunner stood at its level spot, 240 m from the
 -- boat, and logged "pos is invalid" every frame (tests/steam-boat-crew.txt). Seat it as
--- UserEntered does. VehicleCommon.lua loads at startup (main.lua), the per-frame call only wraps a
--- reloaded VC again.
+-- UserEntered does, sit animation included. VehicleCommon.lua loads at startup (main.lua), the
+-- per-frame call only wraps a reloaded VC again.
 function CoopWrapClientSeat()
 	if (not VC or VC.COOP_ClientSeat or Game:IsServer()) then return; end
 	VC.COOP_ClientSeat = 1;
@@ -180,6 +180,13 @@ function CoopWrapClientSeat()
 		local r = %old(self, tbl);
 		if (type(tbl) == "table" and tbl.entity and tbl.state == 1 and tbl.time and tbl.time <= -10) then
 			tbl.entity:SetPos(self:GetHelperPos(tbl.in_helper, 1));
+			-- the server's sit animation ("ANIM") went out when it seated the crew at the map start,
+			-- before this client was in: the gunner stood in the boat
+			if (tbl.sit_anim) then
+				tbl.entity:StartAnimation(0, tbl.sit_anim, 0, 0, 1);
+				tbl.entity:ForceCharacterUpdate(0);
+				CoopMonEvent("C", "anim "..tbl.entity:GetName().." "..tbl.sit_anim);
+			end
 		end
 		return r;
 	end
