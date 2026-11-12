@@ -1,0 +1,246 @@
+# Chapter 1 in one session, as players would go through it: Training -> Carrier -> Fort -> Pier ->
+# Research, a listen host and one client. On every map: both are in with the same entities, every
+# campaign checkpoint (CoopGoto) keeps them together, the client dies and respawns, the client sets
+# off the mission end, the exit zone opens and the host walking in changes the level for both. The
+# client gets weapons on Training; Fort is saved and loaded once on the way. A respawn gives the
+# mission's starting equipment (not the player's own), so what the client carries is not checked
+# after the first death (open question, docs/changelog.md 2026-11-12).
+# The players are made immune here (a GameRules.OnDamage wrapper of this test, not COOP_God: an
+# explosion over 255 kills through that, docs/findings.md 2026-11-12), the checkpoints sit in fights.
+# Run from the repo root: tools/bin/harness.exe test tests/chapter1.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 30s
+lua server COOP_God=1 COOP_TestImmune=1 if GameRules.OnDamage ~= COOP_TestDmgFn then local old=GameRules.OnDamage COOP_TestDmgFn=function(self,hit) if COOP_TestImmune and hit.target and hit.target.type=="Player" then return end return %old(self,hit) end GameRules.OnDamage=COOP_TestDmgFn end
+lua server CoopGiveLoadout(Harness:RemotePlayer(), {weapons={"Shotgun","SniperRifle"}, ammo={Shotgun=17, Sniper=23, Rock=9999}, current="Shotgun", clips={Shotgun={fm=0, clip={5}}, SniperRifle={fm=0, clip={4}}}, armor=50})
+sleep 3s
+
+# ---- Training
+expect-diff max=100000 missing=0
+expect-diff max=1 class=^Player$
+expect server strfind(Harness:Loadout(Harness:RemotePlayer()), "^Shotgun,SniperRifle,") and 1 or Harness:Loadout(Harness:RemotePlayer()) => 1
+lua server CoopGoto(2)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(3)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(4)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(5)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(6)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(9)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(10)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(11)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(12)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(13)
+sleep 10s
+expect-diff max=1 class=^Player$
+expect server _localplayer.cnt.health > 0 and Harness:RemotePlayer().cnt.health > 0 and 1 => 1
+# the client dies and respawns
+lua server COOP_TestImmune=nil COOP_God=0 local t=Harness:RemotePlayer() local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 4s
+expect server Harness:RemotePlayer().cnt.health => 0
+lua server local s=Server:GetServerSlotByEntityId(Harness:RemotePlayer().id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
+wait client1 me.health>=1 -t 30s
+sleep 3s
+lua server COOP_God=1 COOP_TestImmune=1 if GameRules.OnDamage ~= COOP_TestDmgFn then local old=GameRules.OnDamage COOP_TestDmgFn=function(self,hit) if COOP_TestImmune and hit.target and hit.target.type=="Player" then return end return %old(self,hit) end GameRules.OnDamage=COOP_TestDmgFn end
+expect-diff max=1 class=^Player$
+# the end: the client sets it off, the host walks into the exit
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=1173.2,y=911.8,z=15.5})
+sleep 12s
+expect server COOP_Exit and COOP_Exit.map or "none" => Carrier
+lua server CoopMovePlayer(_localplayer, {x=COOP_Exit.x+1,y=COOP_Exit.y+1,z=COOP_Exit.z+0.3})
+expect-no-events
+
+# ---- Carrier
+wait server level=carrier -t 120s
+wait client1 level=carrier -t 240s
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 120s
+# the intro
+sleep 30s
+lua server COOP_God=1 COOP_TestImmune=1 if GameRules.OnDamage ~= COOP_TestDmgFn then local old=GameRules.OnDamage COOP_TestDmgFn=function(self,hit) if COOP_TestImmune and hit.target and hit.target.type=="Player" then return end return %old(self,hit) end GameRules.OnDamage=COOP_TestDmgFn end
+expect-diff max=100000 missing=0
+expect-diff max=1 class=^Player$
+lua server CoopGoto(2)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(3)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(4)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(5)
+sleep 10s
+expect-diff max=1 class=^Player$
+expect server _localplayer.cnt.health > 0 and Harness:RemotePlayer().cnt.health > 0 and 1 => 1
+# the client dies and respawns
+lua server COOP_TestImmune=nil COOP_God=0 local t=Harness:RemotePlayer() local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 4s
+expect server Harness:RemotePlayer().cnt.health => 0
+lua server local s=Server:GetServerSlotByEntityId(Harness:RemotePlayer().id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
+wait client1 me.health>=1 -t 30s
+sleep 3s
+lua server COOP_God=1 COOP_TestImmune=1 if GameRules.OnDamage ~= COOP_TestDmgFn then local old=GameRules.OnDamage COOP_TestDmgFn=function(self,hit) if COOP_TestImmune and hit.target and hit.target.type=="Player" then return end return %old(self,hit) end GameRules.OnDamage=COOP_TestDmgFn end
+expect-diff max=1 class=^Player$
+# the end: the client sets it off, the host walks into the exit
+lua server local e=System:GetEntityByName("Area_Finish") local P=Harness:RemotePlayer() local p=new(e:GetPos()) CoopMovePlayer(P, {x=p.x,y=p.y,z=p.z+0.5})
+sleep 6s
+lua server local e=System:GetEntityByName("Area_Finish") local P=Harness:RemotePlayer() if e.Event_Enable then e:Event_Enable() end local st=e[e:GetState()] if st and st.OnEnterArea then st.OnEnterArea(e,P,0) end
+sleep 8s
+expect server COOP_Exit and COOP_Exit.map or "none" => Fort
+lua server CoopMovePlayer(_localplayer, {x=COOP_Exit.x+1,y=COOP_Exit.y+1,z=COOP_Exit.z+0.3})
+expect-no-events
+
+# ---- Fort
+wait server level=fort -t 120s
+wait client1 level=fort -t 240s
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 120s
+# the intro
+sleep 30s
+lua server COOP_God=1 COOP_TestImmune=1 if GameRules.OnDamage ~= COOP_TestDmgFn then local old=GameRules.OnDamage COOP_TestDmgFn=function(self,hit) if COOP_TestImmune and hit.target and hit.target.type=="Player" then return end return %old(self,hit) end GameRules.OnDamage=COOP_TestDmgFn end
+expect-diff max=100000 missing=0
+expect-diff max=1 class=^Player$
+lua server CoopGoto(3)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(4)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(5)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(6)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(7)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(8)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(9)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(10)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(11)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(12)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(13)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(14)
+sleep 10s
+expect-diff max=1 class=^Player$
+expect server _localplayer.cnt.health > 0 and Harness:RemotePlayer().cnt.health > 0 and 1 => 1
+# saved and loaded on the way: the map reloads with both kept
+lua server CoopSave("ch1test")
+expect-log server saved.ch1test:.2.players
+lua server CoopLoad("ch1test")
+expect-log server loaded.ch1test:.2.players 180s
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 240s
+sleep 15s
+lua server COOP_God=1 COOP_TestImmune=1 if GameRules.OnDamage ~= COOP_TestDmgFn then local old=GameRules.OnDamage COOP_TestDmgFn=function(self,hit) if COOP_TestImmune and hit.target and hit.target.type=="Player" then return end return %old(self,hit) end GameRules.OnDamage=COOP_TestDmgFn end
+expect-diff max=1 class=^Player$
+lua server COOP_LastSave=nil remove("Mods/FarCryCoop/save_ch1test.lua")
+# the client dies and respawns
+lua server COOP_TestImmune=nil COOP_God=0 local t=Harness:RemotePlayer() local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 4s
+expect server Harness:RemotePlayer().cnt.health => 0
+lua server local s=Server:GetServerSlotByEntityId(Harness:RemotePlayer().id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
+wait client1 me.health>=1 -t 30s
+sleep 3s
+lua server COOP_God=1 COOP_TestImmune=1 if GameRules.OnDamage ~= COOP_TestDmgFn then local old=GameRules.OnDamage COOP_TestDmgFn=function(self,hit) if COOP_TestImmune and hit.target and hit.target.type=="Player" then return end return %old(self,hit) end GameRules.OnDamage=COOP_TestDmgFn end
+expect-diff max=1 class=^Player$
+# the end: the client sets it off, the host walks into the exit
+lua server local e=System:GetEntityByName("ProximityTrigger73") local P=Harness:RemotePlayer() local p=new(e:GetPos()) CoopMovePlayer(P, {x=p.x,y=p.y,z=p.z+0.5})
+sleep 6s
+lua server local e=System:GetEntityByName("ProximityTrigger73") local P=Harness:RemotePlayer() if e.Event_Enable then e:Event_Enable() end local st=e[e:GetState()] if st and st.OnEnterArea then st.OnEnterArea(e,P,0) end
+sleep 8s
+expect server COOP_Exit and COOP_Exit.map or "none" => Pier
+lua server CoopMovePlayer(_localplayer, {x=COOP_Exit.x+1,y=COOP_Exit.y+1,z=COOP_Exit.z+0.3})
+expect-no-events
+
+# ---- Pier
+wait server level=pier -t 120s
+wait client1 level=pier -t 240s
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 120s
+# the intro
+sleep 30s
+lua server COOP_God=1 COOP_TestImmune=1 if GameRules.OnDamage ~= COOP_TestDmgFn then local old=GameRules.OnDamage COOP_TestDmgFn=function(self,hit) if COOP_TestImmune and hit.target and hit.target.type=="Player" then return end return %old(self,hit) end GameRules.OnDamage=COOP_TestDmgFn end
+expect-diff max=100000 missing=0
+expect-diff max=1 class=^Player$
+lua server CoopGoto(2)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(3)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(4)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(5)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(6)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(7)
+sleep 10s
+expect-diff max=1 class=^Player$
+lua server CoopGoto(8)
+sleep 10s
+expect-diff max=1 class=^Player$
+expect server _localplayer.cnt.health > 0 and Harness:RemotePlayer().cnt.health > 0 and 1 => 1
+# the client dies and respawns
+lua server COOP_TestImmune=nil COOP_God=0 local t=Harness:RemotePlayer() local p=t:GetPos() t:Damage({shooter=_localplayer,target=t,weapon=_localplayer.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 4s
+expect server Harness:RemotePlayer().cnt.health => 0
+lua server local s=Server:GetServerSlotByEntityId(Harness:RemotePlayer().id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
+wait client1 me.health>=1 -t 30s
+sleep 3s
+lua server COOP_God=1 COOP_TestImmune=1 if GameRules.OnDamage ~= COOP_TestDmgFn then local old=GameRules.OnDamage COOP_TestDmgFn=function(self,hit) if COOP_TestImmune and hit.target and hit.target.type=="Player" then return end return %old(self,hit) end GameRules.OnDamage=COOP_TestDmgFn end
+expect-diff max=1 class=^Player$
+# the end: the client sets it off, the host walks into the exit
+lua server System:GetEntityByName("endmission_trigger"):Event_Enable()
+sleep 2s
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=1617.5,y=256.3,z=17.3})
+sleep 10s
+expect server COOP_Exit and COOP_Exit.map or "none" => Research
+lua server CoopMovePlayer(_localplayer, {x=COOP_Exit.x+1,y=COOP_Exit.y+1,z=COOP_Exit.z+0.3})
+expect-no-events
+
+# ---- Research: both arrive
+wait server level=research -t 120s
+wait client1 level=research -t 240s
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 120s
+sleep 30s
+expect-diff max=100000 missing=0
+expect-diff max=1 class=^Player$
+expect-no-events
+down
