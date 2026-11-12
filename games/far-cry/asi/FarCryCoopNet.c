@@ -235,22 +235,27 @@ static void netPresenceIfMoved(void *ent)
 static DWORD g_watchId, g_watchSnaps;
 #define MAX_NET 4096
 #define STALE_SEC 0.25f // FIX 14; ponytail: one value for near and far entities
+#define DRIFT_M 0.5f    // FIX 14: a slow entity is lifted once it may be this far off on a client
 static float g_movePos[65536][3], g_moveT[65536]; // FIX 14: position and time of the last look
+static float g_moveSpeed2[65536];                 // (m/s)^2 over the last look
 static BYTE g_moving[65536];                      // moved more than 5 cm over the last look
-static int moving(void *ent, float now)
-{ // shared by the slots: whether the entity moved, looked at no more often than STALE_SEC
+static int moving(void *ent, float now, float dt)
+{ // shared by the slots: whether the entity moved, looked at no more often than STALE_SEC, or moved
+  // slowly but long enough since it was sent (dt) to be DRIFT_M off
 	WORD id = ((WORD(__fastcall *)(void *, void *))VFN(ent, 0xc4))(ent, 0);
 	Vec3 *p;
-	float *q, dx, dy, dz;
-	if (now - g_moveT[id] < STALE_SEC && now >= g_moveT[id])
-		return g_moving[id];
-	p = ((Vec3 * (__fastcall *)(void *, void *, int))VFN(ent, 0x04))(ent, 0, 1);
-	q = g_movePos[id];
-	dx = p->x - q[0], dy = p->y - q[1], dz = p->z - q[2];
-	g_moving[id] = g_moveT[id] != 0 && dx * dx + dy * dy + dz * dz > 0.0025f;
-	q[0] = p->x, q[1] = p->y, q[2] = p->z;
-	g_moveT[id] = now;
-	return g_moving[id];
+	float *q, dx, dy, dz, d2;
+	if (now - g_moveT[id] >= STALE_SEC || now < g_moveT[id]) {
+		p = ((Vec3 * (__fastcall *)(void *, void *, int))VFN(ent, 0x04))(ent, 0, 1);
+		q = g_movePos[id];
+		dx = p->x - q[0], dy = p->y - q[1], dz = p->z - q[2];
+		d2 = dx * dx + dy * dy + dz * dz;
+		g_moving[id] = g_moveT[id] != 0 && d2 > 0.0025f;
+		g_moveSpeed2[id] = g_moveT[id] != 0 && now > g_moveT[id] ? d2 / ((now - g_moveT[id]) * (now - g_moveT[id])) : 0;
+		q[0] = p->x, q[1] = p->y, q[2] = p->z;
+		g_moveT[id] = now;
+	}
+	return g_moving[id] || g_moveSpeed2[id] * dt * dt > DRIFT_M * DRIFT_M;
 }
 static BYTE *v[MAX_NET];    // list nodes in send order
 static float k[MAX_NET], lu[MAX_NET]; // sort key, m_fLastUpdate before the snapshot
@@ -280,8 +285,9 @@ static void sortNetEntities(BYTE *snap)
 		// entity 1..501 by distance (CNetEntityInfo::Update). With a map's worth of AI the budget went
 		// to them and a sailing boat waited 9-10 s, standing still on the clients in between. An
 		// entity that moves and was not sent for STALE_SEC competes as an AI does. Only moving ones:
-		// every synced prop and far object in that pool took the AI's share (review).
-		if (pr > 0 && pr < 100000 && dt > STALE_SEC && *(void **)(n + 0xc) && moving(*(void **)(n + 0xc), now))
+		// every synced prop and far object in that pool took the AI's share (review). A far boat
+		// drifting 0.1 m/s waited 45 s and stayed 3.6 m off: it joins once it may be DRIFT_M off.
+		if (pr > 0 && pr < 100000 && dt > STALE_SEC && *(void **)(n + 0xc) && moving(*(void **)(n + 0xc), now, dt))
 			pr += 100000;
 		k[c++] = (float)pr * (dt > 0 ? dt : 0);
 	}
@@ -388,6 +394,13 @@ static BYTE __fastcall hWr(void *self, void *edx, void *server, void *stm)
 	s.wr++;
 	if (*(DWORD *)((BYTE *)self + 0x1c) >= 1000000) // m_nPriority: slot's own player
 		s.wrOwn++;
+	// FIX 16: past the budget hSend drops the update anyway, but Write (SDK NetEntityInfo.cpp) has
+	// used up the client's off-sync mark (CXServerSlot::IsEntityOffSync erases it) and moved the
+	// clone state on. With the fixed step (MP) a physics body not marked gets a checksum only, so a
+	// far boat that drifted on a client (River, 1.8-3.6 m) never got its position. The caller
+	// ignores the result.
+	if (g_inSnap && g_full && g_n)
+		return 1;
 	return oWr(self, edx, server, stm);
 }
 
