@@ -14,5 +14,8 @@ sleep 60s
 wait client1 players>=2 -t 10s
 # the crew sits in the boat on both sides (the boat itself may lag while it moves)
 expect-diff max=8 class=^(MercCover|MercScout)$
+# the gunner sits on the client too: the server sends the sit animation once, when it seats the crew
+# at the map start, before the client is in (2026-11-12: the client's gunner stood in the boat)
+expect-log client1 anim.Merc_Cover.MercCover_Falcon_1.gunboat_gunner_sit
 expect-no-events
 down
