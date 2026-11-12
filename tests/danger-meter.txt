@@ -1,0 +1,29 @@
+# Training: the danger meter by the radar (Hud:DrawStealthMeter, Hud.curr_stealth 0..100) is each
+# player's own, as in single player (owner, 2026-11-12). It reads AI:GetPerception(), which asks
+# about the game's own player only (ScriptObjectAI.cpp GetPerception, SDK) and there is no AI on a
+# client: a client spotted and shot at kept it empty. Who is seen: the AI perceive each player
+# separately (IAISystem::GetPerceptionValue takes the player's AI object), so the host, unseen,
+# keeps his own empty. OPEN until the fix.
+# Setup as in tests/sleepers-seen.txt: the client faces the first village, the boxcarrier wakes
+# and comes for it; the host is ~95 m away with its back to the village.
+# Run from the repo root: tools/bin/harness.exe test tests/danger-meter.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 30s
+wait client1 players>=2 -t 30s
+sleep 5s
+lua server COOP_God=1
+lua server _localplayer:SetAngles({x=0,y=0,z=100}) _localplayer:SetPos({x=482,y=927,z=30})
+lua server local tr=System:GetEntityByName("AreaTrigger80") tr:Event_Disable(tr) local t=tr:GetPos() TX,TY,TZ=t.x,t.y,t.z
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=TX,y=TY,z=TZ+1}, {x=0,y=0,z=280})
+sleep 10s
+# nobody sees anybody yet
+expect client1 (Hud.curr_stealth < 10) and 1 => 1
+expect server (Hud.curr_stealth < 10) and 1 => 1
+# the client turns to the village and is seen
+lua client1 _localplayer:SetAngles({x=0,y=0,z=100})
+sleep 15s
+expect server System:GetEntityByName("boxcarrier").COOP_Awake => 1
+expect client1 (Hud.curr_stealth > 40) and 1 or Hud.curr_stealth => 1
+expect server (Hud.curr_stealth < 10) and 1 or Hud.curr_stealth => 1
+expect-no-events
+down
