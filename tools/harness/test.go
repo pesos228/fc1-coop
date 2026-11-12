@@ -158,6 +158,9 @@ func cmdTest(args []string) error {
 	return nil
 }
 
+// Lua that loads a level (as scripts/harness/agent.lua Harness.loadPatterns)
+var loadCode = regexp.MustCompile(`Game:Load|Game:Connect|CoopMap\(`)
+
 // runLua runs Lua in an instance; with out != nil it returns the agent's result string.
 func runLua(inst, code string, out *string) error {
 	r, err := currentRun()
@@ -168,7 +171,12 @@ func runLua(inst, code string, out *string) error {
 	if err != nil {
 		return err
 	}
-	status, info, err := execWait(in, "lua "+code, 15*time.Second)
+	// a level load runs inside the command (the agent queues it to Hud:OnUpdate) and takes longer
+	timeout := 15 * time.Second
+	if loadCode.MatchString(code) {
+		timeout = 180 * time.Second
+	}
+	status, info, err := execWait(in, "lua "+code, timeout)
 	if err != nil {
 		return err
 	}

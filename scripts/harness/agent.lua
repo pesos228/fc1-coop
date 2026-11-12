@@ -135,7 +135,7 @@ end
 -- frees the timer map while CScriptTimerMgr::Update is iterating it, so these must not
 -- run from our timer: they are queued and run from Hud:OnUpdate instead.
 Harness.loadPatterns = {"^map ", "^load_level", "^start_server", "^load_game", "^load_lastcheckpoint",
-	"^connect", "^disconnect", "^reconnect", "Game:Load", "Game:Connect", "Game:Disconnect"};
+	"^connect", "^disconnect", "^reconnect", "Game:Load", "Game:Connect", "Game:Disconnect", "CoopMap%("};
 
 function Harness:IsLoadCommand(cmd)
 	local body = cmd;
