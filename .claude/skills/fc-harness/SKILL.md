@@ -1,6 +1,6 @@
 ---
 name: fc-harness
-description: Build, run and read the FC1 Co-op test harness (tools/harness, tests/*.txt) — rebuilding the mod pack, FarCryCoopNet.asi and harness.exe, running one scenario or the full suite, writing a new scenario, and telling a real failure from environment noise. Use it whenever you are about to start Far Cry through the harness, check a Lua or ASI fix, claim something is "fixed", commit a fix (the full suite comes first), add a regression test, or look at a red run in .harness/runs — even if the user only says "проверь", "прогони тесты", "почини" or "сделай сценарий".
+description: Build, run and read the FC1 Co-op test harness (tools/harness, tests/*.txt) — rebuilding the mod pack, FarCryCoopNet.asi and harness.exe, running one scenario or the full suite, writing a new scenario, and telling a real failure from environment noise. Use it whenever you are about to start Far Cry through the harness, check a Lua or ASI fix, claim something is "fixed", commit a fix (the area run comes first), push (the full suite comes first), add a regression test, or look at a red run in .harness/runs — even if the user only says "проверь", "прогони тесты", "почини" or "сделай сценарий".
 ---
 
 # Харнес FC1 Co-op
@@ -40,20 +40,46 @@ tools/bin/harness.exe test -keep tests/pickups.txt            # не гасит�
 
 Сценарий идёт 1–4 минуты (карты Steam/River дольше). Запускай с таймаутом 10 минут или в фоне.
 
-## Полный прогон
+## Прогон по областям (перед коммитом)
 
-Перед коммитом фикса (правило 6) — весь `tests/*.txt`:
+Перед коммитом фикса (правило 6) — сценарии затронутых областей и соседних, плюс `always` (дым training и dam, `training-basic`):
+
+```bash
+bash .claude/skills/fc-harness/scripts/run-suite.sh -a items              # одна область
+bash .claude/skills/fc-harness/scripts/run-suite.sh -a vehicles,sync      # несколько
+```
+
+Области — `scripts/areas.txt` (строка `<область>: <сценарии>`, сценарий может быть в нескольких):
+
+| Область | Что трогал |
+|---|---|
+| `level-end` | конец карты, зона выхода, смена уровня |
+| `items` | пикапы, ключи и миссионные предметы, оружие, HUD предметов, выпавшее оружие |
+| `use` | кнопки использования, `ProximityTrigger`, `bOnlyMyPlayer`, кто в триггере |
+| `vehicles` | машины, лодки, вертолёты, экипажи |
+| `progress` | снаряжение, сохранения и загрузка, возрождение, ключ игрока, вход в идущую игру |
+| `sync` | расхождение сервера и клиента: позиции, здоровье ИИ, пропы, сон ИИ |
+| `sequences` | сценки (`CryMovie`), их пропуск, смена карты во время сценки |
+| `lobby` | ожидание игроков, объявления, голосование, имя и здоровье под прицелом |
+| `ai` | урон, ИИ, старт карты под огнём |
+| `chapter1` | вся глава подряд (~13 мин), когда правка касается всех карт |
+
+Какие области брать: по файлам и функциям правки, плюс соседние по связи (снаряжение → `progress`+`items`+`level-end`). Правка ASI или общего ядра (`gamerules.lua` целиком, агент харнеса, `harness.exe`) — полный прогон. **Новый сценарий сразу впиши в область** в `areas.txt`: скрипт при каждом запуске предупреждает (`warning: not in any area`) о сценариях, которых нет ни в одной области, — такой не попадёт ни в один быстрый прогон.
+
+## Полный прогон (перед пушем)
+
+Перед пушем и ночью — весь `tests/*.txt`:
 
 ```bash
 bash .claude/skills/fc-harness/scripts/run-suite.sh            # все сценарии + дым training и dam
 bash .claude/skills/fc-harness/scripts/run-suite.sh heli-rotor pickups   # выборочно
 ```
 
-Это 40–70 минут: запускай в фоне (`run_in_background`) и жди уведомления, не опрашивай. Итог — `.harness/suite/summary.txt`, по строке на сценарий, вывод каждого — `.harness/suite/<имя>.out`. Сценарии с `OPEN` в шапке (известная открытая проблема, падают до фикса) помечены `open`, их падение не регрессия; если такой вдруг позеленел — это новость, проверь и сними `OPEN` отдельным коммитом.
+Это ~1,5 часа: запускай в фоне (`run_in_background`) и жди уведомления, не опрашивай. Итог — `.harness/suite/summary.txt`, по строке на сценарий, вывод каждого — `.harness/suite/<имя>.out`. Сценарии с `OPEN` в шапке (известная открытая проблема, падают до фикса) помечены `open`, их падение не регрессия; если такой вдруг позеленел — это новость, проверь и сними `OPEN` отдельным коммитом.
 
 Остановить полный прогон: остановка фоновой задачи (TaskStop) убивает только обёртку, а `run-suite.sh` продолжает гнать сценарии и столкнётся со следующим запуском (`failed backup configs: … FarCryCoopNet.asi … being used by another process`). Убей сам скрипт (`ps -ef | grep run-suite`, `kill <pid>`), потом `harness down`; если игры остались — закрой их, супервизор восстановит конфиги (в `events.log` строка `game configs restored`).
 
-Последний известный результат держи в голове из `docs/changelog.md`: красный сценарий, который там был зелёным, — регрессия, коммита нет.
+Последний известный результат держи в голове из `docs/changelog.md`: красный сценарий, который там был зелёным, — регрессия. Перед коммитом — коммита нет. Перед пушем — пуша нет: повтори красный 3 раза (`-n 3`), найди коммит (по области; иначе `git bisect` по коммитам после последнего зелёного полного прогона, гоняя только красный сценарий), почини.
 
 ## Красный прогон: баг или шум
 
@@ -76,7 +102,7 @@ bash .claude/skills/fc-harness/scripts/run-suite.sh -n 10 steam-boat-crew
 
 ## Новый сценарий
 
-Сценарий пишется **до** фикса и должен падать именно по причине бага (правило 1). Образец — `tests/heli-rotor.txt`. Шаблон и приёмы — `references/scenario.md`; прочитай его, когда пишешь или меняешь сценарий.
+Сценарий пишется **до** фикса и должен падать именно по причине бага (правило 1). Образец — `tests/heli-rotor.txt`. Новый файл сразу впиши в область в `scripts/areas.txt`. Шаблон и приёмы — `references/scenario.md`; прочитай его, когда пишешь или меняешь сценарий.
 
 Ожидания в существующем сценарии (`expect`, `max=`, `exclude=`, таймауты) меняй отдельным коммитом с причиной в сообщении — ослабление проверки тоже смена ожиданий.
 

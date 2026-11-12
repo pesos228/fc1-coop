@@ -4,6 +4,7 @@
 #   run-suite.sh                  every tests/*.txt (except smoke-map) + smoke training and dam
 #   run-suite.sh pickups heli-rotor        just these (names without .txt; smoke-<map> for smoke)
 #   run-suite.sh -n 10 steam-boat-crew      each named scenario 10 times: "k of N failed"
+#   run-suite.sh -a items,vehicles          the scenarios of these areas + "always" (scripts/areas.txt)
 # Output: .harness/suite/summary.txt (one line per scenario), .harness/suite/<name>[-<i>].out.
 # Scenarios with "OPEN" in a header comment are known open failures: marked "open", not a regression.
 set -u
@@ -11,10 +12,39 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 H=tools/bin/harness.exe
 OUT=.harness/suite
 mkdir -p "$OUT"
+AREAS="$(dirname "$0")/areas.txt"
 N=1
-if [ "${1:-}" = "-n" ]; then N=$2; shift 2; fi
+A=""
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-n) N=$2; shift 2 ;;
+		-a) A=$2; shift 2 ;;
+		*) break ;;
+	esac
+done
+
+# area -> scenarios; area names a.k.a. the text before ":" in areas.txt
+area() { sed -n "s/^$1:[[:space:]]*//p" "$AREAS" | tr -d '\r'; }
+
+# a scenario in no area is skipped by every -a run: say so on each run
+unlisted=""
+for t in tests/*.txt; do
+	n=$(basename "$t" .txt)
+	[ "$n" = smoke-map ] && continue
+	grep -v '^#' "$AREAS" | tr -d '\r' | grep -qE "[: ]$n( |\$)" || unlisted="$unlisted $n"
+done
+[ -n "$unlisted" ] && echo "warning: not in any area of $AREAS:$unlisted" >&2
 
 names=("$@")
+if [ -n "$A" ]; then
+	for a in always ${A//,/ }; do
+		list=$(area "$a")
+		[ -n "$list" ] || { echo "no such area: $a (see $AREAS)" >&2; exit 1; }
+		for n in $list; do
+			case " ${names[*]} " in *" $n "*) ;; *) names+=("$n") ;; esac
+		done
+	done
+fi
 if [ ${#names[@]} -eq 0 ]; then
 	for t in tests/*.txt; do
 		n=$(basename "$t" .txt)
@@ -28,7 +58,8 @@ query session 2>/dev/null | grep -q '^>console .*Active' ||
 
 S="$OUT/summary.txt"
 : > "$S"
-echo "suite $(date '+%F %H:%M'), $(git rev-parse --short HEAD)$(git diff --quiet || echo ' +uncommitted')" >> "$S"
+echo "suite $(date '+%F %H:%M'), $(git rev-parse --short HEAD)$(git diff --quiet || echo ' +uncommitted')${A:+, areas $A}" >> "$S"
+[ -n "$unlisted" ] && echo "warning: not in any area:$unlisted" >> "$S"
 for n in "${names[@]}"; do
 	case "$n" in
 		smoke-*) file=tests/smoke-map.txt; export MAP=${n#smoke-} ;;

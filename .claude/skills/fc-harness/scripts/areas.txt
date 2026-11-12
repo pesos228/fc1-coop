@@ -1,0 +1,14 @@
+# Areas for run-suite.sh -a <area>[,<area>...]: "<area>: <scenario> ..." (names without .txt).
+# A scenario may sit in several areas. Every tests/*.txt (except smoke-map) must be in at least one:
+# run-suite.sh warns about the ones that are not. "always" runs with every -a.
+always: smoke-training smoke-dam training-basic
+level-end: level-end level-end-area level-end-areas level-end-solo level-change level-change-sequence
+items: pickups mission-items mission-items-explosives mission-items-save items-hud items-hud-host spawn-weapon drops-river
+use: use-triggers use-nearest use-rotated use-valve only-my-player trigger-occupants
+vehicles: vehicle-crews steam-boat-crew heli-guns heli-rotor heli-standing drops-river rest-resend
+progress: progress player-key respawn-loadout mission-items-save level-change join-and-progress
+sync: join-and-progress sleepers-seen rest-resend heli-standing drops-river late-sequence
+sequences: late-sequence level-change-sequence skip-key skip-vote
+lobby: wait-players announce skip-vote skip-key player-info cooler-start
+ai: cooler-start sleepers-seen join-and-progress vehicle-crews player-info
+chapter1: chapter1
