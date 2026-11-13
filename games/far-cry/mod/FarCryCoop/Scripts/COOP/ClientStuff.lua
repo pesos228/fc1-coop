@@ -455,7 +455,8 @@ ClientStuff.ServerCommandTable["PPOS"] = function(String, tk)
 			if (pickup) then e:EnablePhysics(0); end
 			e:SetPos({x = tonumber(tk[i + 1]) or 0, y = tonumber(tk[i + 2]) or 0, z = tonumber(tk[i + 3]) or 0});
 			e:SetAngles({x = tonumber(tk[i + 4]) or 0, y = tonumber(tk[i + 5]) or 0, z = tonumber(tk[i + 6]) or 0});
-			if (not pickup) then e:AwakePhysics(0); end
+			local boat = e.classname == "Boat" or e.classname == "InflatableBoat" or e.classname == "BoatPatrol";
+			if (not pickup and not boat) then e:AwakePhysics(0); end -- a boat floats; asleep, it did not follow its crew
 		end
 		i = i + 7;
 	end

@@ -1129,7 +1129,10 @@ end
 -- place set before the cutscene sent the client's copy 1000 m away.
 -- A joining client gets them all again 5 and 15 s after it asked for the HUD (CoopHudSync): sent
 -- at once, its copies were set right and then fell again (the client was still setting them up).
-COOP_REST_CLASSES = {BasicEntity = 1, RigidBody = 1, DestroyableObject = 1}
+-- Boats too, only once at rest (a sailing one is the snapshot's): a client that came in after a
+-- parked boat settled on the water kept it at the level's height (Steam AB01_attackboat2, 3.4 m up,
+-- 10-30 s: the server sends a body checksums only until the client asks for its state, ASI notes).
+COOP_REST_CLASSES = {BasicEntity = 1, RigidBody = 1, DestroyableObject = 1, Boat = 2, InflatableBoat = 2, BoatPatrol = 2}
 COOP_Drops = {} -- id -> {x, y, z (last sample), sx, sy, sz, s (sent), t (sent at), born, drop}; this file runs on every map load
 COOP_DropResend = {}
 -- And to everybody every COOP_REST_RESEND seconds: a client's copy may drift off after it was set
@@ -1177,7 +1180,7 @@ function CoopSyncDrops()
 	for i, e in System:GetEntities() do
 		if (not COOP_Drops[e.id] and not e.COOP_NoRest) then
 			if (CoopRestTracked(e)) then
-				COOP_Drops[e.id] = {born = _time, t = _time, drop = (e.id >= COOP_STATIC_IDS)};
+				COOP_Drops[e.id] = {born = _time, t = _time, drop = (e.id >= COOP_STATIC_IDS), boat = (COOP_REST_CLASSES[e.classname] == 2)};
 			else
 				e.COOP_NoRest = 1; -- looked at once
 			end
@@ -1194,7 +1197,11 @@ function CoopSyncDrops()
 			d.x, d.y, d.z = x, y, z;
 			local sent = d.sx and (x - d.sx) * (x - d.sx) + (y - d.sy) * (y - d.sy) + (z - d.sz) * (z - d.sz) < 0.0025;
 			-- a body that never comes to rest (a deck under way, a pontoon on the water): every second
-			if ((still and not sent) or (not still and _time - d.born >= 5 and _time - d.t >= 1)) then
+			-- a boat with anybody in it is the snapshot's: set at rest on a client, its crew stayed 60 m behind
+			local crewed = d.boat and ((e.userCounter or 0) > 0 or (e.driverT and e.driverT.entity) or (e.gunnerT and e.gunnerT.entity));
+			if (crewed or (d.boat and not still)) then
+				d.s, d.sx = nil, nil; -- not resent (every 10 s) to a sailing boat's old rest place
+			elseif ((still and not sent) or (not still and not d.boat and _time - d.born >= 5 and _time - d.t >= 1)) then
 				local a = e:GetAngles();
 				d.sx, d.sy, d.sz, d.t = x, y, z, _time;
 				d.s = format("%.2f %.2f %.2f %.1f %.1f %.1f", x, y, z, a.x, a.y, a.z);
