@@ -1,0 +1,20 @@
+# Training, listen host + 1 client: a helicopter flying on the server flies level with it on the
+# client too. Gunship3 takes off after checkpoint 5 (Event_GoPath, the reinforcement near the ship);
+# the owner saw its tail go up and down on the client, now as on the host, now not.
+# Frame by frame on the client (2026-11-13): every other frame the copy had the server's attitude
+# (pitch 8, roll -25, velocity 9,-9,0), in between it was upright and falling (359/358, 0,0,-7):
+# ~80 jumps a second, up to 45 degrees in a frame; on the host none over 0.7.
+# Counted here: Gunship3's pitch or roll changing more than 5 degrees between two frames.
+# Run from the repo root: tools/bin/harness.exe test tests/heli-flight.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+lua server COOP_God=1
+lua client1 COOP_HJ=0 COOP_HG=System:GetEntityByName("Gunship3") local old=ClientStuff.OnUpdate ClientStuff.OnUpdate=function(self) local a=COOP_HG:GetAngles() if COOP_HA then local dx=abs(a.x-COOP_HA) if dx>180 then dx=360-dx end local dy=abs(a.y-COOP_HB) if dy>180 then dy=360-dy end if dx>5 or dy>5 then COOP_HJ=COOP_HJ+1 end end COOP_HA=a.x COOP_HB=a.y return %old(self) end
+sleep 5s
+lua server CoopGoto(5)
+sleep 20s
+expect server System:GetEntityByName("Gunship3").rotorOn => 1
+expect client1 COOP_HJ => 0
+expect-no-events
+down
