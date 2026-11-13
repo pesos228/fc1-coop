@@ -118,6 +118,8 @@ func cmdUp(args []string) error {
 	gameDir := fs.String("game", gameDir(), "Far Cry install dir (default: $FC1_GAME_DIR, .harness/game-dir.txt, Steam)")
 	pname := fs.String("pname", "", "every client plays under this p_name and is told apart by its COOP_PlayerKey, as the launcher does")
 	keys := fs.String("keys", "", "with -pname: the clients' COOP_PlayerKey in order, separated by ',' (default: the instance name)")
+	connect := fs.String("connect", "", "client join command instead of the direct connect")
+	steamLoop := fs.Bool("steamloop", false, "the ASI's Steam tunnel without Steam (Mods/<mod>/steam_loop.txt): clients join with 'coop_steam join loop'")
 	fs.Parse(args)
 
 	if r, err := currentRun(); err == nil && anyAlive(r) {
@@ -147,6 +149,21 @@ func cmdUp(args []string) error {
 	if *asi != "" && strings.EqualFold(*mod, "FarCryCoop") {
 		clientConnect = `#Game:Connect("127.0.0.1",1,1)`
 	}
+	if *steamLoop {
+		clientConnect = "coop_steam join loop"
+	}
+	if *connect != "" {
+		clientConnect = *connect
+	}
+	if *mod != "" { // a run that crashed may have left it: only a -steamloop run has it
+		loopFile := filepath.Join(*gameDir, "Mods", *mod, "steam_loop.txt")
+		os.Remove(loopFile)
+		if *steamLoop {
+			if err := os.WriteFile(loopFile, []byte("loop"), 0o644); err != nil {
+				return err
+			}
+		}
+	}
 	var serverCmds []string
 	switch {
 	case *start != "":
@@ -164,7 +181,7 @@ func cmdUp(args []string) error {
 		return fmt.Errorf("unknown mode %q", *mode)
 	}
 	run := &Run{Dir: runDir, GameDir: *gameDir, Agent: filepath.Join(root, "scripts", "harness", "agent.lua"),
-		Mode: *mode, Map: *mapName, Mod: *mod, Width: *w, Height: *h, Sound: *sound, PName: *pname, Started: time.Now()}
+		Mode: *mode, Map: *mapName, Mod: *mod, Width: *w, Height: *h, Sound: *sound, PName: *pname, SteamLoop: *steamLoop, Started: time.Now()}
 	if *asi != "" {
 		a, err := filepath.Abs(*asi)
 		if err != nil {

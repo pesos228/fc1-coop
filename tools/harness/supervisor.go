@@ -94,6 +94,9 @@ func (s *supervisor) restoreConfigs() {
 	if s.run.ASI != "" {
 		os.Remove(s.asiInGame())
 	}
+	if s.run.SteamLoop {
+		os.Remove(filepath.Join(s.run.GameDir, "Mods", s.run.Mod, "steam_loop.txt"))
+	}
 	bak := filepath.Join(s.run.Dir, "cfg-backup")
 	for _, f := range cfgFiles {
 		dst := filepath.Join(s.run.GameDir, f)

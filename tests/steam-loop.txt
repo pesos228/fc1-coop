@@ -1,0 +1,9 @@
+# Steam inside the game, without Steam: the client's only join line is "coop_steam join loop", so it
+# reaches the host only through the ASI's tunnel (UDP 127.0.0.1:49011 -> loop "Steam" 49022 ->
+# 49021 -> the host's server on 49001), as a friend over Steam would.
+# Run from the repo root: tools/bin/harness.exe test tests/steam-loop.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -steamloop -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 60s
+expect-log client1 sequence.first_cutscene 40s
+expect-diff max=0.5 class=^Player$ missing=0

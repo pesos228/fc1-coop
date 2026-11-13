@@ -12,3 +12,4 @@ sequences: late-sequence level-change-sequence skip-key skip-vote
 lobby: wait-players announce skip-vote skip-key player-info cooler-start
 ai: cooler-start sleepers-seen join-and-progress vehicle-crews player-info danger-meter
 chapter1: chapter1
+steam: steam-loop

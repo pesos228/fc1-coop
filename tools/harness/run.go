@@ -53,6 +53,7 @@ type Run struct {
 	Height    int         `json:"height"`
 	Sound     bool        `json:"sound,omitempty"` // false: the games run muted (SystemCfgOverride.cfg)
 	PName     string      `json:"pname,omitempty"` // clients share this p_name; Instance.Key tells them apart
+	SteamLoop bool        `json:"steam_loop,omitempty"` // Mods\<mod>\steam_loop.txt written for the run
 	Instances []*Instance `json:"instances"`
 	Started   time.Time   `json:"started"`
 }
