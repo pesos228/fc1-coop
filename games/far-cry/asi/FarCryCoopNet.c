@@ -53,6 +53,10 @@ API(int) wvsprintfA(char *, const char *, va_list);
 API(DWORD) timeBeginPeriod(DWORD);
 API(HANDLE) LoadKeyboardLayoutA(const char *, DWORD);
 API(HANDLE) GetKeyboardLayout(DWORD);
+API(HANDLE) LoadLibraryA(const char *);
+API(void *) GetProcAddress(HANDLE, const char *);
+API(BOOL) SetEnvironmentVariableA(const char *, const char *);
+API(char *) GetCommandLineA(void);
 
 int _fltused = 1;
 
@@ -1009,9 +1013,12 @@ static void seekTick(BYTE *game)
 		}
 }
 
+#include "steam.c"
+
 static BYTE __fastcall hGameUpdate(void *game, void *edx)
 {
 	BYTE r = oGameUpdate(game, edx); // after the frame, as the console runs typed lines
+	steamFrame();
 	jumpTick();
 	seekTick((BYTE *)game);
 	if (GetTickCount() - g_joinTick > 500) {
@@ -1058,6 +1065,7 @@ static void steamJoin(void)
 		logf("steam: no IGame in 120 s, Steam join off");
 		return;
 	}
+	steamStart(); // its console hook first: the frame hook below runs the launcher's join line
 	slot = &(*(void ***)game)[1]; // IGame::Update
 	oGameUpdate = (BYTE(__fastcall *)(void *, void *))*slot;
 	VirtualProtect(slot, 4, 0x04, &old); // PAGE_READWRITE
