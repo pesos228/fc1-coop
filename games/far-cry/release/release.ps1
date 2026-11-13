@@ -16,17 +16,14 @@ if ($LASTEXITCODE) { throw 'ASI build failed' }
 Copy-Item 'E:\FarCryCoop\Temp\asi\FarCryCoopNet.asi' "$stage\Bin32"
 Copy-Item 'E:\FarCryCoop\Tools\ultimate-asi-loader-9.7.4\dinput8.dll' "$stage\Bin32"
 Copy-Item 'E:\FarCryCoop\Downloads\ultimate-asi-loader-9.7.4\LICENSE.txt' "$stage\Bin32\UltimateASILoader-LICENSE.txt"
-# Steam bridge: runs as Spacewar (AppID 480, steam_appid.txt in its working folder); steam_api.dll
-# x86 from the Steamworks SDK (Valve-signed copy in Downloads\steamworks)
-& "$far\steam\build.ps1"
-if ($LASTEXITCODE) { throw 'Steam bridge build failed' }
+# Steam runs inside the game (FarCryCoopNet.asi, as Far Cry, AppID 13520) when steam_api.dll is in
+# Mods\FarCryCoop\Steam: x86, from the Steamworks SDK (Valve-signed copy in Downloads\steamworks).
+# The old separate bridge (steam\FarCryCoopSteam.exe, Spacewar) is no longer shipped.
 $steam = "$stage\Mods\FarCryCoop\Steam"
 New-Item -ItemType Directory -Force $steam | Out-Null
-Copy-Item 'E:\FarCryCoop\Temp\steam\FarCryCoopSteam.exe', 'E:\FarCryCoop\Downloads\steamworks\steam_api.dll' $steam
-Set-Content "$steam\steam_appid.txt" -Encoding ascii -NoNewline '480'
+Copy-Item 'E:\FarCryCoop\Downloads\steamworks\steam_api.dll' $steam
 Set-Content "$stage\Bin32\FarCryCoop.bat" -Encoding ascii @(
   '@echo off', 'cd /d "%~dp0"',
-  'start "Far Cry co-op: Steam" /D "..\Mods\FarCryCoop\Steam" FarCryCoopSteam.exe',
   'start "" FarCry.exe -DEVMODE -MOD:FarCryCoop')
 & "$far\launcher\build.ps1"
 if ($LASTEXITCODE) { throw 'Launcher build failed' }

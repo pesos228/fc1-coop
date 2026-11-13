@@ -200,23 +200,20 @@ fn connect_line(ip: &str, me: &Value) -> Result<String, String> {
 }
 
 // the line for one game we started: FarCryCoopNet.asi in that process reads join_<pid>.txt
-// (join.txt is shared by every game on the PC; the Steam bridge writes that one)
+// (join.txt is shared by every game on the PC)
 fn write_join(pid: u32, line: &str) -> Result<(), String> {
     std::fs::write(mod_dir()?.join(format!("join_{}.txt", pid)), line).map_err(|e| e.to_string())
 }
 
-// write prefs.lua, then start the Steam bridge and the game; `line` runs in the game console
+// write prefs.lua, then start the game; `line` runs in the game console. Steam runs inside the
+// game (FarCryCoopNet.asi); an old FarCryCoopSteam.exe left in Mods\FarCryCoop\Steam is not started:
+// it would take UDP 49011 from the game's own Steam tunnel
 fn start_game(me: &Value, loadout: bool, line: Option<String>) -> Result<u32, String> {
     let bin = bin32()?;
     let moddir = mod_dir()?;
     // Lua 4 reads it: plain ASCII, no BOM
     std::fs::write(moddir.join("prefs.lua"), prefs(me, loadout)).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_file(moddir.join("join.txt")); // an old line must not run
-    // one bridge per PC: a second one cannot bind UDP 49011 and just stays open
-    let steam = moddir.join("Steam");
-    if steam.join("FarCryCoopSteam.exe").exists() && !running("FarCryCoopSteam.exe") {
-        Command::new(steam.join("FarCryCoopSteam.exe")).current_dir(&steam).spawn().map_err(|e| e.to_string())?;
-    }
     let game = Command::new(bin.join("FarCry.exe"))
         .args(["-DEVMODE", "-MOD:FarCryCoop"])
         .current_dir(&bin)
@@ -307,17 +304,7 @@ fn launch_test(map: String, loadout: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn running(exe: &str) -> bool {
-    use std::os::windows::process::CommandExt;
-    Command::new("tasklist")
-        .args(["/NH", "/FI", &format!("IMAGENAME eq {}", exe)])
-        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains(exe))
-        .unwrap_or(false)
-}
-
-// wait for a Steam invite: the bridge writes join.txt when the player accepts it
+// wait for a Steam invite: the game's own Steam (FarCryCoopNet.asi) joins when the player accepts it
 #[tauri::command]
 fn launch_steam() -> Result<(), String> {
     start_game(&me(), false, None).map(|_| ())

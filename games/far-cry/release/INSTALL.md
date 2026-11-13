@@ -21,15 +21,15 @@ Play the Far Cry campaign together: one player hosts, friends join. Beta: expect
 
 There are three ways. Pick one.
 
-### Way 1. Steam (Spacewar): no IP, no ports
-In Steam the mod shows up as Valve's free test game "Spacewar" (AppID 480). That gives the "Join Game" button, and Steam carries the traffic through its own servers. Nobody needs to buy or install Spacewar.
+### Way 1. Steam: no IP, no ports
+Steam runs inside the game itself, as Far Cry: friends see you playing Far Cry and get the "Join Game" button. Steam carries the traffic through its own servers when a direct connection does not work. There is no separate window any more.
 1. Everyone runs Steam, and you are Steam friends.
-2. Host: in the launcher, choose a map, press "Host lobby", then "Start". Keep the "Far Cry co-op: Steam" window open. Once the map is loaded it shows `server up: friends can join`, and friends see you "playing Spacewar".
+2. Host: in the launcher, choose a map, press "Host lobby", then "Start". Once the map is loaded, friends can join.
 3. Friend: in the launcher press "Steam invite". Wait for the game's main menu.
 4. Friend: in the Steam friends list, click the host → "Join Game". Or the host picks "Invite to game" in the Steam chat and the friend accepts.
-5. The friend's game connects by itself: the bridge prints `joining ...`, and a few seconds later the friend is on the map.
+5. The friend's game connects by itself, and a few seconds later the friend is on the map.
 
-Limits: this way shows no lobby with colors, but color and loadout still work. Sessions are accepted only from Steam friends, and only while the host runs a server.
+Limits: this way shows no lobby with colors, but color and loadout still work. Sessions are accepted only from Steam friends (or players in the host's Steam lobby), and only while the host runs a server.
 
 ### Way 2. Radmin VPN, Hamachi or ZeroTier: a shared "LAN"
 1. Everyone installs the same program, for example Radmin VPN (free, no player limit).
@@ -55,7 +55,7 @@ Friend: start `FarCryCoop.bat`, then Multiplayer → LAN, or in the console: `co
 5. Steam: "Join Game" connects without an IP.
 6. Saves: a checkpoint, F6 and F7 work for the host; a save chosen in the launcher's map list starts the game on the saved spot.
 
-If something does not work, send `log.txt` from the Far Cry folder, the `netlog_*.txt` files from `Mods\FarCryCoop`, and the text of the "Far Cry co-op: Steam" window. To test alone, press "Test on one PC": the host's game opens on the left and loads the map, then a second game opens on the right and joins by itself, with the next shirt color.
+If something does not work, send `log.txt` from the Far Cry folder and the `netlog_*.txt` files from `Mods\FarCryCoop` (Steam writes its lines there too, starting with `steam:`). To test alone, press "Test on one PC": the host's game opens on the left and loads the map, then a second game opens on the right and joins by itself, with the next shirt color.
 
 ## Saves (host)
 - A checkpoint saves the game by itself (`auto`). **F6** is quicksave, **F7** quickload (`quick`). Console: `#CoopSave("name")`, `#CoopLoad("name")`.
