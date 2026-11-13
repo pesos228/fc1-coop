@@ -1127,8 +1127,9 @@ end
 -- way, a pontoon of River on the water), every second. A BasicEntity that is not a rigid body (Properties.Physics.bRigidBody 0) is left
 -- out: the level's sequences move those (Training first_cutscene, BasicEntity182), and a rest
 -- place set before the cutscene sent the client's copy 1000 m away.
--- A joining client gets them all again 5 and 15 s after it asked for the HUD (CoopHudSync): sent
+-- A joining client gets them all again 2, 5 and 15 s after it asked for the HUD (CoopHudSync): sent
 -- at once, its copies were set right and then fell again (the client was still setting them up).
+-- Without the 2 s one a parked boat stood 1-3 m up for the first 5 s (tests/boat-parked.txt).
 -- Boats too, only once at rest (a sailing one is the snapshot's): a client that came in after a
 -- parked boat settled on the water kept it at the level's height (Steam AB01_attackboat2, 3.4 m up,
 -- 10-30 s: the server sends a body checksums only until the client asks for its state, ASI notes).
@@ -1170,7 +1171,7 @@ function CoopSyncDrops()
 	local out, k = {}, 0;
 	local again = _time >= COOP_RestResendAt;
 	if (COOP_DropResend[1] and _time >= COOP_DropResend[1]) then
-		COOP_DropResend[1], COOP_DropResend[2] = COOP_DropResend[2], nil;
+		tremove(COOP_DropResend, 1);
 		again = 1;
 	end
 	if (again) then
@@ -1523,7 +1524,7 @@ function CoopHudSync(server_slot)
 	CoopSendSequences(server_slot);
 	for id, v in COOP_HideState do server_slot:SendCommand("HIDE "..id.." "..v); end
 	CoopSendAllHP(server_slot);
-	COOP_DropResend = {_time + 5, _time + 15};
+	COOP_DropResend = {_time + 2, _time + 5, _time + 15};
 	server_slot:SendCommand("MHUD flash ");
 	for i, o in (Hud and Hud.objectives or {}) do
 		if (type(o) == "table") then
@@ -1824,7 +1825,7 @@ end
 -- its copy of the gun, and the AI gunner on it, stayed where the helicopter started (Pier: 126 m
 -- off while the helicopter flew). The server tells the clients which gun belongs to which
 -- helicopter ("MWBIND <gun> <heli> ...", COOP ClientStuff), and they bind it the same way; a
--- joining client gets them all again 5 and 15 s after HUDSYNC, as the rest places.
+-- joining client gets them all again 2, 5 and 15 s after HUDSYNC, as the rest places.
 COOP_GunBinds = {} -- gun id -> heli id sent; this file runs on every map load
 function CoopSyncHeliGuns(all)
 	local out, k = {}, 0;
