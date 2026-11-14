@@ -184,6 +184,11 @@ function CoopSeatUser(v, tbl)
 	-- once per bind (VC:AddUserT stamps entertime): the bind and VSEAT may both seat the same AI
 	if (tbl.entertime and tbl.COOP_SeatedAt == tbl.entertime and tbl.COOP_SeatedEnt == tbl.entity) then return; end
 	tbl.COOP_SeatedAt, tbl.COOP_SeatedEnt = tbl.entertime, tbl.entity;
+	-- as the server's cnt:SetUser does: the client only gets the bind, and the AI's own physics stayed
+	-- on and pulled it to its body every frame (Steam's boat driver flipped between its seat and the
+	-- sea floor near 0,0 of the map in about 1 of 4 runs, tests/steam-boat-crew.txt). VC:ReleaseUser
+	-- (cnt:ReleaseUser) turns it on again when it gets out.
+	tbl.entity:ActivatePhysics(0);
 	tbl.entity:SetPos(v:GetHelperPos(tbl.in_helper, 1));
 	-- the server's sit animation ("ANIM") went out when it seated the crew at the map start,
 	-- before this client was in: the gunner stood in the boat
