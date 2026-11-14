@@ -5,7 +5,7 @@ always: smoke-training smoke-dam training-basic
 level-end: level-end level-end-area level-end-areas level-end-solo level-change level-change-sequence
 items: pickups mission-items mission-items-explosives mission-items-save items-hud items-hud-host spawn-weapon drops-river
 use: use-triggers use-nearest use-rotated use-valve only-my-player trigger-occupants
-vehicles: vehicle-crews steam-boat-crew heli-guns heli-rotor heli-standing heli-flight drops-river rest-resend boat-sync boat-drift boat-parked
+vehicles: vehicle-crews steam-boat-crew heli-guns heli-rotor heli-standing heli-flight board-early drops-river rest-resend boat-sync boat-drift boat-parked
 progress: progress player-key respawn-loadout mission-items-save level-change join-and-progress
 sync: join-and-progress sleepers-seen rest-resend heli-standing heli-flight drops-river late-sequence boat-sync boat-drift boat-parked
 sequences: late-sequence level-change-sequence skip-key skip-vote

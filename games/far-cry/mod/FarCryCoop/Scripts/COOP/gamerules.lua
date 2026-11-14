@@ -129,6 +129,35 @@ function CoopWrapReleaseUser()
 		return r;
 	end
 end
+-- An AI that gets into a vehicle is bound at the start of its entering animation and seated when
+-- that ends, in VC:UserEntered, which only the server's vehicle update calls. Tell the clients then
+-- ("VSEAT <vehicle> <entity>", COOP ClientStuff): they seated it at the bind, 1-4 s early
+-- (tests/board-early.txt). A player is seated by AddUserT at once on every side. A joining client
+-- gets a VSEAT for every AI already seated (CoopSendSeats from CoopHudSync), the crews seated at
+-- the map start included.
+function CoopWrapUserEntered()
+	if (not VC or VC.COOP_SeatWrapped) then return; end
+	VC.COOP_SeatWrapped = 1;
+	local old = VC.UserEntered;
+	VC.UserEntered = function(self, tbl)
+		local r = %old(self, tbl);
+		if (Server and tbl and tbl.entity and tbl.entity.ai) then Server:BroadcastCommand("VSEAT "..self.id.." "..tbl.entity.id); end
+		return r;
+	end
+end
+function CoopSendSeats(slot)
+	for i, v in System:GetEntities() do
+		if (v.driverT or v.gunnerT or v.passengersTT) then
+			local seats = {v.driverT, v.gunnerT};
+			for j, t in (v.passengersTT or {}) do tinsert(seats, t); end
+			for j, t in seats do
+				if (type(t) == "table" and t.entity and t.entity.ai and t.state == 2) then
+					slot:SendCommand("VSEAT "..v.id.." "..t.entity.id);
+				end
+			end
+		end
+	end
+end
 function CoopSendVehOut()
 	for i = 1, getn(COOP_VehOut) do
 		local o = COOP_VehOut[i];
@@ -1334,6 +1363,7 @@ function GameRules:OnUpdate(DeltaTime)
 	CoopRun("wrap behaviours", CoopWrapBehaviours)
 	CoopRun("wrap hud", CoopWrapHud)
 	CoopRun("wrap release user", CoopWrapReleaseUser)
+	CoopRun("wrap user entered", CoopWrapUserEntered)
 	CoopRun("send veh out", CoopSendVehOut)
 	CoopRun("vehicle copies", CoopVehicleCopies)
 	CoopRun("wrap cutscene moves", CoopWrapCutsceneMoves)
@@ -1524,6 +1554,7 @@ function CoopHudSync(server_slot)
 	CoopSendSequences(server_slot);
 	for id, v in COOP_HideState do server_slot:SendCommand("HIDE "..id.." "..v); end
 	CoopSendAllHP(server_slot);
+	CoopSendSeats(server_slot);
 	COOP_DropResend = {_time + 2, _time + 5, _time + 15};
 	server_slot:SendCommand("MHUD flash ");
 	for i, o in (Hud and Hud.objectives or {}) do

@@ -174,6 +174,22 @@ end
 -- boat, and logged "pos is invalid" every frame (tests/steam-boat-crew.txt). Seat it as
 -- UserEntered does, sit animation included. VehicleCommon.lua loads at startup (main.lua), the
 -- per-frame call only wraps a reloaded VC again.
+-- An AI is seated only when the server says so ("VSEAT", COOP gamerules CoopWrapUserEntered, and
+-- CoopSendSeats for the crews already seated when we join), at the bind if VSEAT came first.
+-- VC:OnBind marks every bind with time -20, a mercenary that just starts to get in too: seated at
+-- the bind, it sat 1-4 s before the server had it in the seat (frozen in the sit pose while it
+-- still walked, tests/board-early.txt).
+COOP_SeatPending = {} -- entity id -> vehicle id: VSEAT came before the bind
+function CoopSeatUser(v, tbl)
+	tbl.entity:SetPos(v:GetHelperPos(tbl.in_helper, 1));
+	-- the server's sit animation ("ANIM") went out when it seated the crew at the map start,
+	-- before this client was in: the gunner stood in the boat
+	if (tbl.sit_anim) then
+		tbl.entity:StartAnimation(0, tbl.sit_anim, 0, 0, 1);
+		tbl.entity:ForceCharacterUpdate(0);
+		CoopMonEvent("C", "anim "..tbl.entity:GetName().." "..tbl.sit_anim);
+	end
+end
 function CoopWrapClientSeat()
 	if (not VC or VC.COOP_ClientSeat or Game:IsServer()) then return; end
 	VC.COOP_ClientSeat = 1;
@@ -181,17 +197,28 @@ function CoopWrapClientSeat()
 	VC.AddUserT = function(self, tbl)
 		local r = %old(self, tbl);
 		if (type(tbl) == "table" and tbl.entity and tbl.state == 1 and tbl.time and tbl.time <= -10) then
-			tbl.entity:SetPos(self:GetHelperPos(tbl.in_helper, 1));
-			-- the server's sit animation ("ANIM") went out when it seated the crew at the map start,
-			-- before this client was in: the gunner stood in the boat
-			if (tbl.sit_anim) then
-				tbl.entity:StartAnimation(0, tbl.sit_anim, 0, 0, 1);
-				tbl.entity:ForceCharacterUpdate(0);
-				CoopMonEvent("C", "anim "..tbl.entity:GetName().." "..tbl.sit_anim);
+			if (COOP_SeatPending[tbl.entity.id] == self.id) then
+				COOP_SeatPending[tbl.entity.id] = nil;
+				CoopSeatUser(self, tbl);
 			end
 		end
 		return r;
 	end
+end
+ClientStuff.ServerCommandTable["VSEAT"] = function(String, tk)
+	if (Game:IsServer() or not VC) then return; end
+	local v, e = System:GetEntity(tonumber(tk[2]) or 0), System:GetEntity(tonumber(tk[3]) or 0);
+	if (not v or not e) then return; end
+	local seats = {v.driverT, v.gunnerT};
+	for i, t in (v.passengersTT or {}) do tinsert(seats, t); end
+	for i, t in seats do
+		if (type(t) == "table" and t.entity == e) then
+			COOP_SeatPending[e.id] = nil;
+			CoopSeatUser(v, t);
+			return;
+		end
+	end
+	COOP_SeatPending[e.id] = v.id;
 end
 CoopWrapClientSeat();
 
