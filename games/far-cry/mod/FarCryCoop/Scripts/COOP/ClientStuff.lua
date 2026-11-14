@@ -136,6 +136,7 @@ function ClientStuff:OnUpdate()
 	CoopHookHud();
 	CoopHookPerception();
 	CoopWrapClientSeat();
+	CoopWrapClientAIDriver();
 	call(CoopExitClientTick, {}, "x", function(msg)
 		if (not COOP_ExitErrorLogged) then COOP_ExitErrorLogged = 1; System:LogAlways("coop: exit zone error: "..tostring(msg)); end
 	end);
@@ -193,6 +194,24 @@ function CoopWrapClientSeat()
 	end
 end
 CoopWrapClientSeat();
+
+-- The server drives every vehicle and helicopter; a client's copy never gets its AI on. The map's
+-- events run on the client too (Gunship Event_GoPath / GoPatrol / GoAttack / Reinforcment, the
+-- vehicles' paths, VehicleCommon's own enter/leave) and call VC.AIDriver(self, 1). A helicopter's
+-- AI then flew the copy itself between server updates (MoveLikeAHelicopter, aircontrol 1): upright
+-- and falling, the server's attitude every other frame (Training Gunship3, tests/heli-flight.txt).
+-- Switching the whole AI system off (ai_systemupdate 0) does not stop it (1459 jumps in 20 s);
+-- the entity's own AIEVENT_DISABLE does. Disabling still goes through.
+function CoopWrapClientAIDriver()
+	if (not VC or Game:IsServer() or (VC.COOP_AIDriver and VC.AIDriver == VC.COOP_AIDriver)) then return; end
+	local old = VC.AIDriver;
+	VC.COOP_AIDriver = function(self, enable)
+		if (enable ~= 0 and not Server) then return; end
+		return %old(self, enable);
+	end
+	VC.AIDriver = VC.COOP_AIDriver;
+end
+CoopWrapClientAIDriver();
 
 -- Client-side hit detection: the shooter's own client decides what its bullets hit and tells
 -- the server ("CHIT", handled in COOP GameRules:OnClientCmd), so aiming does not depend on the

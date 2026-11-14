@@ -47,19 +47,7 @@ function HC:LoadModel()
 	-- the living body (MoveLikeAHelicopter, aircontrol 1: +30 m/s up) between server updates and
 	-- the helicopter flickers. The server moves the helicopter; the client copy has no AI.
 	if (not Server) then
-		VC.AIDriver(self, 0);
-		-- and keep it off: the map's events run on the client too, and Event_GoPath / GoPatrol /
-		-- GoAttack / Reinforcment call VC.AIDriver(self, 1). In flight the copy was then upright and
-		-- falling between server updates, the server's attitude every other frame (Training
-		-- Gunship3, tests/heli-flight.txt)
-		if (VC.AIDriver ~= VC.COOP_HeliAIDriver) then
-			local old = VC.AIDriver;
-			VC.COOP_HeliAIDriver = function(self, enable)
-				if (not Server and enable ~= 0 and (self.classname == "Gunship" or self.classname == "CargoChopper")) then return; end
-				return %old(self, enable);
-			end
-			VC.AIDriver = VC.COOP_HeliAIDriver;
-		end
+		VC.AIDriver(self, 0); -- and it stays off: COOP ClientStuff CoopWrapClientAIDriver
 	end
 
 	if( self.temp_ModelName ~= model) then
