@@ -181,6 +181,9 @@ end
 -- still walked, tests/board-early.txt).
 COOP_SeatPending = {} -- entity id -> vehicle id: VSEAT came before the bind
 function CoopSeatUser(v, tbl)
+	-- once per bind (VC:AddUserT stamps entertime): the bind and VSEAT may both seat the same AI
+	if (tbl.entertime and tbl.COOP_SeatedAt == tbl.entertime and tbl.COOP_SeatedEnt == tbl.entity) then return; end
+	tbl.COOP_SeatedAt, tbl.COOP_SeatedEnt = tbl.entertime, tbl.entity;
 	tbl.entity:SetPos(v:GetHelperPos(tbl.in_helper, 1));
 	-- the server's sit animation ("ANIM") went out when it seated the crew at the map start,
 	-- before this client was in: the gunner stood in the boat
@@ -197,7 +200,11 @@ function CoopWrapClientSeat()
 	VC.AddUserT = function(self, tbl)
 		local r = %old(self, tbl);
 		if (type(tbl) == "table" and tbl.entity and tbl.state == 1 and tbl.time and tbl.time <= -10) then
-			if (COOP_SeatPending[tbl.entity.id] == self.id) then
+			if (COOP_SeatPending[tbl.entity.id] == self.id or not tbl.in_anim) then
+				-- a seat with no entering animation is bound only in VC:UserEntered, when the AI is
+				-- already in it: seat at the bind. Left unseated until VSEAT, Steam's boat driver
+				-- got "pos is invalid" every frame for the rest of the run in 2 of 7
+				-- (tests/steam-boat-crew.txt).
 				COOP_SeatPending[tbl.entity.id] = nil;
 				CoopSeatUser(self, tbl);
 			end
