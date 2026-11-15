@@ -97,6 +97,9 @@ static void conPrint(void *con, const char *s) // IConsole::PrintLine
 }
 
 // ---- console hook (main thread) ----
+// Installed with or without Steam: the mod's menu starts a co-op game with console commands
+// (coop_map <map>, coop_loadgame <save>, coop_connect <address>; MenuScreens/Coop.lua), and this
+// game must know it is a co-op one as when the launcher's join line says so (runJoin, g_coop).
 static void(__fastcall *oExec)(void *, void *, const char *, int, int);
 static void __fastcall hExec(void *con, void *edx, const char *cmd, int slash, int dev)
 {
@@ -104,6 +107,10 @@ static void __fastcall hExec(void *con, void *edx, const char *cmd, int slash, i
 	if (c) {
 		while (*c == ' ' || *c == '\\' || *c == '/')
 			c++;
+		if (starts(c, "coop_map ") || starts(c, "coop_loadgame ") || hasText(c, "CoopMap(") || hasText(c, "CoopLoad("))
+			g_ownsServer = g_coop = 1;
+		else if (starts(c, "coop_connect ") || hasText(c, "Game:Connect("))
+			g_coop = 1;
 		if (starts(c, "coop_steam") && (!c[10] || c[10] == ' ')) {
 			for (c += 10; *c == ' '; c++)
 				;
@@ -779,18 +786,6 @@ static void steamStart(void)
 		dll[i] = loop[i] = g_join[i];
 	wvsprintfA(dll + n, "Steam\\steam_api.dll", 0);
 	wvsprintfA(loop + n, "steam_loop.txt", 0);
-	f = CreateFileA(loop, 0x80000000, 1, 0, 3, 0x80, 0);
-	if (f != (HANDLE)-1) {
-		CloseHandle(f);
-		g_sLoop = 1;
-	} else {
-		f = CreateFileA(dll, 0x80000000, 1, 0, 3, 0x80, 0);
-		if (f == (HANDLE)-1) {
-			logf("steam: no %s, Steam off", dll);
-			return;
-		}
-		CloseHandle(f);
-	}
 	InitializeCriticalSection(g_sCs);
 	sys = getISystem();
 	con = sys ? ((void *(__fastcall *)(void *, void *))VFN(sys, 0x60))(sys, 0) : 0;
@@ -803,5 +798,18 @@ static void steamStart(void)
 	VirtualProtect(slot, 4, 0x04, &old);
 	*slot = (void *)hExec;
 	VirtualProtect(slot, 4, old, &old);
+	f = CreateFileA(loop, 0x80000000, 1, 0, 3, 0x80, 0);
+	if (f != (HANDLE)-1) {
+		CloseHandle(f);
+		g_sLoop = 1;
+	} else {
+		f = CreateFileA(dll, 0x80000000, 1, 0, 3, 0x80, 0);
+		if (f == (HANDLE)-1) {
+			logf("steam: no %s, Steam off", dll);
+			g_sOff = 1; // the console hook stays: coop_steam says Steam is off
+			return;
+		}
+		CloseHandle(f);
+	}
 	CreateThread(0, 0, steamThread, dll, 0, 0);
 }
