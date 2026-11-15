@@ -656,7 +656,10 @@ COOP_KEY_WAIT = 5 -- seconds to wait for COOPID before falling back to the slot 
 
 function CoopSetKey(server_slot, cmd)
 	local s, e, key = strfind(cmd, "^COOPID%s+(.-)%s*$");
-	if (not key or key == "") then return; end
+	-- any client's text (it goes to saves and logs): letters, digits, spaces and "_.-" (a SteamID,
+	-- the launcher's name fallback), 40 at most (tests/name-host.txt)
+	key = strsub(gsub(key or "", "[^%w _%.%-]", ""), 1, 40);
+	if (key == "") then return; end
 	local id = server_slot:GetId();
 	local base, n = key, 1;
 	for sid, k in COOP_SlotKeys do -- two players asked for the same name: the second is someone else
