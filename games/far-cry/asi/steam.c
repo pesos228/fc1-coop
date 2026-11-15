@@ -12,6 +12,7 @@
 // 127.0.0.1 (host 49021, clients 49022+; an id is that port): the harness test of the tunnel.
 // Console (typed, or System:ExecuteCommand from Lua; caught in IConsole::ExecuteString):
 //   coop_steam status | join <hex SteamID>|loop | host <max> [public|friends|private]|key=value|...
+//   | update [<max>] [public|friends|private]|key=value|...
 //   | find | joinlobby <n>
 //   coop_steam leave | invite
 // All Steam calls run on the Steam thread; console lines go back to the main thread (hGameUpdate).
@@ -213,6 +214,8 @@ F(U64, LobbyMember, (void *, U64, int));
 F(int, LobbyLimit, (void *, U64));
 F(U64, JoinLobby, (void *, U64));
 F(void, LeaveLobby, (void *, U64));
+F(BYTE, SetLobbyType, (void *, U64, int));
+F(BYTE, SetLobbyLimit, (void *, U64, int));
 static void *g_user, *g_friends, *g_msgs, *g_utils, *g_mm;
 static int g_pipe;
 
@@ -255,6 +258,8 @@ static int steamInit(const char *dll)
 	LobbyLimit = (int(__cdecl *)(void *, U64))sym("SteamAPI_ISteamMatchmaking_GetLobbyMemberLimit");
 	JoinLobby = (U64(__cdecl *)(void *, U64))sym("SteamAPI_ISteamMatchmaking_JoinLobby");
 	LeaveLobby = (void(__cdecl *)(void *, U64))sym("SteamAPI_ISteamMatchmaking_LeaveLobby");
+	SetLobbyType = (BYTE(__cdecl *)(void *, U64, int))sym("SteamAPI_ISteamMatchmaking_SetLobbyType");
+	SetLobbyLimit = (BYTE(__cdecl *)(void *, U64, int))sym("SteamAPI_ISteamMatchmaking_SetLobbyMemberLimit");
 	{
 		void *(__cdecl * u)(void) = (void *(__cdecl *)(void))sym("SteamAPI_SteamUser_v023");
 		void *(__cdecl * f)(void) = (void *(__cdecl *)(void))sym("SteamAPI_SteamFriends_v018");
@@ -327,6 +332,7 @@ static U64 g_callCreate, g_callList, g_callJoin;
 static char g_kv[300];              // host: key=value pairs for the lobby being created
 static int g_lobbyType, g_lobbyMax;  // host: the lobby being created (k_ELobbyType: 0 invite only, 1 friends, 2 public)
 static int g_private;                // host: an invite-only game: no Join for friends, sessions for lobby members only
+static int g_presence;               // host: the rich presence must be set again (the game became private or not)
 static const char *const g_lobbyTypes[] = {"private", "friends", "public"};
 static U64 g_rows[MAX_ROWS];
 static int g_nRows;
@@ -519,7 +525,7 @@ static void listRows(int count)
 	say("%d game(s)", count);
 	for (i = 0; i < g_nRows; i++) {
 		U64 l = g_rows[i] = LobbyByIndex(g_mm, i);
-		void *a[6];
+		void *a[8];
 		static char line[1100]; // wvsprintfA writes up to 1024; the strings are other players' (up to 8 KB): cut
 		a[0] = (void *)i;
 		a[1] = (void *)GetLobbyData(g_mm, l, "name");
@@ -527,7 +533,9 @@ static void listRows(int count)
 		a[3] = (void *)LobbyMembers(g_mm, l);
 		a[4] = (void *)LobbyLimit(g_mm, l);
 		a[5] = (void *)GetLobbyData(g_mm, l, "up");
-		wvsprintfA(line, "%d: %.48s | %.32s | %d/%d | up=%.1s", (va_list)a);
+		a[6] = (void *)GetLobbyData(g_mm, l, "pw");
+		a[7] = (void *)GetLobbyData(g_mm, l, "players");
+		wvsprintfA(line, "%d: %.48s | %.32s | %d/%d | up=%.1s pw=%.1s players=%.2s", (va_list)a);
 		say("%s", line);
 	}
 }
@@ -691,6 +699,34 @@ static void sendKey(U64 me)
 	runOnMain(line);
 }
 
+// "<max> [public|friends|private]|key=value|...": the limit (0: none given) and the k_ELobbyType
+// (-1: none given); 0 for an unknown type (a typo must not open the game to everybody)
+static char *lobbyArgs(char *p, int *max, int *type)
+{
+	int i;
+	*max = 0;
+	*type = -1;
+	while (*p == ' ')
+		p++;
+	while (*p >= '0' && *p <= '9')
+		*max = *max * 10 + *p++ - '0';
+	while (*p == ' ')
+		p++;
+	if (*p && *p != '|') {
+		for (i = 0; i < 3; i++) {
+			const char *t = g_lobbyTypes[i], *q = p;
+			while (*t && (*q | 32) == *t)
+				t++, q++;
+			if (!*t && (!*q || *q == '|' || *q == ' ')) {
+				*type = i;
+				return (char *)q;
+			}
+		}
+		return 0;
+	}
+	return p;
+}
+
 static int serverUp(void) // this process holds UDP 49001 (listen host)
 {
 	static DWORD tbl[8192];
@@ -723,29 +759,11 @@ static void command(char *c) // a "coop_steam ..." line
 	} else if (g_sLoop) {
 		say("loop: only status and join work");
 	} else if (starts(c, "host")) { // host <max> [public|friends|private]|key=value|...
-		int max = 0, i, type = 2;
-		char *p = c + 4;
-		while (*p == ' ')
-			p++;
-		while (*p >= '0' && *p <= '9')
-			max = max * 10 + *p++ - '0';
-		while (*p == ' ')
-			p++;
-		if (*p && *p != '|') {
-			for (i = 0; i < 3; i++) {
-				const char *t = g_lobbyTypes[i], *q = p;
-				while (*t && (*q | 32) == *t)
-					t++, q++;
-				if (!*t && (!*q || *q == '|' || *q == ' ')) {
-					type = i;
-					p = (char *)q;
-					break;
-				}
-			}
-			if (i == 3) { // a typo must not open the game to everybody
-				say("host: the type is public, friends or private");
-				return;
-			}
+		int max, type, i;
+		char *p = lobbyArgs(c + 4, &max, &type);
+		if (!p) {
+			say("host: the type is public, friends or private");
+			return;
 		}
 		if (g_callCreate) {
 			say("a lobby is being created already");
@@ -755,11 +773,35 @@ static void command(char *c) // a "coop_steam ..." line
 		for (i = 0; i < 299 && p[i]; i++) // set once Steam has created it (callbacks)
 			g_kv[i] = p[i];
 		g_kv[i] = 0;
-		g_lobbyType = type;
-		g_private = type == 0;
+		g_lobbyType = type < 0 ? 2 : type;
+		g_private = g_lobbyType == 0;
+		g_presence = 1;
 		g_lobbyMax = max > 0 && max <= 16 ? max : 4;
-		if (!(g_callCreate = CreateLobby(g_mm, type, g_lobbyMax)))
+		if (!(g_callCreate = CreateLobby(g_mm, g_lobbyType, g_lobbyMax)))
 			lobbyFailed("no Steam call (offline?)");
+	} else if (starts(c, "update")) { // update [<max>] [type]|key=value|...: our lobby as the game changes
+		int max, type, i;
+		char *p = lobbyArgs(c + 6, &max, &type);
+		if (!p) {
+			say("update: the type is public, friends or private");
+			return;
+		}
+		if (!g_ownLobby) {
+			say("update: no lobby of ours");
+			return;
+		}
+		if (max > 0 && max <= 16 && max != g_lobbyMax)
+			SetLobbyLimit(g_mm, g_ownLobby, g_lobbyMax = max);
+		if (type >= 0 && type != g_lobbyType) {
+			SetLobbyType(g_mm, g_ownLobby, g_lobbyType = type);
+			g_private = type == 0;
+			g_presence = 1;
+		}
+		for (i = 0; i < 299 && p[i]; i++)
+			g_kv[i] = p[i];
+		g_kv[i] = 0;
+		setLobbyData();
+		say("lobby updated (%s, %d players)", g_lobbyTypes[g_lobbyType], g_lobbyMax);
 	} else if (starts(c, "find")) {
 		StrFilter(g_mm, "fc1coop", NET_KEY, 0); // k_ELobbyComparisonEqual
 		DistFilter(g_mm, 3);                     // worldwide
@@ -778,6 +820,7 @@ static void command(char *c) // a "coop_steam ..." line
 	} else if (starts(c, "leave")) {
 		leaveLobbies();
 		g_private = 0;
+		g_presence = 1;
 		say("left the lobby");
 	} else if (starts(c, "invite")) {
 		if (g_ownLobby)
@@ -785,7 +828,7 @@ static void command(char *c) // a "coop_steam ..." line
 		else
 			say("create a lobby first: coop_steam host");
 	} else
-		say("coop_steam status | join <SteamID>|loop | host <max> [public|friends|private]|key=value|... | find | joinlobby <n> | leave | invite");
+		say("coop_steam status | join <SteamID>|loop | host <max> [public|friends|private]|key=value|... | update [<max>] [type]|key=value|... | find | joinlobby <n> | leave | invite");
 }
 
 static DWORD __stdcall steamThread(void *dll)
@@ -842,14 +885,16 @@ static DWORD __stdcall steamThread(void *dll)
 		if (GetTickCount() - check > 2000) {
 			int now = serverUp();
 			check = GetTickCount();
-			if (now != g_up) {
+			if (now != g_up || (g_presence && now)) {
 				g_up = now;
+				g_presence = 0;
 				if (g_sLoop) {
 					if (g_up && g_loopS == (SOCKET)-1 && (g_loopS = udp(LOOP_HOST)) == (SOCKET)-1)
 						say("loop port %d is taken", LOOP_HOST);
 				} else if (g_up) {
 					static char connect[40];
 					wvsprintfA(connect, "+coop %x%08x", (va_list)id);
+					ClearRichPresence(g_friends); // an update may have turned Join off
 					SetRichPresence(g_friends, "status", "Far Cry co-op host");
 					if (!g_private) // invite only: friends get no Join, an invite brings them in
 						SetRichPresence(g_friends, "connect", connect);

@@ -33,7 +33,7 @@ UI.PageCoop =
 		{
 			skin = UI.skins.MenuBorder,
 			left = 200, top = 141,
-			width = 580, height = 262,
+			width = 580, height = 302,
 			zorder = -50,
 		},
 
@@ -137,11 +137,27 @@ UI.PageCoop =
 			tabstop = 5,
 		},
 
+		PasswordText =
+		{
+			skin = UI.skins.Label,
+			left = 210, top = 360,
+			width = 180,
+			text = "Password (optional)",
+		},
+
+		Password =
+		{
+			skin = UI.skins.EditBox,
+			left = 400, top = 356,
+			width = 200,
+			tabstop = 7,
+		},
+
 		JoinIP =
 		{
 			skin = UI.skins.BottomMenuButton,
 			left = 200,
-			tabstop = 7,
+			tabstop = 8,
 			text = "Join by IP",
 			OnCommand = function(Sender)
 				UI.JoinIPBox("Join by IP", "Enter the host's IP and port (49001)", UI.PageCoop.ConnectIP);
@@ -152,7 +168,7 @@ UI.PageCoop =
 		{
 			skin = UI.skins.BottomMenuButton,
 			left = 400,
-			tabstop = 9,
+			tabstop = 10,
 			text = "Player settings",
 			OnCommand = function(Sender)
 				GotoPage("CoopPlayer");
@@ -163,7 +179,7 @@ UI.PageCoop =
 		{
 			skin = UI.skins.BottomMenuButton,
 			left = 780 - 180,
-			tabstop = 8,
+			tabstop = 9,
 			text = Localize("Launch"),
 			OnCommand = function(Sender)
 				UI.PageCoop.Launch();
@@ -210,6 +226,9 @@ UI.PageCoop =
 		end
 		GUI.AccessCombo:SelectIndex(UI.PageCoop.nLastAccess or 2);
 
+		GUI.Password:SetPassword(1); -- stars, as the game's own password boxes
+		GUI.Password:SetText(tostring(getglobal("sv_password") or ""));
+
 		if (tonumber(COOP_LoadoutMode) == 1) then GUI.Loadout:SetChecked(1); else GUI.Loadout:SetChecked(0); end
 	end,
 
@@ -252,9 +271,25 @@ UI.PageCoop =
 		local n = strlen(UI.PageCoop.SavePrefix);
 		local map = sel;
 		if (strsub(sel, 1, n) == UI.PageCoop.SavePrefix) then map = strsub(sel, n + 1); end
-		-- a new game (not a map change of the server we run): its Steam lobby, so friends and the
-		-- world list find it. Without Steam the ASI says so in the console (CoopSteam_OnLobby(0)).
-		if (not Game:IsServer()) then UI.PageCoop.HostLobby(max, UI.PageCoop.AccessType[access], map); end
+		-- The engine's own server settings: sv_maxplayers turns away a player over the limit (the
+		-- host counts: "@ServerFull", SDK CXServer), sv_password one without the password; the
+		-- game asks a joining player for it itself (Multiplayer/Connecting.lua, InvalidServerPassword).
+		-- They apply to the next players who connect, on a map change too.
+		local pw = UI.PageCoop.CleanPassword(GUI.Password:GetText());
+		setglobal("sv_maxplayers", max);
+		setglobal("sv_password", pw);
+		local lobby = {max = max, access = UI.PageCoop.AccessType[access], pw = (pw ~= "" and 1) or 0, map = map};
+		if (Game:IsServer() and COOP_Lobby) then
+			COOP_Lobby = lobby; -- a map change: the lobby follows (CoopLobbyUpdate, once a second)
+		elseif (not Game:IsServer()) then
+			-- a new game: its Steam lobby, so friends and the world list find it. Without Steam the
+			-- ASI says so in the console (CoopSteam_OnLobby(0)).
+			-- (without Steam the ASI answers CoopSteam_OnLobby(0) inside this call: COOP_Lobby is
+			-- nil after it)
+			COOP_Lobby = lobby;
+			COOP_LobbySent = CoopLobbyArgs();
+			System:ExecuteCommand("coop_steam host "..COOP_LobbySent);
+		end
 		if (strsub(sel, 1, n) == UI.PageCoop.SavePrefix) then
 			System:ExecuteCommand("coop_loadgame "..strsub(sel, n + 1));
 		else
@@ -262,19 +297,10 @@ UI.PageCoop =
 		end
 	end,
 
-	-- lobby strings: "|" and "=" split the ASI's key=value list, the rest is cut to printable ASCII
-	-- (the name is CoopCleanName's already: safe in a console line)
-	LobbyText = function(s)
-		s = gsub(tostring(s or ""), "[^ -~]", "");
-		s = gsub(s, "[|=\"';#%%\\]", "");
-		return strsub(s, 1, 48);
-	end,
-
-	HostLobby = function(max, access, map)
-		local P = UI.PageCoop;
-		local name = P.LobbyText(getglobal("p_name") or "Player").." - "..P.LobbyText(map);
-		System:ExecuteCommand(format("coop_steam host %d %s|name=%s|map=%s|diff=%d", max, access, name,
-			P.LobbyText(map), tonumber(COOP_Difficulty) or 1));
+	-- a password the engine and a joining player can take: printable ASCII, 32 at most (the game's
+	-- own password box takes 32, Multiplayer/Connecting.lua)
+	CleanPassword = function(s)
+		return strsub(gsub(tostring(s or ""), "[^ -~]", ""), 1, 32);
 	end,
 
 	ConnectIP = function(IP1, IP2, IP3, IP4, Port)
@@ -304,7 +330,10 @@ UI.PageCoop =
 -- the ASI, once Steam has answered "coop_steam host" (steam.c)
 function CoopSteam_OnLobby(ok)
 	if (ok == 1) then System:LogAlways("coop: Steam lobby created");
-	else System:LogAlways("coop: no Steam lobby (Steam is off or offline): friends join by IP"); end
+	else
+		COOP_Lobby = nil; -- nothing to update
+		System:LogAlways("coop: no Steam lobby (Steam is off or offline): friends join by IP");
+	end
 end
 
 AddUISideMenu(UI.PageCoop.GUI,

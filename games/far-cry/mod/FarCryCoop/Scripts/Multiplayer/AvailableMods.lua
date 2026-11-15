@@ -79,6 +79,42 @@ function CoopApplySteamName()
 end
 CoopApplySteamName(); -- a script reload: keep it
 
+-- The Steam lobby of the game this host runs (MenuScreens/Coop.lua Launch sets COOP_Lobby:
+-- max, access, pw, map). Its data follows the game, so the game list shows it as it is: the map,
+-- the player count, a password or not. Lobby strings: "|" and "=" split the ASI's key=value list
+-- and the console line must stay one line, so they keep printable ASCII without "|=\"';#%" and
+-- backslash, 48 at most.
+function CoopLobbyText(s)
+	s = gsub(tostring(s or ""), "[^ -~]", "");
+	s = gsub(s, "[|=\"';#%%\\]", "");
+	return strsub(s, 1, 48);
+end
+
+-- "<max> <type>|name=...|map=...|..." for "coop_steam host" and "coop_steam update"
+function CoopLobbyArgs()
+	local L = COOP_Lobby;
+	if (not L) then return ""; end
+	-- the running map (a level end changes it); before the server is up, the one being launched
+	-- (COOP_Map may be the last game's)
+	local map = (Game:IsServer() and COOP_Map) or L.map;
+	local n = 0;
+	if (Server and Server.GetServerSlotMap and Game:IsServer()) then
+		for i, s in Server:GetServerSlotMap() do n = n + 1; end
+	end
+	return format("%d %s|name=%s - %s|map=%s|diff=%d|pw=%d|players=%d", L.max, L.access,
+		CoopLobbyText(getglobal("p_name") or "Player"), CoopLobbyText(map), CoopLobbyText(map),
+		tonumber(COOP_Difficulty) or 1, L.pw, max(n, 1));
+end
+
+-- once a second on the host (COOP gamerules OnUpdate): only what changed goes to Steam
+function CoopLobbyUpdate()
+	if (not COOP_Lobby or not Game:IsServer()) then return; end
+	local a = CoopLobbyArgs();
+	if (a == COOP_LobbySent) then return; end
+	COOP_LobbySent = a;
+	System:ExecuteCommand("coop_steam update "..a);
+end
+
 -- Difficulty, the five levels of the single-player menu (UI.PageCampaign:SetAIDifficulty in
 -- Campaign.lua): the same globals, set here because a co-op game never goes through that menu.
 -- {accuracy, aggression, health, accuracy may increase, AI speed}; the menu calls level 3 "Veteran".

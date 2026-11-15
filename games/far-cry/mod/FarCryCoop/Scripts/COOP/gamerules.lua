@@ -1363,6 +1363,7 @@ function GameRules:OnUpdate(DeltaTime)
 	-- coop_map turned cutscenes off for a dedicated server; a listen host (it has a
 	-- _localplayer) plays the campaign as in single player, cutscenes included
 	if _localplayer then setglobal("mov_NoCutscenes", 0) end
+	CoopRun("steam lobby", CoopLobbyUpdate) -- the map and the player count in the game list
 	CoopRun("wrap behaviours", CoopWrapBehaviours)
 	CoopRun("wrap hud", CoopWrapHud)
 	CoopRun("wrap release user", CoopWrapReleaseUser)
