@@ -13,7 +13,7 @@
 // Console (typed, or System:ExecuteCommand from Lua; caught in IConsole::ExecuteString):
 //   coop_steam status | join <hex SteamID>|loop | host <max> [public|friends|private]|key=value|...
 //   | update [<max>] [public|friends|private]|key=value|...
-//   | find | joinlobby <n>
+//   | find | friends | joinlobby <n>
 //   coop_steam leave | invite
 // All Steam calls run on the Steam thread; console lines go back to the main thread (hGameUpdate).
 
@@ -36,7 +36,7 @@ static char g_inQ[8][300];  // console -> Steam thread
 static int g_inHead, g_inTail;
 static char g_outQ[32][300]; // Steam thread -> main thread: lines to print (dropped when full)
 static int g_outHead, g_outTail;
-#define EXQ 48              // a game list is a line per game (MAX_ROWS) and one before them
+#define EXQ 80              // a game list is a line per game (MAX_ROWS) and one before them: two lists fit
 static char g_exQ[EXQ][300]; // Steam thread -> main thread: lines to run (own queue: prints never push them out)
 static int g_exHead, g_exTail;
 
@@ -119,7 +119,7 @@ static void __fastcall hExec(void *con, void *edx, const char *cmd, int slash, i
 				;
 			if (g_sOff) { // the Steam thread gave up: nobody reads the queue
 				conPrint(con, "coop_steam: Steam is off (see the netlog)");
-				if (starts(c, "find"))
+				if (starts(c, "find") || starts(c, "friends"))
 					oExec(con, edx, "#if CoopFind_List then CoopFind_List(-1) end", 0, 1);
 				else
 					oExec(con, edx, "#if CoopSteam_OnLobby then CoopSteam_OnLobby(0) end", 0, 1);
@@ -174,6 +174,7 @@ typedef struct { int user; int id; BYTE *param; int size; } CallbackMsg;        
 #define CB_LOBBY_ENTER 504      // LobbyEnter_t { U64 lobby; uint perms; bool locked; uint response; } (1 = success)
 #define CB_LOBBY_CREATED 513    // LobbyCreated_t { int result; U64 lobby; } (result 1 = OK)
 #define CB_LOBBY_LIST 510       // LobbyMatchList_t { uint count; }
+#define CB_LOBBY_DATA 505       // LobbyDataUpdate_t { U64 lobby; U64 member; BYTE success; }
 #define SEND_FLAGS (0 | 1 | 32) // Unreliable | NoNagle | AutoRestartBrokenSession
 
 static HANDLE g_api;
@@ -220,6 +221,10 @@ F(U64, JoinLobby, (void *, U64));
 F(void, LeaveLobby, (void *, U64));
 F(BYTE, SetLobbyType, (void *, U64, int));
 F(BYTE, SetLobbyLimit, (void *, U64, int));
+F(int, FriendCount, (void *, int));
+F(U64, FriendByIndex, (void *, int, int));
+F(BYTE, FriendGame, (void *, U64, BYTE *)); // FriendGameInfo_t, 24 bytes: game id at 0, lobby at 16
+F(BYTE, RequestLobbyData, (void *, U64));
 static void *g_user, *g_friends, *g_msgs, *g_utils, *g_mm;
 static int g_pipe;
 
@@ -264,6 +269,10 @@ static int steamInit(const char *dll)
 	LeaveLobby = (void(__cdecl *)(void *, U64))sym("SteamAPI_ISteamMatchmaking_LeaveLobby");
 	SetLobbyType = (BYTE(__cdecl *)(void *, U64, int))sym("SteamAPI_ISteamMatchmaking_SetLobbyType");
 	SetLobbyLimit = (BYTE(__cdecl *)(void *, U64, int))sym("SteamAPI_ISteamMatchmaking_SetLobbyMemberLimit");
+	FriendCount = (int(__cdecl *)(void *, int))sym("SteamAPI_ISteamFriends_GetFriendCount");
+	FriendByIndex = (U64(__cdecl *)(void *, int, int))sym("SteamAPI_ISteamFriends_GetFriendByIndex");
+	FriendGame = (BYTE(__cdecl *)(void *, U64, BYTE *))sym("SteamAPI_ISteamFriends_GetFriendGamePlayed");
+	RequestLobbyData = (BYTE(__cdecl *)(void *, U64))sym("SteamAPI_ISteamMatchmaking_RequestLobbyData");
 	{
 		void *(__cdecl * u)(void) = (void *(__cdecl *)(void))sym("SteamAPI_SteamUser_v023");
 		void *(__cdecl * f)(void) = (void *(__cdecl *)(void))sym("SteamAPI_SteamFriends_v018");
@@ -343,6 +352,9 @@ static int g_lobbyUp;                // host: our lobby has seen its server up (
 static const char *const g_lobbyTypes[] = {"private", "friends", "public"};
 static U64 g_rows[MAX_ROWS];
 static int g_nRows;
+static BYTE g_rowOk[MAX_ROWS]; // friends' list: 0 its data not here yet, 1 here, 2 the lobby is gone
+static int g_friendsWait;      // friends' list: waiting for their lobbies' data (RequestLobbyData)
+static DWORD g_friendsUntil;
 
 static void sendSteam(U64 to, const BYTE *data, int n)
 {
@@ -582,16 +594,21 @@ static void luaRow(int i, U64 l)
 	wvsprintfA(line, "#if CoopFind_Row then CoopFind_Row(%d,\"%s\",\"%s\",%d,%d,%d,%d,%d) end", (va_list)a);
 	runOnMain(line);
 }
-static void listRows(int count)
+// the list in g_rows to the console and to the menu: kind "internet" or "friends", so a late answer
+// for the other tab is not shown in this one
+static void emitRows(const char *kind)
 {
 	int i;
-	static char line[80];
-	g_nRows = count < MAX_ROWS ? count : MAX_ROWS;
-	say("%d game(s)", count);
-	wvsprintfA(line, "#if CoopFind_List then CoopFind_List(%d) end", (va_list)&g_nRows);
+	static char line[100];
+	void *h[2];
+	h[0] = (void *)g_nRows;
+	h[1] = (void *)kind;
+	wvsprintfA(line, "%d game(s) (%s)", (va_list)h);
+	say("%s", line);
+	wvsprintfA(line, "#if CoopFind_List then CoopFind_List(%d,\"%s\") end", (va_list)h);
 	runOnMain(line);
 	for (i = 0; i < g_nRows; i++) {
-		U64 l = g_rows[i] = LobbyByIndex(g_mm, i);
+		U64 l = g_rows[i];
 		void *a[8];
 		static char line[1100]; // wvsprintfA writes up to 1024; the strings are other players' (up to 8 KB): cut
 		a[0] = (void *)i;
@@ -606,6 +623,71 @@ static void listRows(int count)
 		say("%s", line);
 		luaRow(i, l);
 	}
+}
+static void friendsDone(void);
+static void listRows(int count) // the world list (coop_steam find): public lobbies of this mod
+{
+	int i;
+	g_friendsWait = 0;
+	g_nRows = count < MAX_ROWS ? count : MAX_ROWS;
+	for (i = 0; i < g_nRows; i++)
+		g_rows[i] = LobbyByIndex(g_mm, i);
+	emitRows("internet");
+}
+
+// Friends' games (coop_steam friends): the world list has public lobbies only, a friends-only one
+// is found through the friend. Steam friends playing Far Cry (AppID 13520) in a lobby; their data
+// comes later (RequestLobbyData, CB_LOBBY_DATA), and only lobbies of this mod are listed.
+static void friendsFind(void)
+{
+	int i, j, n = FriendCount(g_friends, 4); // k_EFriendFlagImmediate
+	BYTE info[24];
+	g_callList = 0; // a world list still on its way would overwrite these rows (joinlobby <n>): drop it
+	g_nRows = 0;
+	for (i = 0; i < n && g_nRows < MAX_ROWS; i++) {
+		U64 f = FriendByIndex(g_friends, i, 4), l;
+		memset(info, 0, sizeof info);
+		if (!FriendGame(g_friends, f, info) || *(DWORD *)info != 13520 || *(DWORD *)(info + 4)) // CGameID of the app
+			continue;
+		l = *(U64 *)(info + 16);
+		for (j = 0; j < g_nRows && g_rows[j] != l; j++)
+			;
+		if (!l || j < g_nRows)
+			continue;
+		g_rowOk[g_nRows] = 0;
+		g_rows[g_nRows++] = l;
+		RequestLobbyData(g_mm, l);
+	}
+	say("friends: %d of %d in a Far Cry lobby", g_nRows, n);
+	g_friendsWait = 1;
+	g_friendsUntil = GetTickCount() + 4000; // a lobby that never answers does not hold the list
+	if (!g_nRows)
+		friendsDone();
+}
+static void friendsDone(void)
+{
+	int i, n = 0;
+	g_friendsWait = 0;
+	for (i = 0; i < g_nRows; i++) {
+		const char *k = GetLobbyData(g_mm, g_rows[i], "fc1coop");
+		if (g_rowOk[i] == 1 && k && k[0] == NET_KEY[0] && !k[1])
+			g_rows[n++] = g_rows[i];
+	}
+	g_nRows = n;
+	emitRows("friends");
+}
+static void friendsData(U64 lobby, int ok) // CB_LOBBY_DATA: a friend's lobby answered
+{
+	int i, waiting = 0;
+	if (!g_friendsWait)
+		return;
+	for (i = 0; i < g_nRows; i++) {
+		if (g_rows[i] == lobby && !g_rowOk[i])
+			g_rowOk[i] = (BYTE)(ok ? 1 : 2);
+		waiting |= !g_rowOk[i];
+	}
+	if (!waiting)
+		friendsDone();
 }
 
 static void setLobbyData(void) // host: the player's key=value pairs, then ours (they win)
@@ -668,7 +750,7 @@ static void callbacks(void)
 					listRows(*(int *)res);
 				else {
 					say("lobby list failed");
-					runOnMain("#if CoopFind_List then CoopFind_List(-1) end");
+					runOnMain("#if CoopFind_List then CoopFind_List(-1,\"internet\") end");
 				}
 			} else if (call == g_callJoin) {
 				g_callJoin = 0;
@@ -704,7 +786,9 @@ static void callbacks(void)
 			const char *c = (const char *)cb.param + 8;
 			if (starts(c, "+coop ")) // "+coop <hex SteamID>"
 				join(parseHex(c + 6));
-		} else if (cb.id == CB_LOBBY_JOIN_REQ)
+		} else if (cb.id == CB_LOBBY_DATA)
+			friendsData(*(U64 *)cb.param, cb.param[16]);
+		else if (cb.id == CB_LOBBY_JOIN_REQ)
 			enterLobby(*(U64 *)cb.param);
 		FreeCallback(g_pipe);
 	}
@@ -836,7 +920,7 @@ static void command(char *c) // a "coop_steam ..." line
 		join(starts(c + 5, "loop") ? (U64)LOOP_HOST : parseHex(c + 5));
 	} else if (g_sLoop) {
 		say("loop: only status and join work");
-		if (starts(c, "find"))
+		if (starts(c, "find") || starts(c, "friends"))
 			runOnMain("#if CoopFind_List then CoopFind_List(-1) end");
 	} else if (starts(c, "host")) { // host <max> [public|friends|private]|key=value|...
 		int max, type, i;
@@ -883,7 +967,10 @@ static void command(char *c) // a "coop_steam ..." line
 		g_kv[i] = 0;
 		setLobbyData();
 		say("lobby updated (%s, %d players)", g_lobbyTypes[g_lobbyType], g_lobbyMax);
+	} else if (starts(c, "friends")) {
+		friendsFind();
 	} else if (starts(c, "find")) {
+		g_friendsWait = 0;
 		StrFilter(g_mm, "fc1coop", NET_KEY, 0); // k_ELobbyComparisonEqual
 		DistFilter(g_mm, 3);                     // worldwide
 		g_callList = RequestList(g_mm);
@@ -913,7 +1000,7 @@ static void command(char *c) // a "coop_steam ..." line
 		else
 			say("create a lobby first: coop_steam host");
 	} else
-		say("coop_steam status | join <SteamID>|loop | host <max> [public|friends|private]|key=value|... | update [<max>] [type]|key=value|... | find | joinlobby <n> | leave | invite");
+		say("coop_steam status | join <SteamID>|loop | host <max> [public|friends|private]|key=value|... | update [<max>] [type]|key=value|... | find | friends | joinlobby <n> | leave | invite");
 }
 
 static DWORD __stdcall steamThread(void *dll)
@@ -1005,6 +1092,8 @@ static DWORD __stdcall steamThread(void *dll)
 		}
 		if (!g_sLoop)
 			callbacks();
+		if (g_friendsWait && (int)(GetTickCount() - g_friendsUntil) > 0)
+			friendsDone();
 		pump();
 		Sleep(1);
 	}
