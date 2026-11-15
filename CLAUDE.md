@@ -25,7 +25,7 @@
 
 - `upstream` = Bantila/FarCryCoop (push заглушен, **никогда не пушим**), `origin` = наш форк. Синхронизация: `git fetch upstream`, в `main` — `git merge upstream/main`. Конфликты на файлах, которые мы заменили или удалили (`README*`, `CLAUDE.md`, `ROADMAP*`, `PLAN-fun-mode*`, `docs/workspace*`, `docs/tools/*`), решаем в нашу пользу.
 - Правки кода FarCryCoop (`games/far-cry/`) делаем прямо в `main`, отдельными коммитами. Автору FarCryCoop ничего не отправляем, PR не готовим (решение владельца, 2026-10-28).
-- Коммиты — Conventional Commits, **только на английском** (`fix(far-cry): …`, `feat(harness): …`, `docs: …`), автор — владелец, **без `Co-Authored-By`** и других упоминаний Claude. Документы проекта — на русском.
+- Коммиты — Conventional Commits, **только на английском** (`fix(far-cry): …`, `feat(harness): …`, `docs: …`), автор — владелец, **без `Co-Authored-By`** и других упоминаний Claude. Документы проекта — на русском; `README.md` — сначала английский, ниже русский (решение владельца, 2026-11-15).
 
 ## Харнес (основной инструмент проверки)
 
