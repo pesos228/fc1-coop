@@ -1,5 +1,6 @@
 # "Find game" (Co-op → Find game, MenuScreens/CoopFind.lua): the co-op games Steam lists, from the
-# ASI (coop_steam find → CoopFind_List / CoopFind_Row), and "Join" (coop_steam joinlobby). One
+# ASI (coop_steam find → CoopFind_List / CoopFind_Row), the filters, the Friends tab (coop_steam
+# friends) and "Join" (coop_steam joinlobby). One
 # PC, one Steam account: the host's public lobby with a password, a second game in the menu finds
 # it (the lock: pw 1) and joins it up to Game:Connect. The connection itself does not come up: Steam
 # does not carry an account's packets to itself (the tunnel has its own test, steam-loop; the
@@ -14,7 +15,24 @@ sleep 5s
 lua client1 UI:ActivateScreen("CoopFind")
 expect-log client1 coop:.find.game:.[1-9][0-9]*.game 30s
 expect-log client1 coop:.find.game:.[^|]+.\|.Training.\|.1/6.\|.Veteran.\|.pw.1 10s
-expect client1 UI.PageCoopFind.Expected >= 1 => 1
+expect client1 UI.PageCoopFind.Shown >= 1 => 1
+# filters hide rows without a new search: another map, then "no password" (this game has one)
+# a Select from Lua does not fire OnChanged (the game's own screens call it after one): Show()
+lua client1 UI.PageCoopFind.GUI.MapFilter:Select("Fort") UI.PageCoopFind.Show()
+expect client1 UI.PageCoopFind.Shown => 0
+lua client1 UI.PageCoopFind.GUI.MapFilter:Select("Any") UI.PageCoopFind.Show()
+expect client1 UI.PageCoopFind.Shown >= 1 => 1
+lua client1 UI.PageCoopFind.GUI.NoPassword:SetChecked(1) UI.PageCoopFind.Show()
+expect client1 UI.PageCoopFind.Shown => 0
+lua client1 UI.PageCoopFind.GUI.NoPassword:SetChecked(0) UI.PageCoopFind.Show()
+# Friends: this account's friends (none of them hosting: an empty list), then back to Internet
+lua client1 UI.PageCoopFind.GUI.Friends.OnCommand(UI.PageCoopFind.GUI.Friends)
+expect-netlog client1 friends:.[0-9]+.of.[0-9]+.in.a.Far.Cry.lobby 20s
+expect-log client1 coop:.find.game:.[0-9]+.game.s...friends. 20s
+lua client1 UI.PageCoopFind.GUI.Internet.OnCommand(UI.PageCoopFind.GUI.Internet)
+# the log has the first answer too: wait for the list itself (Refresh empties it, Shown 0)
+sleep 5s
+expect client1 UI.PageCoopFind.Shown >= 1 => 1
 # Join: the row of this host's game
 lua client1 for i, g in UI.PageCoopFind.Games do if (g.Map == "Training") then UI.PageCoopFind.GUI.GameList:SelectIndex(i) end end UI.PageCoopFind.Join()
 expect-netlog client1 in.lobby.[0-9a-f]+ 30s
