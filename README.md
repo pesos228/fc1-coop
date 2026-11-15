@@ -6,6 +6,12 @@ Campaign co-op for Far Cry 1 (2004) in the spirit of Sven Co-op and Synergy: the
 
 > **Status: work in progress, nothing for players yet.** The first release comes when the first chapter is fully playable by two.
 
+| In a campaign level together | Co-op menu | Find game |
+|---|---|---|
+| ![Two players in Training](docs/screenshots/coop-ingame.jpg) | ![The Co-op screen](docs/screenshots/coop-menu.jpg) | ![Find game](docs/screenshots/coop-find.jpg) |
+
+<sub>Find game shows example rows; the real list comes from Steam.</sub>
+
 ## Base and credits
 
 - A fork of [FarCryCoop](https://github.com/Bantila/FarCryCoop) by Bantila (MIT): a Lua pack (game type `COOP`) plus an ASI plugin hooking `CryGame.dll` 1.4, plus a launcher. Its code is in `games/far-cry/`, its research log in [games/far-cry/NOTES.md](games/far-cry/NOTES.md), the base's install and console notes in the [upstream README](https://github.com/Bantila/FarCryCoop#readme).
@@ -43,6 +49,8 @@ FarCryCoop's code is [MIT](LICENSE). The license of our own code will be chosen 
 Кооп кампании Far Cry 1 (2004) в духе Sven Co-op и Synergy: оригинальные 20 карт, вместе с друзьями по сети, внешне как ванила.
 
 > **Статус: в разработке, для игроков пока ничего нет.** Первый релиз — когда первая глава будет полностью проходима вдвоём.
+
+Скриншоты — в начале страницы: двое на карте кампании (Training), экран Co-op, Find game (строки списка там для примера).
 
 ### Основа и благодарности
 
