@@ -26,3 +26,6 @@ bin/
 # Harness / Харнес
 /.harness/
 /tools/bin/
+
+# CI package (games/far-cry/release/ci-package.ps1)
+/dist/
