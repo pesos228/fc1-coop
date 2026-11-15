@@ -13,6 +13,10 @@ UI.PageCoop =
 		"Swamp", "Factory", "Dam", "Volcano"},
 	SavePrefix = "Save: ",
 	Difficulty = {"Easy", "Medium", "Challenging", "Veteran", "Realistic"}, -- 0..4, Campaign.lua
+	-- the Steam lobby's type (steam.c "coop_steam host <max> <type>": k_ELobbyType)
+	Access = {"Everyone", "Friends only", "Invite only"},
+	AccessType = {"public", "friends", "private"},
+	MaxPlayers = 16, -- steam.c: a lobby holds up to 16
 
 	GUI =
 	{
@@ -29,7 +33,7 @@ UI.PageCoop =
 		{
 			skin = UI.skins.MenuBorder,
 			left = 200, top = 141,
-			width = 580, height = 222,
+			width = 580, height = 262,
 			zorder = -50,
 		},
 
@@ -84,6 +88,40 @@ UI.PageCoop =
 			vscrollbar = { skin = UI.skins.VScrollBar, },
 		},
 
+		MaxText =
+		{
+			skin = UI.skins.Label,
+			left = 500, top = 240,
+			width = 130,
+			text = "Max players",
+		},
+
+		MaxCombo =
+		{
+			skin = UI.skins.ComboBox,
+			left = 640, top = 236,
+			width = 80, height = 25,
+			tabstop = 4,
+			vscrollbar = { skin = UI.skins.VScrollBar, },
+		},
+
+		AccessText =
+		{
+			skin = UI.skins.Label,
+			left = 210, top = 320,
+			width = 180,
+			text = "Who can join (Steam)",
+		},
+
+		AccessCombo =
+		{
+			skin = UI.skins.ComboBox,
+			left = 400, top = 316,
+			width = 200, height = 25,
+			tabstop = 6,
+			vscrollbar = { skin = UI.skins.VScrollBar, },
+		},
+
 		LoadoutText =
 		{
 			skin = UI.skins.Label,
@@ -96,14 +134,14 @@ UI.PageCoop =
 		{
 			skin = UI.skins.CheckBox,
 			left = 400, top = 280,
-			tabstop = 4,
+			tabstop = 5,
 		},
 
 		JoinIP =
 		{
 			skin = UI.skins.BottomMenuButton,
 			left = 200,
-			tabstop = 5,
+			tabstop = 7,
 			text = "Join by IP",
 			OnCommand = function(Sender)
 				UI.JoinIPBox("Join by IP", "Enter the host's IP and port (49001)", UI.PageCoop.ConnectIP);
@@ -114,7 +152,7 @@ UI.PageCoop =
 		{
 			skin = UI.skins.BottomMenuButton,
 			left = 400,
-			tabstop = 7,
+			tabstop = 9,
 			text = "Player settings",
 			OnCommand = function(Sender)
 				GotoPage("CoopPlayer");
@@ -125,7 +163,7 @@ UI.PageCoop =
 		{
 			skin = UI.skins.BottomMenuButton,
 			left = 780 - 180,
-			tabstop = 6,
+			tabstop = 8,
 			text = Localize("Launch"),
 			OnCommand = function(Sender)
 				UI.PageCoop.Launch();
@@ -160,6 +198,18 @@ UI.PageCoop =
 		end
 		GUI.WaitCombo:Select(tostring(tonumber(COOP_ExpectPlayers) or 2));
 
+		GUI.MaxCombo:Clear();
+		for i = 1, UI.PageCoop.MaxPlayers do
+			GUI.MaxCombo:AddItem(tostring(i));
+		end
+		GUI.MaxCombo:Select(tostring(UI.PageCoop.nLastMax or 4));
+
+		GUI.AccessCombo:Clear();
+		for i, a in UI.PageCoop.Access do
+			GUI.AccessCombo:AddItem(a);
+		end
+		GUI.AccessCombo:SelectIndex(UI.PageCoop.nLastAccess or 2);
+
 		if (tonumber(COOP_LoadoutMode) == 1) then GUI.Loadout:SetChecked(1); else GUI.Loadout:SetChecked(0); end
 	end,
 
@@ -193,12 +243,37 @@ UI.PageCoop =
 		COOP_ExpectPlayers = tonumber(GUI.WaitCombo:GetSelection()) or 1;
 		if (GUI.Loadout:GetChecked()) then COOP_LoadoutMode = 1; else COOP_LoadoutMode = 0; end
 		UI.PageCoop.szLastMap = sel;
+		local max = tonumber(GUI.MaxCombo:GetSelection()) or 4;
+		if (max < COOP_ExpectPlayers) then max = COOP_ExpectPlayers; end -- the waited-for players must fit
+		local access = tonumber(GUI.AccessCombo:GetSelectionIndex()) or 1;
+		if (not UI.PageCoop.AccessType[access]) then access = 1; end
+		UI.PageCoop.nLastMax, UI.PageCoop.nLastAccess = max, access;
 		local n = strlen(UI.PageCoop.SavePrefix);
+		local map = sel;
+		if (strsub(sel, 1, n) == UI.PageCoop.SavePrefix) then map = strsub(sel, n + 1); end
+		-- a new game (not a map change of the server we run): its Steam lobby, so friends and the
+		-- world list find it. Without Steam the ASI says so in the console (CoopSteam_OnLobby(0)).
+		if (not Game:IsServer()) then UI.PageCoop.HostLobby(max, UI.PageCoop.AccessType[access], map); end
 		if (strsub(sel, 1, n) == UI.PageCoop.SavePrefix) then
 			System:ExecuteCommand("coop_loadgame "..strsub(sel, n + 1));
 		else
 			System:ExecuteCommand("coop_map "..sel);
 		end
+	end,
+
+	-- lobby strings: "|" and "=" split the ASI's key=value list, the rest is cut to printable ASCII
+	-- (CoopPlayer CleanName already keeps the console line safe)
+	LobbyText = function(s)
+		s = gsub(tostring(s or ""), "[^ -~]", "");
+		s = gsub(s, "[|=\"';#%%\\]", "");
+		return strsub(s, 1, 48);
+	end,
+
+	HostLobby = function(max, access, map)
+		local P = UI.PageCoop;
+		local name = P.LobbyText(getglobal("p_name") or "Player").." - "..P.LobbyText(map);
+		System:ExecuteCommand(format("coop_steam host %d %s|name=%s|map=%s|diff=%d", max, access, name,
+			P.LobbyText(map), tonumber(COOP_Difficulty) or 1));
 	end,
 
 	ConnectIP = function(IP1, IP2, IP3, IP4, Port)
@@ -224,6 +299,12 @@ UI.PageCoop =
 		System:ExecuteCommand("coop_connect "..addr);
 	end,
 }
+
+-- the ASI, once Steam has answered "coop_steam host" (steam.c)
+function CoopSteam_OnLobby(ok)
+	if (ok == 1) then System:LogAlways("coop: Steam lobby created");
+	else System:LogAlways("coop: no Steam lobby (Steam is off or offline): friends join by IP"); end
+end
 
 AddUISideMenu(UI.PageCoop.GUI,
 {

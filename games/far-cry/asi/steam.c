@@ -11,7 +11,8 @@
 // Mods\FarCryCoop\steam_loop.txt: no Steam, the "Steam" between two games on one PC is UDP on
 // 127.0.0.1 (host 49021, clients 49022+; an id is that port): the harness test of the tunnel.
 // Console (typed, or System:ExecuteCommand from Lua; caught in IConsole::ExecuteString):
-//   coop_steam status | join <hex SteamID>|loop | host <max>|key=value|... | find | joinlobby <n>
+//   coop_steam status | join <hex SteamID>|loop | host <max> [public|friends|private]|key=value|...
+//   | find | joinlobby <n>
 //   coop_steam leave | invite
 // All Steam calls run on the Steam thread; console lines go back to the main thread (hGameUpdate).
 
@@ -324,6 +325,8 @@ static U64 g_ownLobby;              // host: the lobby we created (its members m
 static U64 g_inLobby, g_waitLobby;  // client: the lobby we entered; entered, waiting for its server
 static U64 g_callCreate, g_callList, g_callJoin;
 static char g_kv[300];              // host: key=value pairs for the lobby being created
+static int g_lobbyType, g_lobbyMax;  // host: the lobby being created (k_ELobbyType: 0 invite only, 1 friends, 2 public)
+static const char *const g_lobbyTypes[] = {"private", "friends", "public"};
 static U64 g_rows[MAX_ROWS];
 static int g_nRows;
 
@@ -577,7 +580,7 @@ static void callbacks(void)
 				g_callCreate = 0;
 				if (CallResult(g_pipe, call, res, 16, CB_LOBBY_CREATED, &failed) && !failed && *(int *)res == 1) {
 					g_ownLobby = *(U64 *)(res + 8);
-					say("lobby %x%08x created", HI(g_ownLobby), LO(g_ownLobby));
+					say("lobby %x%08x created (%s, %d players)", HI(g_ownLobby), LO(g_ownLobby), g_lobbyTypes[g_lobbyType], g_lobbyMax);
 					setLobbyData();
 					runOnMain("#if CoopSteam_OnLobby then CoopSteam_OnLobby(1) end");
 				} else
@@ -650,13 +653,23 @@ static void command(char *c) // a "coop_steam ..." line
 		join(starts(c + 5, "loop") ? (U64)LOOP_HOST : parseHex(c + 5));
 	} else if (g_sLoop) {
 		say("loop: only status and join work");
-	} else if (starts(c, "host")) { // host <max>|key=value|...
-		int max = 0, i;
+	} else if (starts(c, "host")) { // host <max> [public|friends|private]|key=value|...
+		int max = 0, i, type = 2;
 		char *p = c + 4;
 		while (*p == ' ')
 			p++;
 		while (*p >= '0' && *p <= '9')
 			max = max * 10 + *p++ - '0';
+		while (*p == ' ')
+			p++;
+		for (i = 0; i < 3; i++)
+			if (starts(p, g_lobbyTypes[i])) {
+				const char *t = g_lobbyTypes[i];
+				type = i;
+				while (*t++)
+					p++;
+				break;
+			}
 		if (g_callCreate) {
 			say("a lobby is being created already");
 			return;
@@ -665,7 +678,9 @@ static void command(char *c) // a "coop_steam ..." line
 		for (i = 0; i < 299 && p[i]; i++) // set once Steam has created it (callbacks)
 			g_kv[i] = p[i];
 		g_kv[i] = 0;
-		if (!(g_callCreate = CreateLobby(g_mm, 2, max > 0 && max <= 16 ? max : 4))) // k_ELobbyTypePublic
+		g_lobbyType = type;
+		g_lobbyMax = max > 0 && max <= 16 ? max : 4;
+		if (!(g_callCreate = CreateLobby(g_mm, type, g_lobbyMax)))
 			lobbyFailed("no Steam call (offline?)");
 	} else if (starts(c, "find")) {
 		StrFilter(g_mm, "fc1coop", NET_KEY, 0); // k_ELobbyComparisonEqual
@@ -691,7 +706,7 @@ static void command(char *c) // a "coop_steam ..." line
 		else
 			say("create a lobby first: coop_steam host");
 	} else
-		say("coop_steam status | join <SteamID>|loop | host <max>|key=value|... | find | joinlobby <n> | leave | invite");
+		say("coop_steam status | join <SteamID>|loop | host <max> [public|friends|private]|key=value|... | find | joinlobby <n> | leave | invite");
 }
 
 static DWORD __stdcall steamThread(void *dll)
