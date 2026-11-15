@@ -15,7 +15,8 @@ import (
 )
 
 // cfgFiles are written by the game on quit or touched by the harness; restored after the run.
-var cfgFiles = []string{"system.cfg", "game.cfg", "SystemCfgOverride.cfg"}
+// Mods/FarCryCoop/prefs.lua: the launcher's and the menu's player settings (tests/menu-player.txt writes it).
+var cfgFiles = []string{"system.cfg", "game.cfg", "SystemCfgOverride.cfg", "Mods/FarCryCoop/prefs.lua"}
 
 type supervisor struct {
 	run    *Run
@@ -429,6 +430,9 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
