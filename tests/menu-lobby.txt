@@ -20,5 +20,8 @@ wait server players>=1 -t 120s
 sleep 3s
 cmd server coop_steam find
 expect-netlog server \|.Carrier.\|.1/5.\|.up=1 20s
+# the host leaves for the menu: the game is over and its lobby leaves the list
+lua server Game:Disconnect()
+expect-netlog server lobby.left:.the.server.is.down 20s
 expect-no-events
 down
