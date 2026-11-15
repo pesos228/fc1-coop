@@ -83,3 +83,4 @@ end
 
 Script:LoadScript("Scripts/MenuScreens/Coop.lua", 1);
 Script:LoadScript("Scripts/MenuScreens/CoopPlayer.lua", 1);
+Script:LoadScript("Scripts/MenuScreens/CoopFind.lua", 1);

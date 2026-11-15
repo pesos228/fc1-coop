@@ -344,6 +344,7 @@ end
 AddUISideMenu(UI.PageCoop.GUI,
 {
 	{ "MainMenu", Localize("MainMenu"), "$MainScreen$", 0},
+	{ "CoopFind", "Find game", "CoopFind", },
 	{ "Options", Localize("Options"), "Options", },
 });
 
