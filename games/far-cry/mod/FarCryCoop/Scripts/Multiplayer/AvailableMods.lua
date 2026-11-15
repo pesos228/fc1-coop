@@ -91,6 +91,18 @@ end
 -- %% (quoted argument, as start_server does): with %line the game client passed the map name
 -- unquoted, so "coop_map pier" ran CoopMap(pier) with an undefined variable and did nothing
 Game:AddCommand("coop_map", "CoopMap(%%)","coop_map <campaign map>: start a campaign map as a co-op server");
+-- join a co-op game: "coop_connect 192.168.0.5" (port 49001 unless given). The menu joins with it
+-- (MenuScreens/Coop.lua): the ASI marks this game as a co-op one from the console line
+function CoopConnect(addr)
+	addr = tostring(addr or "");
+	if (addr == "" or strfind(addr, "[^%w%.:%-]")) then
+		System:LogAlways("coop_connect: bad address");
+		return;
+	end
+	if (not strfind(addr, ":")) then addr = addr..":49001"; end
+	Game:Connect(addr, 1);
+end
+Game:AddCommand("coop_connect", "CoopConnect(%%)", "coop_connect <address>[:port]: join a co-op game");
 Game:AddCommand("coop_restart", "if (COOP_Map) then CoopMap(COOP_Map) end", "coop_restart: reload the current co-op map, clients stay connected");
 
 -- Co-op saves (written by CoopSave, COOP gamerules): Mods\FarCryCoop\save_<name>.lua. Loading

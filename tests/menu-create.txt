@@ -1,0 +1,23 @@
+# The mod's menu (docs/specs/in-game-menu.md, step 3b): the host opens "Co-op", picks Treehouse,
+# 2 players to wait for and Veteran, and presses Launch; a client joins. The main menu has "Co-op"
+# in place of "Campaign" and "Multiplayer".
+# Treehouse on purpose: it loads in co-op only when the ASI knows the game is a co-op one (baked
+# physics states, docs/maps.md), and from the menu it learns that from the console line coop_map
+# (steam.c hExec), not from a launcher's join line.
+# Run from the repo root: tools/bin/harness.exe test tests/menu-create.txt
+up -mode host -map treehouse -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #UI:ActivateScreen("Coop");#UI.PageCoop.GUI.MapCombo:Select("Treehouse");#UI.PageCoop.GUI.WaitCombo:Select("2");#UI.PageCoop.GUI.DifficultyCombo:SelectIndex(4);#UI.PageCoop.Launch()
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 120s
+# the menu's choices reached the game
+expect server tostring(COOP_Map) => Treehouse
+expect server COOP_ExpectPlayers => 2
+expect server tonumber(game_DifficultyLevel) => 3
+expect server COOP_Difficulty => 3
+# the main menu
+expect server (UI.PageMainScreen.GUI.Coop and 1 or 0) => 1
+expect server (UI.PageMainScreen.GUI.Campaign and 1 or 0) => 0
+expect server (UI.PageMainScreen.GUI.Multiplayer and 1 or 0) => 0
+# both play the same map
+expect-diff max=8
+expect-no-events
+down
