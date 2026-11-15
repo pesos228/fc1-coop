@@ -10,9 +10,10 @@
 - **Установка — одна папка `FarCryCoop` в `Mods`** (владелец: «просто закинул мод»). Игра с `-MOD:FarCryCoop` грузит `Mods\FarCryCoop\Bin32\CryGame.dll` раньше своей (подтверждено дампом); `FarCryCoopNet` теперь умеет быть ею и подгружает настоящую. ASI Loader, `Bin32` и батник не нужны. Харнес `-proxy`, сценарий `proxy-install`; CI-пакет — одна папка.
 - После отказа (`ServerFull`) игрок попадает на «Co-op», а не на старый «Multiplayer» (`6ba3939`).
 - Области `menu`, `steam`, `sync` — 24 из 24.
+- `steam_api.dll` (Steamworks SDK 1.65, x86) лежит в `games/far-cry/release/redist/` — CI-пакет сразу со Steam (решение владельца).
 
 **Открытые проблемы**
-- Не проверено: запуск через меню игры «Mods» и без `-DEVMODE`. `steam_api.dll` для CI — решение владельца. «Find game» — следующим.
+- Не проверено: запуск через меню игры «Mods» и без `-DEVMODE`. «Find game» — следующим.
 
 ---
 
