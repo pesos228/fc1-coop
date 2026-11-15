@@ -1,0 +1,17 @@
+# The release install (owner, 2026-11-15: the mod is one folder dropped into Mods, nothing in Bin32):
+# FarCryCoopNet as Mods\FarCryCoop\Bin32\CryGame.dll, which the game loads itself with -MOD before
+# its own; it loads the game's CryGame.dll from Bin32 and hooks it. -proxy installs it so instead
+# of injecting it. The start lines come through the join files the ASI reads: they ran only if it
+# is up; the CryGame it hooked is the game's (its base, 0x33000000).
+# Run from the repo root: tools/bin/harness.exe test tests/proxy-install.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -proxy -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 60s
+expect-netlog server as.the.mod's.CryGame.dll 5s
+expect-netlog client1 as.the.mod's.CryGame.dll 5s
+expect-netlog server CryGame.dll.at.33000000 5s
+expect-netlog client1 CryGame.dll.at.33000000 5s
+expect-log client1 sequence.first_cutscene 40s
+expect-diff max=0.5 class=^Player$ missing=0
+expect-no-events
+down
