@@ -4,15 +4,19 @@
 # Treehouse on purpose: it loads in co-op only when the ASI knows the game is a co-op one (baked
 # physics states, docs/maps.md), and from the menu it learns that from the console line coop_map
 # (steam.c hExec), not from a launcher's join line.
+# The launcher's prefs.lua (COOP ClientStuff loads it at the map start when COOP_Color is unset) must
+# not undo the menu's choices: one with difficulty 0 and the loadout on is written first.
 # Run from the repo root: tools/bin/harness.exe test tests/menu-create.txt
-up -mode host -map treehouse -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #UI:ActivateScreen("Coop");#UI.PageCoop.GUI.MapCombo:Select("Treehouse");#UI.PageCoop.GUI.WaitCombo:Select("2");#UI.PageCoop.GUI.DifficultyCombo:SelectIndex(4);#UI.PageCoop.Launch()
+up -mode host -map treehouse -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #f=openfile("Mods/FarCryCoop/prefs.lua","w");#write(f,"COOP_Difficulty=0",strchar(10),"COOP_LoadoutMode=1",strchar(10),"COOP_Color=2",strchar(10));#closefile(f);#UI:ActivateScreen("Coop");#UI.PageCoop.GUI.MapCombo:Select("Treehouse");#UI.PageCoop.GUI.WaitCombo:Select("2");#UI.PageCoop.GUI.DifficultyCombo:SelectIndex(4);#UI.PageCoop.Launch()
 wait server players>=2 -t 120s
 wait client1 players>=2 -t 120s
+lua server remove("Mods/FarCryCoop/prefs.lua")
 # the menu's choices reached the game
 expect server tostring(COOP_Map) => Treehouse
 expect server COOP_ExpectPlayers => 2
 expect server tonumber(game_DifficultyLevel) => 3
 expect server COOP_Difficulty => 3
+expect server COOP_LoadoutMode => 0
 # the main menu
 expect server (UI.PageMainScreen.GUI.Coop and 1 or 0) => 1
 expect server (UI.PageMainScreen.GUI.Campaign and 1 or 0) => 0

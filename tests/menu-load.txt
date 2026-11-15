@@ -1,0 +1,24 @@
+# The mod's menu loads a co-op save (docs/specs/in-game-menu.md, step 3b): "Save: <name>" in the
+# Co-op screen runs coop_loadgame, which the COOP gamerules used to register only once a map was
+# loaded: from the main menu of a fresh game the save did not start (review 2026-11-15).
+# Also "Join by IP" with empty fields (below).
+# The save keeps its own difficulty (CoopLoad), whatever the menu shows.
+# Run from the repo root: tools/bin/harness.exe test tests/menu-load.txt
+up -mode host -map training -clients 0 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=1;#CoopMap("training")
+wait server players>=1 -t 60s
+lua server COOP_Difficulty=2 CoopSave("menutest")
+expect-log server saved.menutest
+down
+up -mode host -map training -clients 0 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #UI:ActivateScreen("Coop");#UI.PageCoop.GUI.MapCombo:Select(UI.PageCoop.SavePrefix.."menutest");#UI.PageCoop.GUI.DifficultyCombo:SelectIndex(1);#UI.PageCoop.GUI.WaitCombo:Select("1");#UI.PageCoop.Launch()
+wait server players>=1 -t 120s
+lua server remove("Mods/FarCryCoop/save_menutest.lua")
+expect server tostring(COOP_Map) => training
+expect server COOP_Difficulty => 2
+# Join by IP with the address left empty: nothing happens, the host keeps its game (it used to run
+# Game:Connect("...:49001") and drop the server)
+lua server UI.PageCoop.ConnectIP("", "", "", "", "")
+sleep 3s
+expect server Game:IsServer() and 1 or 0 => 1
+expect-log server coop:.join.by.IP:.not.an.address
+expect-no-events
+down
