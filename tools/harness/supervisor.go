@@ -73,6 +73,9 @@ func (s *supervisor) backupConfigs() error {
 	}
 	// Plugins compute the game folder from their own path (<game>\Bin32\x.asi).
 	if s.run.ASI != "" {
+		if err := os.MkdirAll(filepath.Dir(s.asiInGame()), 0o755); err != nil {
+			return err
+		}
 		if err := copyFile(s.run.ASI, s.asiInGame()); err != nil {
 			return err
 		}
@@ -87,13 +90,22 @@ func (s *supervisor) backupConfigs() error {
 	return os.WriteFile(filepath.Join(s.run.GameDir, "SystemCfgOverride.cfg"), []byte(override), 0o644)
 }
 
+// asiInGame: <game>\Bin32\<x>.asi, injected; with -proxy Mods\<mod>\Bin32\CryGame.dll, which the
+// game loads itself with -MOD before its own (the release install: FarCryCoopNet.c "the mod's own
+// CryGame.dll").
 func (s *supervisor) asiInGame() string {
+	if s.run.Proxy {
+		return filepath.Join(s.run.GameDir, "Mods", s.run.Mod, "Bin32", "CryGame.dll")
+	}
 	return filepath.Join(s.run.GameDir, "Bin32", filepath.Base(s.run.ASI))
 }
 
 func (s *supervisor) restoreConfigs() {
 	if s.run.ASI != "" {
 		os.Remove(s.asiInGame())
+		if s.run.Proxy {
+			os.Remove(filepath.Dir(s.asiInGame())) // Mods\<mod>\Bin32, when empty
+		}
 	}
 	if s.run.SteamLoop {
 		os.Remove(filepath.Join(s.run.GameDir, "Mods", s.run.Mod, "steam_loop.txt"))
@@ -180,14 +192,14 @@ func (s *supervisor) start(in *Instance) error {
 	cmd := exec.Command(exe)
 	cmd.Dir = s.run.GameDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: quote(exe) + " " + strings.Join(args, " ")}
-	if s.run.ASI != "" {
+	if s.run.ASI != "" && !s.run.Proxy {
 		cmd.SysProcAttr.CreationFlags = 0x4 // CREATE_SUSPENDED: inject before any game code runs
 	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	in.PID = cmd.Process.Pid
-	if s.run.ASI != "" {
+	if s.run.ASI != "" && !s.run.Proxy {
 		if err := injectDLL(in.PID, s.asiInGame()); err != nil {
 			appendEvent(s.run.Dir, in.Name, "warn", "inject: "+err.Error())
 		} else {

@@ -123,6 +123,7 @@ func cmdUp(args []string) error {
 	keys := fs.String("keys", "", "with -pname: the clients' COOP_PlayerKey in order, separated by ',' (default: the instance name)")
 	connect := fs.String("connect", "", "client join command instead of the direct connect")
 	steamLoop := fs.Bool("steamloop", false, "the ASI's Steam tunnel without Steam (Mods/<mod>/steam_loop.txt): clients join with 'coop_steam join loop'")
+	proxy := fs.Bool("proxy", false, "with -asi: install it as Mods/<mod>/Bin32/CryGame.dll (loaded by the game, as the release does) instead of injecting it")
 	idle := fs.Int("idle", 0, "the last N clients start in the main menu without connecting; up does not wait for their level (a scenario connects them with join)")
 	steam := fs.Bool("steam", false, "real Steam in the ASI: copies external/steamworks steam_api.dll to Mods/<mod>/Steam for the run (needs a logged-in Steam)")
 	fs.Parse(args)
@@ -193,7 +194,7 @@ func cmdUp(args []string) error {
 		return fmt.Errorf("unknown mode %q", *mode)
 	}
 	run := &Run{Dir: runDir, GameDir: *gameDir, Agent: filepath.Join(root, "scripts", "harness", "agent.lua"),
-		Mode: *mode, Map: *mapName, Mod: *mod, Width: *w, Height: *h, Sound: *sound, PName: *pname, SteamLoop: *steamLoop, SteamDLL: steamCopied, Started: time.Now()}
+		Mode: *mode, Map: *mapName, Mod: *mod, Width: *w, Height: *h, Sound: *sound, PName: *pname, SteamLoop: *steamLoop, SteamDLL: steamCopied, Proxy: *proxy && *mod != "", Started: time.Now()}
 	if *asi != "" {
 		a, err := filepath.Abs(*asi)
 		if err != nil {
