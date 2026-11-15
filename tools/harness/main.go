@@ -123,6 +123,7 @@ func cmdUp(args []string) error {
 	keys := fs.String("keys", "", "with -pname: the clients' COOP_PlayerKey in order, separated by ',' (default: the instance name)")
 	connect := fs.String("connect", "", "client join command instead of the direct connect")
 	steamLoop := fs.Bool("steamloop", false, "the ASI's Steam tunnel without Steam (Mods/<mod>/steam_loop.txt): clients join with 'coop_steam join loop'")
+	idle := fs.Int("idle", 0, "the last N clients start in the main menu without connecting; up does not wait for their level (a scenario connects them with join)")
 	steam := fs.Bool("steam", false, "real Steam in the ASI: copies external/steamworks steam_api.dll to Mods/<mod>/Steam for the run (needs a logged-in Steam)")
 	fs.Parse(args)
 
@@ -206,6 +207,9 @@ func cmdUp(args []string) error {
 	for i := 1; i <= *clients; i++ {
 		in := &Instance{Name: fmt.Sprintf("client%d", i), Role: "client",
 			Dir: filepath.Join(runDir, fmt.Sprintf("client%d", i)), Commands: []string{clientConnect}}
+		if i > *clients-*idle {
+			in.Idle, in.Commands = true, nil
+		}
 		if *pname != "" {
 			in.Key = in.Name
 			if i <= len(keyList) && keyList[i-1] != "" {

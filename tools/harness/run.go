@@ -38,6 +38,7 @@ type Instance struct {
 	PID      int      `json:"pid"`
 	Commands []string `json:"commands"` // console commands passed on the command line
 	Key      string   `json:"key,omitempty"` // with Run.PName: the client's COOP_PlayerKey
+	Idle     bool     `json:"idle,omitempty"` // -idle: started in the main menu, not connected, its level not awaited
 }
 
 // Run describes one harness session; stored as <run>/run.json.

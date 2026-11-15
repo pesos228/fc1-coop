@@ -130,7 +130,7 @@ func (s *supervisor) startAll() error {
 		}
 	}
 	for _, in := range s.run.Instances {
-		if in.Role == "client" {
+		if in.Role == "client" && !in.Idle {
 			if err := s.waitLevel(in, 2*time.Minute); err != nil {
 				return fmt.Errorf("%s: %w", in.Name, err)
 			}
