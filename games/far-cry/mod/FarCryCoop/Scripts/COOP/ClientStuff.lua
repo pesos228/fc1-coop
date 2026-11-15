@@ -14,6 +14,7 @@ function ClientStuff:OnInit()
 	-- written by the launcher: COOP_Color, COOP_Weapons, COOP_LoadoutMode (used by the host only).
 	-- The launcher's console line (join_<pid>.txt) sets them first: two games on one PC share this file.
 	if (not COOP_Color) then Script:LoadScript("Mods/FarCryCoop/prefs.lua"); end
+	if (CoopApplySteamName) then CoopApplySteamName(); end -- the Steam name over prefs.lua's p_name
 	for name, def in WeaponClassesEx do
 		Game:AddWeapon(name);
 	end

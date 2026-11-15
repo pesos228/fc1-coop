@@ -326,6 +326,7 @@ static U64 g_inLobby, g_waitLobby;  // client: the lobby we entered; entered, wa
 static U64 g_callCreate, g_callList, g_callJoin;
 static char g_kv[300];              // host: key=value pairs for the lobby being created
 static int g_lobbyType, g_lobbyMax;  // host: the lobby being created (k_ELobbyType: 0 invite only, 1 friends, 2 public)
+static int g_private;                // host: an invite-only game: no Join for friends, sessions for lobby members only
 static const char *const g_lobbyTypes[] = {"private", "friends", "public"};
 static U64 g_rows[MAX_ROWS];
 static int g_nRows;
@@ -607,7 +608,8 @@ static void callbacks(void)
 			// public games); an accepted session is not checked again. Client: our own host (its
 			// session broke and it sent first).
 			const Identity *who = (const Identity *)cb.param;
-			if (who->type == 16 && ((g_up && (HasFriend(g_friends, who->u.steamID, 4) || isMember(who->u.steamID))) ||
+			// An invite-only game (g_private): members only, a friend too must have been invited.
+			if (who->type == 16 && ((g_up && ((!g_private && HasFriend(g_friends, who->u.steamID, 4)) || isMember(who->u.steamID))) ||
 			                        (g_host && who->u.steamID == g_host)))
 				AcceptSession(g_msgs, who);
 			else
@@ -620,6 +622,73 @@ static void callbacks(void)
 			enterLobby(*(U64 *)cb.param);
 		FreeCallback(g_pipe);
 	}
+}
+
+// The player's name in the game is the Steam name (owner, 2026-11-15). It is anyone's text: its
+// bytes go to Lua as decimal escapes, only letters, digits and spaces stay as they are, and Lua
+// makes a game name of it (CoopCleanName: Cyrillic transliterated, the rest dropped). 48 bytes
+// (24 Cyrillic letters) keep the line within a queue entry.
+static void sendName(const char *name)
+{
+	static char line[300];
+	static const char pre[] = "#COOP_SteamNameRaw=\"", post[] = "\" if CoopApplySteamName then CoopApplySteamName() end";
+	int i = 0, n;
+	const char *p;
+	for (p = pre; *p; p++)
+		line[i++] = *p;
+	for (n = 0; name && *name && n < 48; name++) {
+		BYTE b = (BYTE)*name;
+		if (b >= 0xE0) { // a 3- or 4-byte character (CJK, emoji): Lua drops it, so it takes no room
+			while ((BYTE)name[1] >= 0x80 && (BYTE)name[1] < 0xC0)
+				name++;
+			continue;
+		}
+		n++;
+		if ((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == ' ')
+			line[i++] = (char)b;
+		else {
+			line[i++] = '\\';
+			line[i++] = (char)('0' + b / 100);
+			line[i++] = (char)('0' + b / 10 % 10);
+			line[i++] = (char)('0' + b % 10);
+		}
+	}
+	for (p = post; *p; p++)
+		line[i++] = *p;
+	line[i] = 0;
+	runOnMain(line);
+}
+
+// The player's key (gamerules COOPID: whose loadout and save point is whose) is the SteamID in
+// decimal, as the launcher sets it, so menu and launcher games share saves; without it the key
+// was the name, and two players of the same name could get each other's. Decimal without the
+// CRT's 64-bit division: four 16-bit limbs divided by 10.
+static void sendKey(U64 me)
+{
+	static char line[60], tmp[24];
+	DWORD l[4], r, nz;
+	int i, k, n = 0;
+	l[0] = HI(me) >> 16, l[1] = HI(me) & 0xffff, l[2] = LO(me) >> 16, l[3] = LO(me) & 0xffff;
+	do {
+		for (r = 0, nz = 0, k = 0; k < 4; k++) {
+			DWORD cur = r << 16 | l[k];
+			l[k] = cur / 10;
+			r = cur % 10;
+			nz |= l[k];
+		}
+		tmp[n++] = (char)('0' + r);
+	} while (nz);
+	{
+		static const char pre[] = "#COOP_PlayerKey=\"";
+		const char *p;
+		for (i = 0, p = pre; *p; p++)
+			line[i++] = *p;
+		while (n)
+			line[i++] = tmp[--n];
+		line[i++] = '"';
+		line[i] = 0;
+	}
+	runOnMain(line);
 }
 
 static int serverUp(void) // this process holds UDP 49001 (listen host)
@@ -662,14 +731,22 @@ static void command(char *c) // a "coop_steam ..." line
 			max = max * 10 + *p++ - '0';
 		while (*p == ' ')
 			p++;
-		for (i = 0; i < 3; i++)
-			if (starts(p, g_lobbyTypes[i])) {
-				const char *t = g_lobbyTypes[i];
-				type = i;
-				while (*t++)
-					p++;
-				break;
+		if (*p && *p != '|') {
+			for (i = 0; i < 3; i++) {
+				const char *t = g_lobbyTypes[i], *q = p;
+				while (*t && (*q | 32) == *t)
+					t++, q++;
+				if (!*t && (!*q || *q == '|' || *q == ' ')) {
+					type = i;
+					p = (char *)q;
+					break;
+				}
 			}
+			if (i == 3) { // a typo must not open the game to everybody
+				say("host: the type is public, friends or private");
+				return;
+			}
+		}
 		if (g_callCreate) {
 			say("a lobby is being created already");
 			return;
@@ -679,6 +756,7 @@ static void command(char *c) // a "coop_steam ..." line
 			g_kv[i] = p[i];
 		g_kv[i] = 0;
 		g_lobbyType = type;
+		g_private = type == 0;
 		g_lobbyMax = max > 0 && max <= 16 ? max : 4;
 		if (!(g_callCreate = CreateLobby(g_mm, type, g_lobbyMax)))
 			lobbyFailed("no Steam call (offline?)");
@@ -699,6 +777,7 @@ static void command(char *c) // a "coop_steam ..." line
 			say("no game %d: run coop_steam find first", n);
 	} else if (starts(c, "leave")) {
 		leaveLobbies();
+		g_private = 0;
 		say("left the lobby");
 	} else if (starts(c, "invite")) {
 		if (g_ownLobby)
@@ -745,6 +824,10 @@ static DWORD __stdcall steamThread(void *dll)
 		say("loop: the tunnel runs over 127.0.0.1, no Steam");
 	else
 		say("Steam: %s (%x%08x), Far Cry AppID 13520", PersonaName(g_friends), id[0], id[1]);
+	if (!g_sLoop) {
+		sendKey(g_me);
+		sendName(PersonaName(g_friends));
+	}
 	{ // started by Steam from Join: "+coop <hex>" (rich presence) or "+connect_lobby <id>"
 		char *cmd = GetCommandLineA();
 		for (; *cmd; cmd++)
@@ -768,7 +851,10 @@ static DWORD __stdcall steamThread(void *dll)
 					static char connect[40];
 					wvsprintfA(connect, "+coop %x%08x", (va_list)id);
 					SetRichPresence(g_friends, "status", "Far Cry co-op host");
-					SetRichPresence(g_friends, "connect", connect);
+					if (!g_private) // invite only: friends get no Join, an invite brings them in
+						SetRichPresence(g_friends, "connect", connect);
+					else
+						say("invite only: no Join for friends, lobby members only");
 				} else
 					ClearRichPresence(g_friends);
 				if (g_ownLobby)

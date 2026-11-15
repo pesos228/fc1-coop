@@ -14,6 +14,71 @@ AvailableMODList=
 -- multiplayer rocket launcher fires only after aiming and holding the button)
 COOP_SPWeapons = 1
 
+-- Player names. A name goes into Lua strings and console lines (p_name) and the game font has
+-- Latin letters only, so a name keeps printable ASCII without quotes, ";", "#", "%", "@", "$" and
+-- backslash, Cyrillic (UTF-8: a Steam name) is transliterated as the launcher does
+-- (launcher/src/lobby.rs clean_name, tests/menu-name.txt has its cases), anything else is dropped;
+-- 20 characters at most, "Player" if nothing is left. Steam names can hold any text: this is the
+-- only way one gets in. 20, "@" and "$": the host's own check (SDK XServerSlot
+-- ConvertToValidPlayerName) keeps 20, turns "@" into "_" and garbles a "$" without a digit after
+-- it; a name it changed would come back different and be renamed again on every map load.
+COOP_NAME_MAX = 20
+COOP_NAME_RU = {"a", "b", "v", "g", "d", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p",
+	"r", "s", "t", "u", "f", "kh", "ts", "ch", "sh", "sch", "", "y", "", "e", "yu", "ya"} -- а..я
+-- lower-case code points of the other letters: ё є і ї ґ
+COOP_NAME_RU2 = {[1105] = "e", [1108] = "e", [1110] = "i", [1111] = "i", [1169] = "g"}
+
+-- one Cyrillic letter (a code point) in Latin letters; "" for anything else
+function CoopTranslit(cp)
+	local upper;
+	if (cp >= 1040 and cp <= 1071) then cp, upper = cp + 32, 1; -- А..Я
+	elseif (cp >= 1024 and cp <= 1039) then cp, upper = cp + 80, 1; -- Ѐ..Џ (Ё Є І Ї)
+	elseif (cp == 1168) then cp, upper = 1169, 1; end -- Ґ
+	local t;
+	if (cp >= 1072 and cp <= 1103) then t = COOP_NAME_RU[cp - 1071]; else t = COOP_NAME_RU2[cp] or ""; end
+	if (upper and t ~= "") then t = strupper(strsub(t, 1, 1))..strsub(t, 2); end
+	return t;
+end
+
+function CoopCleanName(s)
+	s = tostring(s or "");
+	local out, i, n = "", 1, strlen(s);
+	while (i <= n) do
+		local b, len, t = strbyte(s, i), 1, "";
+		if (b >= 32 and b <= 126) then
+			local c = strchar(b);
+			if (not strfind(c, "[\"';#%%@%$\\]")) then t = c; end
+		elseif (b >= 192 and b < 224 and i < n) then -- a two-byte character: Cyrillic is among them
+			local b2 = strbyte(s, i + 1); -- (Lua 4: an error past the end, hence i < n)
+			if (b2 >= 128 and b2 < 192) then
+				len = 2;
+				t = CoopTranslit((b - 192) * 64 + (b2 - 128));
+			end
+		elseif (b >= 224 and b < 240) then len = 3;
+		elseif (b >= 240) then len = 4; end
+		out = out..t;
+		i = i + len;
+	end
+	out = gsub(out, "^%s+", "");
+	out = strsub(out, 1, COOP_NAME_MAX);
+	out = gsub(out, "%s+$", "");
+	if (out == "") then out = "Player"; end
+	return out;
+end
+
+-- With Steam the player's name is the Steam name (owner, 2026-11-15: nobody types somebody
+-- else's name). The ASI sets COOP_SteamNameRaw once Steam is up (steam.c sendName) and calls
+-- this; prefs.lua (the launcher's, the menu's) sets p_name too, so its loaders call it again.
+function CoopApplySteamName()
+	if (not COOP_SteamNameRaw) then return; end
+	COOP_SteamName = CoopCleanName(COOP_SteamNameRaw);
+	if (getglobal("p_name") ~= COOP_SteamName) then
+		setglobal("p_name", COOP_SteamName);
+		if (Client and Client.SetName) then Client:SetName(COOP_SteamName); end
+	end
+end
+CoopApplySteamName(); -- a script reload: keep it
+
 -- Difficulty, the five levels of the single-player menu (UI.PageCampaign:SetAIDifficulty in
 -- Campaign.lua): the same globals, set here because a co-op game never goes through that menu.
 -- {accuracy, aggression, health, accuracy may increase, AI speed}; the menu calls level 3 "Veteran".

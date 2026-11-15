@@ -1,4 +1,5 @@
--- FarCryCoop "Player settings" screen (docs/specs/in-game-menu.md, step 3d): the name, the shirt
+-- FarCryCoop "Player settings" screen (docs/specs/in-game-menu.md, step 3d): the name (with Steam:
+-- the Steam name, not editable; AvailableMods.lua CoopCleanName either way), the shirt
 -- color and the 4 weapons of the loadout, as the launcher sets them. Saved to
 -- Mods/FarCryCoop/prefs.lua, the file the launcher writes (COOP ClientStuff loads it at the map
 -- start, MenuScreens/Coop.lua before a launch); the player model is not offered yet.
@@ -96,7 +97,10 @@ UI.PageCoopPlayer =
 	Fill = function()
 		local P, GUI = UI.PageCoopPlayer, UI.PageCoopPlayer.GUI;
 		if (not COOP_Color) then Script:LoadScript("Mods/FarCryCoop/prefs.lua"); end
+		CoopApplySteamName();
 		GUI.Name:SetText(tostring(getglobal("p_name") or ""));
+		-- with Steam the name is the Steam name (AvailableMods.lua CoopApplySteamName)
+		if (COOP_SteamName) then UI:DisableWidget(GUI.Name); else UI:EnableWidget(GUI.Name); end
 		GUI.ColorCombo:Clear();
 		for i, c in P.Colors do GUI.ColorCombo:AddItem(c); end
 		GUI.ColorCombo:SelectIndex((tonumber(COOP_Color) or 1) + 1);
@@ -117,26 +121,10 @@ UI.PageCoopPlayer =
 		end
 	end,
 
-	-- as the launcher's clean_name: printable ASCII without the characters that would end a Lua
-	-- string or a console line, 24 at most; empty is "Player"
-	CleanName = function(s)
-		local out = "";
-		s = tostring(s or "");
-		for i = 1, strlen(s) do
-			local c = strsub(s, i, i);
-			local b = strbyte(c);
-			if (b >= 32 and b <= 126 and not strfind(c, "[\"';#%%\\]")) then out = out..c; end
-		end
-		out = gsub(out, "^%s+", "");
-		if (strlen(out) > 24) then out = strsub(out, 1, 24); end
-		out = gsub(out, "%s+$", "");
-		if (out == "") then out = "Player"; end
-		return out;
-	end,
-
 	Save = function()
 		local P, GUI = UI.PageCoopPlayer, UI.PageCoopPlayer.GUI;
-		local name = P.CleanName(GUI.Name:GetText());
+		-- with Steam the field cannot be typed in; without it: what the field says, cleaned
+		local name = COOP_SteamName or CoopCleanName(GUI.Name:GetText());
 		local color = (tonumber(GUI.ColorCombo:GetSelectionIndex()) or 2) - 1;
 		if (color < 0 or color > 9) then color = 1; end
 		local list, seen = {}, {};

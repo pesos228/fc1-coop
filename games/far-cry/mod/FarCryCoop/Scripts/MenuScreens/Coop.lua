@@ -234,6 +234,7 @@ UI.PageCoop =
 		-- the launcher's settings first (shirt color, weapons; COOP ClientStuff would load them at the
 		-- map start, over the choices below, while COOP_Color is unset)
 		if (not COOP_Color) then Script:LoadScript("Mods/FarCryCoop/prefs.lua"); end
+		CoopApplySteamName(); -- the Steam name over prefs.lua's p_name (the lobby name uses it)
 		-- joined to somebody else's game: leave it first (a host keeps its players: a map change)
 		if (not Game:IsServer()) then Game:Disconnect(); end
 		-- by index: the combo shows Localize's text ("@Veteran" comes back as "Veteran", or the
@@ -262,7 +263,7 @@ UI.PageCoop =
 	end,
 
 	-- lobby strings: "|" and "=" split the ASI's key=value list, the rest is cut to printable ASCII
-	-- (CoopPlayer CleanName already keeps the console line safe)
+	-- (the name is CoopCleanName's already: safe in a console line)
 	LobbyText = function(s)
 		s = gsub(tostring(s or ""), "[^ -~]", "");
 		s = gsub(s, "[|=\"';#%%\\]", "");
