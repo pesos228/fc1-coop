@@ -36,7 +36,8 @@ static char g_inQ[8][300];  // console -> Steam thread
 static int g_inHead, g_inTail;
 static char g_outQ[32][300]; // Steam thread -> main thread: lines to print (dropped when full)
 static int g_outHead, g_outTail;
-static char g_exQ[8][300];   // Steam thread -> main thread: lines to run (own queue: prints never push them out)
+#define EXQ 48              // a game list is a line per game (MAX_ROWS) and one before them
+static char g_exQ[EXQ][300]; // Steam thread -> main thread: lines to run (own queue: prints never push them out)
 static int g_exHead, g_exTail;
 
 static void qPut(char (*q)[300], int size, int *head, int tail, char kind, const char *s)
@@ -91,7 +92,7 @@ static void say(const char *fmt, ...) // log and the game console
 }
 static void runOnMain(const char *line)
 {
-	qPut(g_exQ, 8, &g_exHead, g_exTail, 0, line);
+	qPut(g_exQ, EXQ, &g_exHead, g_exTail, 0, line);
 }
 static void conPrint(void *con, const char *s) // IConsole::PrintLine
 {
@@ -118,7 +119,10 @@ static void __fastcall hExec(void *con, void *edx, const char *cmd, int slash, i
 				;
 			if (g_sOff) { // the Steam thread gave up: nobody reads the queue
 				conPrint(con, "coop_steam: Steam is off (see the netlog)");
-				oExec(con, edx, "#if CoopSteam_OnLobby then CoopSteam_OnLobby(0) end", 0, 1);
+				if (starts(c, "find"))
+					oExec(con, edx, "#if CoopFind_List then CoopFind_List(-1) end", 0, 1);
+				else
+					oExec(con, edx, "#if CoopSteam_OnLobby then CoopSteam_OnLobby(0) end", 0, 1);
 			} else
 				qPut(g_inQ, 8, &g_inHead, g_inTail, 0, c);
 			return;
@@ -138,7 +142,7 @@ static void steamFrame(void) // from hGameUpdate: console lines of the Steam thr
 		return;
 	while (qGet(g_outQ, 32, g_outHead, &g_outTail, line))
 		conPrint(con, line);
-	while (qGet(g_exQ, 8, g_exHead, &g_exTail, line)) {
+	while (qGet(g_exQ, EXQ, g_exHead, &g_exTail, line)) {
 		if (hasText(line, "Game:Connect("))
 			g_coop = 1;
 		logf("steam: run %s", line);
@@ -327,8 +331,10 @@ static int g_gameKnown;
 static struct { U64 id; SOCKET s; DWORD last; } g_peers[MAX_PEERS]; // host: one per remote player
 static BYTE g_buf[65536];
 static U64 g_ownLobby;              // host: the lobby we created (its members may connect)
-static U64 g_inLobby, g_waitLobby;  // client: the lobby we entered; entered, waiting for its server
+static U64 g_inLobby, g_waitLobby;
+static DWORD g_waitSince;            // client: when we entered g_waitLobby  // client: the lobby we entered; entered, waiting for its server
 static U64 g_callCreate, g_callList, g_callJoin;
+static U64 g_staleJoin; // a lobby join "leave" called off before Steam answered: leave that lobby when it does
 static char g_kv[300];              // host: key=value pairs for the lobby being created
 static int g_lobbyType, g_lobbyMax;  // host: the lobby being created (k_ELobbyType: 0 invite only, 1 friends, 2 public)
 static int g_private;                // host: an invite-only game: no Join for friends, sessions for lobby members only
@@ -431,10 +437,12 @@ static void join(U64 host)
 	int port[1];
 	if (g_up) {
 		say("this game runs a server: leave it before joining another");
+		runOnMain("#if CoopFind_JoinFailed then CoopFind_JoinFailed() end");
 		return;
 	}
 	if (g_game == (SOCKET)-1 && (g_game = udp(CL_PORT)) == (SOCKET)-1) {
 		say("UDP port %d is taken: is FarCryCoopSteam.exe or another game running?", CL_PORT);
+		runOnMain("#if CoopFind_JoinFailed then CoopFind_JoinFailed() end");
 		return;
 	}
 	if (g_sLoop && g_loopS == (SOCKET)-1) {
@@ -447,6 +455,7 @@ static void join(U64 host)
 	port[0] = CL_PORT;
 	// as the LAN server list: late switch, no CD key check (that one crashed the game)
 	wvsprintfA(line, "#Game:Connect(\"127.0.0.1:%d\",1)", (va_list)port);
+	runOnMain("#if CoopFind_Connecting then CoopFind_Connecting() end"); // the menu's join is done
 	runOnMain(line);
 	say("joining %x%08x", HI(host), LO(host));
 }
@@ -489,20 +498,29 @@ static void leaveLobbies(void)
 		LeaveLobby(g_mm, g_inLobby);
 	g_ownLobby = g_inLobby = g_waitLobby = 0;
 }
+static int serverUp(void);
 static void enterLobby(U64 lobby) // a lobby from the list or a Steam invite
 {
-	if (g_up) {
+	if (serverUp()) { // now, not as of the last 2-s check: the menu stops its game just before
 		say("this game runs a server: leave it before joining another");
+		runOnMain("#if CoopFind_JoinFailed then CoopFind_JoinFailed() end");
 		return;
 	}
-	if (g_callJoin)
+	if (g_callJoin) {
+		say("a lobby is being joined already");
+		runOnMain("#if CoopFind_JoinFailed then CoopFind_JoinFailed() end");
 		return;
+	}
 	leaveLobbies();
-	g_callJoin = JoinLobby(g_mm, lobby);
+	if (!(g_callJoin = JoinLobby(g_mm, lobby))) {
+		say("could not enter the lobby: no Steam call (offline?)");
+		runOnMain("#if CoopFind_JoinFailed then CoopFind_JoinFailed() end");
+	}
 }
 static void lobbyEntered(U64 lobby)
 {
 	g_inLobby = g_waitLobby = lobby;
+	g_waitSince = GetTickCount();
 	say("in lobby %x%08x", HI(lobby), LO(lobby));
 }
 static void lobbyWait(void) // client: join the lobby's server once it runs
@@ -516,14 +534,62 @@ static void lobbyWait(void) // client: join the lobby's server once it runs
 	if (up && up[0] == '1' && host && host[0]) {
 		g_waitLobby = 0;
 		join(parseHex(host));
+	} else if (GetTickCount() - g_waitSince > 60000) { // not later, into whatever the player went on to
+		leaveLobbies();
+		say("the lobby's server did not come up in a minute: left the lobby");
+		runOnMain("#if CoopFind_JoinFailed then CoopFind_JoinFailed() end");
 	}
 }
 
+// Lobby data is anyone's text, and the line runs as Lua: only letters, digits and a few signs go
+// through, nothing that ends a Lua string or the line (the host's names are made so: CoopCleanName).
+static void safeText(char *out, const char *s, int max)
+{
+	int n = 0;
+	for (; s && *s && n < max; s++) {
+		char b = *s;
+		if ((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == ' ' ||
+		    b == '-' || b == '_' || b == '.' || b == ',' || b == '(' || b == ')' || b == '!' || b == '?' ||
+		    b == ':' || b == '+' || b == '/' || b == '[' || b == ']' || b == '\'')
+			out[n++] = b;
+	}
+	out[n] = 0;
+}
+static int smallNum(const char *s) // lobby data "players", "diff", "pw": 0..999, else 0
+{
+	int n = 0, i;
+	for (i = 0; s && i < 3 && s[i] >= '0' && s[i] <= '9'; i++)
+		n = n * 10 + s[i] - '0';
+	return n;
+}
+// The game list for the menu (MenuScreens/CoopFind.lua): CoopFind_List(<rows that follow>, -1 when
+// Steam failed), then CoopFind_Row(<n for joinlobby>, name, map, difficulty, password, players,
+// limit, up) per game.
+static void luaRow(int i, U64 l)
+{
+	static char name[48], map[32], line[300];
+	void *a[8];
+	safeText(name, GetLobbyData(g_mm, l, "name"), 40);
+	safeText(map, GetLobbyData(g_mm, l, "map"), 24);
+	a[0] = (void *)i;
+	a[1] = name;
+	a[2] = map;
+	a[3] = (void *)smallNum(GetLobbyData(g_mm, l, "diff"));
+	a[4] = (void *)smallNum(GetLobbyData(g_mm, l, "pw"));
+	a[5] = (void *)smallNum(GetLobbyData(g_mm, l, "players"));
+	a[6] = (void *)LobbyLimit(g_mm, l);
+	a[7] = (void *)smallNum(GetLobbyData(g_mm, l, "up"));
+	wvsprintfA(line, "#if CoopFind_Row then CoopFind_Row(%d,\"%s\",\"%s\",%d,%d,%d,%d,%d) end", (va_list)a);
+	runOnMain(line);
+}
 static void listRows(int count)
 {
 	int i;
+	static char line[80];
 	g_nRows = count < MAX_ROWS ? count : MAX_ROWS;
 	say("%d game(s)", count);
+	wvsprintfA(line, "#if CoopFind_List then CoopFind_List(%d) end", (va_list)&g_nRows);
+	runOnMain(line);
 	for (i = 0; i < g_nRows; i++) {
 		U64 l = g_rows[i] = LobbyByIndex(g_mm, i);
 		void *a[8];
@@ -538,6 +604,7 @@ static void listRows(int count)
 		a[7] = (void *)GetLobbyData(g_mm, l, "players");
 		wvsprintfA(line, "%d: %.48s | %.32s | %d/%d | up=%.1s pw=%.1s players=%.2s", (va_list)a);
 		say("%s", line);
+		luaRow(i, l);
 	}
 }
 
@@ -599,16 +666,26 @@ static void callbacks(void)
 				g_callList = 0;
 				if (CallResult(g_pipe, call, res, 4, CB_LOBBY_LIST, &failed) && !failed)
 					listRows(*(int *)res);
-				else
+				else {
 					say("lobby list failed");
+					runOnMain("#if CoopFind_List then CoopFind_List(-1) end");
+				}
 			} else if (call == g_callJoin) {
 				g_callJoin = 0;
-				if (!CallResult(g_pipe, call, res, 24, CB_LOBBY_ENTER, &failed) || failed)
+				if (!CallResult(g_pipe, call, res, 24, CB_LOBBY_ENTER, &failed) || failed) {
 					say("could not enter the lobby");
-				else if (*(DWORD *)(res + 16) != 1) // EChatRoomEnterResponse
+					runOnMain("#if CoopFind_JoinFailed then CoopFind_JoinFailed() end");
+				} else if (*(DWORD *)(res + 16) != 1) { // EChatRoomEnterResponse
 					say("could not enter the lobby (response %d)", *(DWORD *)(res + 16));
-				else
+					runOnMain("#if CoopFind_JoinFailed then CoopFind_JoinFailed() end");
+				} else
 					lobbyEntered(*(U64 *)res);
+			} else if (call == g_staleJoin) {
+				g_staleJoin = 0;
+				if (CallResult(g_pipe, call, res, 24, CB_LOBBY_ENTER, &failed) && !failed && *(DWORD *)(res + 16) == 1) {
+					LeaveLobby(g_mm, *(U64 *)res);
+					say("left a lobby joined after leave");
+				}
 			}
 		} else if (cb.id == CB_SESSION_REQUEST) {
 			// host: only while we host, and only Steam friends (k_EFriendFlagImmediate) or members of
@@ -759,6 +836,8 @@ static void command(char *c) // a "coop_steam ..." line
 		join(starts(c + 5, "loop") ? (U64)LOOP_HOST : parseHex(c + 5));
 	} else if (g_sLoop) {
 		say("loop: only status and join work");
+		if (starts(c, "find"))
+			runOnMain("#if CoopFind_List then CoopFind_List(-1) end");
 	} else if (starts(c, "host")) { // host <max> [public|friends|private]|key=value|...
 		int max, type, i;
 		char *p = lobbyArgs(c + 4, &max, &type);
@@ -817,9 +896,15 @@ static void command(char *c) // a "coop_steam ..." line
 			n = n * 10 + *p++ - '0';
 		if (n < g_nRows)
 			enterLobby(g_rows[n]);
-		else
+		else {
 			say("no game %d: run coop_steam find first", n);
+			runOnMain("#if CoopFind_JoinFailed then CoopFind_JoinFailed() end");
+		}
 	} else if (starts(c, "leave")) { // an invite-only game stays so: no Join for friends until the server goes
+		if (g_callJoin) { // the menu called its join off (Refresh, another screen, no answer)
+			g_staleJoin = g_callJoin;
+			g_callJoin = 0;
+		}
 		leaveLobbies();
 		say("left the lobby");
 	} else if (starts(c, "invite")) {
