@@ -1,0 +1,24 @@
+# The mod's menu, "Player settings" (docs/specs/in-game-menu.md, step 3d): the host sets its name,
+# shirt color and first loadout weapon, saves, and launches with the loadout on. The settings go
+# to Mods/FarCryCoop/prefs.lua (the launcher's file) and reach the game: the player's name, and
+# the color and weapons the host's client sends to the server (PREF, COOP gamerules CoopSetPrefs).
+# The harness keeps the real prefs.lua and puts it back at down (tools/harness cfgFiles).
+# Run from the repo root: tools/bin/harness.exe test tests/menu-player.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_PlayerKey="76561190000000001";#UI:ActivateScreen("CoopPlayer");#UI.PageCoopPlayer.GUI.Name:SetText("Bob");#UI.PageCoopPlayer.GUI.ColorCombo:SelectIndex(5);#UI.PageCoopPlayer.GUI.Weapon1:Select("RL");#UI.PageCoopPlayer.Save();#UI:ActivateScreen("Coop");#UI.PageCoop.GUI.WaitCombo:Select("2");#UI.PageCoop.GUI.Loadout:SetChecked(1);#UI.PageCoop.Launch()
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 120s
+sleep 5s
+# the file, read back
+lua server COOP_MenuColor, COOP_MenuWeapons = COOP_Color, COOP_Weapons COOP_Color, COOP_Weapons, COOP_PlayerKey = nil, nil, nil dofile("Mods/FarCryCoop/prefs.lua")
+expect server COOP_Color => 4
+expect server COOP_Weapons => RL MP5 M4 Shotgun
+expect server tostring(getglobal("p_name")) => Bob
+# the launcher's player key (a Steam ID) stays in the file
+expect server tostring(COOP_PlayerKey) => 76561190000000001
+# in the game
+expect server _localplayer:GetName() => Bob
+expect server COOP_Prefs[Server:GetServerSlotByEntityId(_localplayer.id):GetId()].color => 4
+expect server COOP_Prefs[Server:GetServerSlotByEntityId(_localplayer.id):GetId()].weapons[1] => RL
+expect server COOP_LoadoutMode => 1
+expect-no-events
+down

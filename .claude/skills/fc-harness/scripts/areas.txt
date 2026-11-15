@@ -13,5 +13,5 @@ lobby: wait-players announce skip-vote skip-key player-info cooler-start
 ai: cooler-start sleepers-seen join-and-progress vehicle-crews player-info danger-meter
 chapter1: chapter1
 steam: steam-loop menu-create
-menu: menu-create menu-load steam-loop wait-players
+menu: menu-create menu-load menu-player steam-loop wait-players
 open: menu-relaunch

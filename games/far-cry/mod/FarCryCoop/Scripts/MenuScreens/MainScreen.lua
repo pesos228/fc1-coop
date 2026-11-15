@@ -73,3 +73,4 @@ AddUISideMenu(UI.PageMainScreenInGame.GUI,
 UI:CreateScreenFromTable("MainScreenInGame", UI.PageMainScreenInGame.GUI);
 
 Script:LoadScript("Scripts/MenuScreens/Coop.lua", 1);
+Script:LoadScript("Scripts/MenuScreens/CoopPlayer.lua", 1);

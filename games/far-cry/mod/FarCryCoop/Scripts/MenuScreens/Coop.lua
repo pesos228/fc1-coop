@@ -110,6 +110,17 @@ UI.PageCoop =
 			end,
 		},
 
+		PlayerSettings =
+		{
+			skin = UI.skins.BottomMenuButton,
+			left = 400,
+			tabstop = 7,
+			text = "Player settings",
+			OnCommand = function(Sender)
+				GotoPage("CoopPlayer");
+			end,
+		},
+
 		Launch =
 		{
 			skin = UI.skins.BottomMenuButton,
