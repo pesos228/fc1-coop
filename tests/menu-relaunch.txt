@@ -1,16 +1,19 @@
 # The host leaves a co-op game for the main menu and launches again from Co-op in the same game
-# process. That crashed the host once the new map had loaded (0xC0000005 at 0x3304DE3F, CryGame.dll,
-# a freed std::map/set node walked from CXGame::Update; runs/20261115-034837, -035159, 2 of 2; not
-# found yet, docs/findings.md 2026-11-15). Until then the menu asks to restart the game instead.
+# process: the second game starts. The Launch goes through "join" (the ASI's frame hook), as a
+# click on the button runs: from the agent's own commands (a script timer) the level load frees
+# the timer map under CScriptTimerMgr::Update and the game crashes once the map has loaded
+# (0xC0000005 at 0x3304DE3F; runs/20261115-034837, -035159; docs/findings.md 2026-11-15).
 # Run from the repo root: tools/bin/harness.exe test tests/menu-relaunch.txt
 up -mode host -map training -clients 0 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #UI:ActivateScreen("Coop");#UI.PageCoop.GUI.WaitCombo:Select("1");#UI.PageCoop.Launch()
 wait server players>=1 -t 120s
 lua server Game:Disconnect()
 sleep 3s
-lua server UI.PageCoop.GUI.MapCombo:Select("Carrier") UI.PageCoop.Launch()
-expect-log server coop:.menu:.restart.the.game
-sleep 20s
-# no second game, no crash
 expect server Game:IsServer() and 1 or 0 => 0
+join server #UI.PageCoop.GUI.MapCombo:Select("Carrier") UI.PageCoop.Launch()
+wait server players>=1 -t 120s
+sleep 20s
+expect server tostring(COOP_Map) => Carrier
+expect server Game:IsServer() and 1 or 0 => 1
+expect-log server Level.Carrier.loaded
 expect-no-events
 down
