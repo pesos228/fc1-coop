@@ -1,6 +1,7 @@
 # With Steam on, "Launch" in the Co-op menu creates the Steam lobby by itself (it took
 # "coop_steam host" in the console before): the access and the player limit chosen on the screen,
-# the map in its data. Needs a logged-in Steam: -steam turns the ASI's Steam on for the run. The
+# the map, the player count and "a password or not" in its data. A map change of the running game
+# updates the lobby (coop_steam update), so the game list shows the map being played. Needs a logged-in Steam: -steam turns the ASI's Steam on for the run. The
 # lobby is public for a minute (only games of this mod list it: lobby data fc1coop).
 # Run from the repo root: tools/bin/harness.exe test tests/menu-lobby.txt
 up -mode host -map training -clients 0 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -steam -start #UI:ActivateScreen("Coop");#UI.PageCoop.GUI.WaitCombo:Select("1");#UI.PageCoop.GUI.MaxCombo:Select("6");#UI.PageCoop.GUI.AccessCombo:SelectIndex(1);#UI.PageCoop.Launch()
@@ -9,6 +10,15 @@ expect-netlog server lobby.[0-9a-f]+.created.\(public,.6.players\) 30s
 # the ASI marks the lobby up once the server holds its port (checked every 2 s)
 sleep 5s
 cmd server coop_steam find
-expect-netlog server \|.Training.\|.1/6.\|.up=1 20s
+expect-netlog server \|.Training.\|.1/6.\|.up=1.pw=0.players=1 20s
+# the limit is the server's too (sv_maxplayers: a player over it is turned away)
+expect server tonumber(getglobal("sv_maxplayers")) => 6
+# a map change from the menu while hosting: the lobby follows (the map, the new limit)
+join server #UI:ActivateScreen("Coop") UI.PageCoop.GUI.MapCombo:Select("Carrier") UI.PageCoop.GUI.MaxCombo:Select("5") UI.PageCoop.Launch()
+expect-netlog server lobby.updated.\(public,.5.players\) 120s
+wait server players>=1 -t 120s
+sleep 3s
+cmd server coop_steam find
+expect-netlog server \|.Carrier.\|.1/5.\|.up=1 20s
 expect-no-events
 down
