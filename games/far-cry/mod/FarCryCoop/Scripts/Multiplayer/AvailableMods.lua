@@ -192,6 +192,8 @@ function CoopMap(name)
 		setglobal("sv_maxplayers", 16); -- the engine's default
 	end
 	COOP_Map = name; -- before loading: the COOP gamerules (and the monitor) read it on load
+	-- the game's name in LAN lists (sv_name, empty by default): as the Steam lobby's, "<player> - <map>"
+	setglobal("sv_name", CoopLobbyText(getglobal("p_name") or "Player").." - "..CoopLobbyText(strupper(strsub(name, 1, 1))..strsub(name, 2)));
 	if (running and Game:IsServer()) then
 		Game:LoadLevelMPServer(name, mission); -- server already up: keep the clients connected
 	else
