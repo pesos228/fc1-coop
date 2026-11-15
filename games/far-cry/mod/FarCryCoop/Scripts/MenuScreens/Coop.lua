@@ -168,6 +168,11 @@ UI.PageCoop =
 		local GUI = UI.PageCoop.GUI;
 		local sel = GUI.MapCombo:GetSelection();
 		if (not sel) then return; end
+		-- the launcher's settings first (shirt color, weapons; COOP ClientStuff would load them at the
+		-- map start, over the choices below, while COOP_Color is unset)
+		if (not COOP_Color) then Script:LoadScript("Mods/FarCryCoop/prefs.lua"); end
+		-- joined to somebody else's game: leave it first (a host keeps its players: a map change)
+		if (not Game:IsServer()) then Game:Disconnect(); end
 		-- by index: the combo shows Localize's text ("@Veteran" comes back as "Veteran", or the
 		-- game's language)
 		local diff = tonumber(GUI.DifficultyCombo:GetSelectionIndex());
@@ -185,11 +190,25 @@ UI.PageCoop =
 
 	ConnectIP = function(IP1, IP2, IP3, IP4, Port)
 		UI:DeactivateScreen("JoinIPDialog");
-		if (IP1 and IP2 and IP3 and IP4) then
-			local addr = IP1.."."..IP2.."."..IP3.."."..IP4;
-			if (Port and Port ~= "") then addr = addr..":"..Port; end
-			System:ExecuteCommand("coop_connect "..addr);
+		-- the dialog hands back its fields as typed ("" when empty)
+		local ip = {IP1, IP2, IP3, IP4};
+		for i = 1, 4 do
+			local n = tonumber(ip[i] or "");
+			if (not n or n < 0 or n > 255 or strfind(tostring(ip[i]), "[^%d]")) then
+				System:LogAlways("coop: join by IP: not an address");
+				return;
+			end
 		end
+		local addr = ip[1].."."..ip[2].."."..ip[3].."."..ip[4];
+		if (Port and Port ~= "") then
+			if (not tonumber(Port) or strfind(tostring(Port), "[^%d]")) then
+				System:LogAlways("coop: join by IP: not a port");
+				return;
+			end
+			addr = addr..":"..Port;
+		end
+		Game:Disconnect(); -- as the game's own server lists do before they join
+		System:ExecuteCommand("coop_connect "..addr);
 	end,
 }
 

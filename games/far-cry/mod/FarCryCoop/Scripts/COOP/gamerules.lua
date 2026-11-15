@@ -1730,7 +1730,6 @@ end
 Game:AddCommand("coop_save", "CoopQuickSave()", "coop_save: quicksave (F6)");
 Game:AddCommand("coop_load", "CoopQuickLoad()", "coop_load: quickload (F7)");
 Game:AddCommand("coop_savegame", "CoopSave(%%)", "coop_savegame <name>: save the co-op game");
-Game:AddCommand("coop_loadgame", "CoopLoad(%%)", "coop_loadgame <name>: load a co-op save (quick, auto or a name)");
 if (Input) then
 	Input:BindCommandToKey("#CoopQuickSave()", "f6", 1);
 	Input:BindCommandToKey("#CoopQuickLoad()", "f7", 1);

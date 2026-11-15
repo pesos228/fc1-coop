@@ -82,7 +82,7 @@ function CoopMap(name)
 	if (Movie and Movie.StopAllSequences) then Movie:StopAllSequences(); end
 	local running = COOP_Map;
 	COOP_Map = name; -- before loading: the COOP gamerules (and the monitor) read it on load
-	if (running) then
+	if (running and Game:IsServer()) then
 		Game:LoadLevelMPServer(name, mission); -- server already up: keep the clients connected
 	else
 		Game:LoadLevelListen(name);
@@ -126,13 +126,15 @@ function CoopLoad(name)
 	if (type(save) ~= "table" or not save.map) then CoopSaveMessage("no save "..name); return; end
 	COOP_PendingLoad = save;
 	if (save.difficulty) then COOP_Difficulty = save.difficulty; end -- CoopMap applies it
-	if (COOP_Map) then
+	if (COOP_Map and Game:IsServer()) then
 		COOP_PendingMap = save.map; -- GameRules:OnUpdate loads it, never from inside an entity script
 	else
 		CoopMap(save.map); -- from the launcher: no server yet, the host's game starts it
 	end
 	CoopSaveMessage("loading "..name);
 end
+-- here, not in the COOP gamerules: the menu loads a save before any co-op map is up (MenuScreens/Coop.lua)
+Game:AddCommand("coop_loadgame", "CoopLoad(%%)", "coop_loadgame <name>: load a co-op save (quick, auto or a name)");
 function CoopQuickLoad() CoopLoad("quick"); end
 
 -- Co-op campaign from the normal menus: #CoopStart() on the host, then start the campaign or a
