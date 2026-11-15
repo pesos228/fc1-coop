@@ -333,6 +333,7 @@ static char g_kv[300];              // host: key=value pairs for the lobby being
 static int g_lobbyType, g_lobbyMax;  // host: the lobby being created (k_ELobbyType: 0 invite only, 1 friends, 2 public)
 static int g_private;                // host: an invite-only game: no Join for friends, sessions for lobby members only
 static int g_presence;               // host: the rich presence must be set again (the game became private or not)
+static int g_lobbyUp;                // host: our lobby has seen its server up (it goes when the server does)
 static const char *const g_lobbyTypes[] = {"private", "friends", "public"};
 static U64 g_rows[MAX_ROWS];
 static int g_nRows;
@@ -773,6 +774,7 @@ static void command(char *c) // a "coop_steam ..." line
 		for (i = 0; i < 299 && p[i]; i++) // set once Steam has created it (callbacks)
 			g_kv[i] = p[i];
 		g_kv[i] = 0;
+		g_lobbyUp = 0;
 		g_lobbyType = type < 0 ? 2 : type;
 		g_private = g_lobbyType == 0;
 		g_presence = 1;
@@ -817,10 +819,8 @@ static void command(char *c) // a "coop_steam ..." line
 			enterLobby(g_rows[n]);
 		else
 			say("no game %d: run coop_steam find first", n);
-	} else if (starts(c, "leave")) {
+	} else if (starts(c, "leave")) { // an invite-only game stays so: no Join for friends until the server goes
 		leaveLobbies();
-		g_private = 0;
-		g_presence = 1;
 		say("left the lobby");
 	} else if (starts(c, "invite")) {
 		if (g_ownLobby)
@@ -900,10 +900,19 @@ static DWORD __stdcall steamThread(void *dll)
 						SetRichPresence(g_friends, "connect", connect);
 					else
 						say("invite only: no Join for friends, lobby members only");
-				} else
+				} else {
 					ClearRichPresence(g_friends);
-				if (g_ownLobby)
+					g_private = 0;
+					if (g_ownLobby && g_lobbyUp) { // the game is over: its lobby leaves the world list
+						LeaveLobby(g_mm, g_ownLobby);
+						g_ownLobby = 0;
+						say("lobby left: the server is down");
+					}
+				}
+				if (g_ownLobby) {
 					SetLobbyData(g_mm, g_ownLobby, "up", g_up ? "1" : "0");
+					g_lobbyUp |= g_up; // a lobby made before its server (Launch) waits for it to come up
+				}
 				say(g_up ? "server up: players can join" : "no server in this game");
 			}
 			if (!g_sLoop)

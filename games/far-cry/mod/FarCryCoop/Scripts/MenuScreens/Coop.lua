@@ -278,6 +278,7 @@ UI.PageCoop =
 		local pw = UI.PageCoop.CleanPassword(GUI.Password:GetText());
 		setglobal("sv_maxplayers", max);
 		setglobal("sv_password", pw);
+		COOP_MenuLaunch = 1; -- CoopMap: a new game with this screen's settings, not a console one
 		local lobby = {max = max, access = UI.PageCoop.AccessType[access], pw = (pw ~= "" and 1) or 0, map = map};
 		if (Game:IsServer() and COOP_Lobby) then
 			COOP_Lobby = lobby; -- a map change: the lobby follows (CoopLobbyUpdate, once a second)
@@ -329,7 +330,11 @@ UI.PageCoop =
 
 -- the ASI, once Steam has answered "coop_steam host" (steam.c)
 function CoopSteam_OnLobby(ok)
-	if (ok == 1) then System:LogAlways("coop: Steam lobby created");
+	if (ok == 1) then
+		-- an update sent before Steam had created it was refused ("no lobby of ours"): send the
+		-- game as it is now (CoopLobbyUpdate)
+		COOP_LobbySent = nil;
+		System:LogAlways("coop: Steam lobby created");
 	else
 		COOP_Lobby = nil; -- nothing to update
 		System:LogAlways("coop: no Steam lobby (Steam is off or offline): friends join by IP");

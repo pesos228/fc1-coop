@@ -182,6 +182,15 @@ function CoopMap(name)
 	-- stops them the same way
 	if (Movie and Movie.StopAllSequences) then Movie:StopAllSequences(); end
 	local running = COOP_Map;
+	-- a new game started from the console or the launcher takes nothing of an earlier menu game:
+	-- no password, no player limit, no Steam lobby (MenuScreens/Coop.lua Launch sets them for its own)
+	local menu = COOP_MenuLaunch;
+	COOP_MenuLaunch = nil;
+	if (not (running and Game:IsServer()) and not menu) then
+		COOP_Lobby = nil;
+		setglobal("sv_password", "");
+		setglobal("sv_maxplayers", 16); -- the engine's default
+	end
 	COOP_Map = name; -- before loading: the COOP gamerules (and the monitor) read it on load
 	if (running and Game:IsServer()) then
 		Game:LoadLevelMPServer(name, mission); -- server already up: keep the clients connected
