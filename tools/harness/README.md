@@ -28,7 +28,7 @@ tools/bin/harness.exe down
 
 ## Сценарии (регрессионные тесты)
 
-`tools/bin/harness.exe test tests/training-basic.txt` поднимает игру, выполняет шаги и печатает PASS/FAIL по каждому (отчёт сохраняется в папку прогона). Шаги: `up`, `sleep`, `wait`, `lua`, `cmd`, `expect <inst> <code> => <value>`, `expect-log`, `expect-diff max= class= exclude= missing=0`, `down`. Синтаксис описан в начале `test.go`.
+`tools/bin/harness.exe test tests/training-basic.txt` поднимает игру, выполняет шаги и печатает PASS/FAIL по каждому (отчёт сохраняется в папку прогона). Шаги: `up`, `sleep`, `wait`, `lua`, `cmd`, `join` (строка из хука кадра ASI, как клик игрока: для кнопок меню, которые грузят уровень), `expect <inst> <code> => <value>`, `expect-log`, `expect-diff max= class= exclude= missing=0`, `down`. Синтаксис описан в начале `test.go`.
 
 Сценарии:
 - `tests/training-basic.txt` (19 шагов): подключение, интро, `diff` игроков, наёмников и вертолётов, убийство ИИ и выпавшее оружие, триггер и телепорт удалённого игрока. На исходном FarCryCoop падает в 3 шагах (интро у поздно подключившегося клиента, вертолёты, выпавшее оружие).
