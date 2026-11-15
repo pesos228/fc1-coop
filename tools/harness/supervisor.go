@@ -98,6 +98,9 @@ func (s *supervisor) restoreConfigs() {
 	if s.run.SteamLoop {
 		os.Remove(filepath.Join(s.run.GameDir, "Mods", s.run.Mod, "steam_loop.txt"))
 	}
+	if s.run.SteamDLL {
+		steamDLL("", s.run.GameDir, s.run.Mod, false) // removes the copy by its marker
+	}
 	bak := filepath.Join(s.run.Dir, "cfg-backup")
 	for _, f := range cfgFiles {
 		dst := filepath.Join(s.run.GameDir, f)

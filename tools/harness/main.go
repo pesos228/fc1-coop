@@ -123,6 +123,7 @@ func cmdUp(args []string) error {
 	keys := fs.String("keys", "", "with -pname: the clients' COOP_PlayerKey in order, separated by ',' (default: the instance name)")
 	connect := fs.String("connect", "", "client join command instead of the direct connect")
 	steamLoop := fs.Bool("steamloop", false, "the ASI's Steam tunnel without Steam (Mods/<mod>/steam_loop.txt): clients join with 'coop_steam join loop'")
+	steam := fs.Bool("steam", false, "real Steam in the ASI: copies external/steamworks steam_api.dll to Mods/<mod>/Steam for the run (needs a logged-in Steam)")
 	fs.Parse(args)
 
 	if r, err := currentRun(); err == nil && anyAlive(r) {
@@ -167,6 +168,13 @@ func cmdUp(args []string) error {
 			}
 		}
 	}
+	steamCopied := false
+	if *mod != "" {
+		var err error
+		if steamCopied, err = steamDLL(root, *gameDir, *mod, *steam); err != nil {
+			return err
+		}
+	}
 	var serverCmds []string
 	switch {
 	case *start != "":
@@ -184,7 +192,7 @@ func cmdUp(args []string) error {
 		return fmt.Errorf("unknown mode %q", *mode)
 	}
 	run := &Run{Dir: runDir, GameDir: *gameDir, Agent: filepath.Join(root, "scripts", "harness", "agent.lua"),
-		Mode: *mode, Map: *mapName, Mod: *mod, Width: *w, Height: *h, Sound: *sound, PName: *pname, SteamLoop: *steamLoop, Started: time.Now()}
+		Mode: *mode, Map: *mapName, Mod: *mod, Width: *w, Height: *h, Sound: *sound, PName: *pname, SteamLoop: *steamLoop, SteamDLL: steamCopied, Started: time.Now()}
 	if *asi != "" {
 		a, err := filepath.Abs(*asi)
 		if err != nil {
@@ -350,6 +358,33 @@ func sendCommand(in *Instance, command string) int {
 	defer f.Close()
 	fmt.Fprintf(f, "%d\t%s\n", seq, command)
 	return seq
+}
+
+// steamDLL turns the ASI's Steam on for a run: it is on when Mods\<mod>\Steam\steam_api.dll
+// exists (the release ships it there). A copy the harness made carries a marker file next to
+// it, so a crashed run's copy goes at the next up and an installed one is never touched.
+// Returns whether this run copied it (supervisor restoreConfigs removes it at down).
+func steamDLL(root, gameDir, mod string, on bool) (bool, error) {
+	dir := filepath.Join(gameDir, "Mods", mod, "Steam")
+	dll, marker := filepath.Join(dir, "steam_api.dll"), filepath.Join(dir, "steam_api.dll.harness")
+	if _, err := os.Stat(marker); err == nil {
+		os.Remove(dll)
+		os.Remove(marker)
+		os.Remove(dir) // only when empty
+	}
+	if !on {
+		return false, nil
+	}
+	if _, err := os.Stat(dll); err == nil {
+		return false, nil // installed by the player: use it, keep it
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return false, err
+	}
+	if err := copyFile(filepath.Join(root, "external", "steamworks", "redistributable_bin", "steam_api.dll"), dll); err != nil {
+		return false, fmt.Errorf("-steam: %w", err)
+	}
+	return true, os.WriteFile(marker, []byte("copied by the harness for a -steam run"), 0o644)
 }
 
 // cmdJoin runs a console line the way a player's input runs: the FarCryCoop ASI reads

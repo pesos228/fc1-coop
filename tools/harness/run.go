@@ -54,6 +54,7 @@ type Run struct {
 	Sound     bool        `json:"sound,omitempty"` // false: the games run muted (SystemCfgOverride.cfg)
 	PName     string      `json:"pname,omitempty"` // clients share this p_name; Instance.Key tells them apart
 	SteamLoop bool        `json:"steam_loop,omitempty"` // Mods\<mod>\steam_loop.txt written for the run
+	SteamDLL  bool        `json:"steam_dll,omitempty"`  // Mods\<mod>\Steam\steam_api.dll copied for the run (-steam)
 	Instances []*Instance `json:"instances"`
 	Started   time.Time   `json:"started"`
 }

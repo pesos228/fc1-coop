@@ -22,6 +22,7 @@ import (
 //	                                        (menu buttons that load a level: harness join)
 //	expect <inst> <code> => <value>         `return <code>` must give <value>
 //	expect-log <inst> <regex> [timeout]     the instance log must contain a match
+//	expect-netlog <inst> <regex> [timeout]  the same in the FarCryCoop ASI's netlog (its Steam lines)
 //	expect-diff max=<m> [class=<re>] [exclude=<re>] [missing=0]
 //	                                        clients vs server: no matching entity off by more
 //	                                        than m meters or with another health
@@ -108,6 +109,9 @@ func cmdTest(args []string) error {
 		case "expect-log":
 			hard = false
 			stepErr = expectLog(strings.Fields(rest))
+		case "expect-netlog":
+			hard = false
+			stepErr = expectLogIn(strings.Fields(rest), true)
 		case "expect-diff":
 			hard = false
 			stepErr = expectDiff(strings.Fields(rest))
@@ -194,7 +198,11 @@ func runLua(inst, code string, out *string) error {
 	return nil
 }
 
-func expectLog(args []string) error {
+func expectLog(args []string) error { return expectLogIn(args, false) }
+
+// expectLogIn: netlog searches Mods/<mod>/netlog_FarCry_<pid>.txt, where the ASI writes (its
+// Steam thread's lines reach the game console, not game.log).
+func expectLogIn(args []string, netlog bool) error {
 	if len(args) < 2 {
 		return fmt.Errorf("usage: expect-log <inst> <regex> [timeout]")
 	}
@@ -220,7 +228,11 @@ func expectLog(args []string) error {
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		for _, l := range readLines(filepath.Join(in.Dir, "game.log")) {
+		file := filepath.Join(in.Dir, "game.log")
+		if netlog {
+			file = filepath.Join(r.GameDir, "Mods", r.Mod, fmt.Sprintf("netlog_FarCry_%d.txt", in.PID))
+		}
+		for _, l := range readLines(file) {
 			if re.MatchString(l) {
 				return nil
 			}
