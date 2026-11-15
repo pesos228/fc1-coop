@@ -179,14 +179,8 @@ UI.PageCoop =
 		local GUI = UI.PageCoop.GUI;
 		local sel = GUI.MapCombo:GetSelection();
 		if (not sel) then return; end
-		-- a co-op game ran in this game process and its server is gone: a second one crashes the
-		-- host once its map has loaded (docs/findings.md 2026-11-15; a freed tree node walked in
-		-- CXGame::Update). Until that is found: restart the game.
-		if (COOP_Map and not Game:IsServer()) then
-			System:LogAlways("coop: menu: restart the game to start another co-op game");
-			UI.MessageBox("Co-op", "Restart the game to start another co-op game.");
-			return;
-		end
+		-- loads the level at once (CXGame::LoadLevelCS resets the script timers): run it from a
+		-- click or a console line, never from a Game:SetTimer callback (docs/findings.md 2026-11-15)
 		-- the launcher's settings first (shirt color, weapons; COOP ClientStuff would load them at the
 		-- map start, over the choices below, while COOP_Color is unset)
 		if (not COOP_Color) then Script:LoadScript("Mods/FarCryCoop/prefs.lua"); end
