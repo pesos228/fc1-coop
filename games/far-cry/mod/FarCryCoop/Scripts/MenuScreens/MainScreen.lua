@@ -72,5 +72,14 @@ AddUISideMenu(UI.PageMainScreenInGame.GUI,
 
 UI:CreateScreenFromTable("MainScreenInGame", UI.PageMainScreenInGame.GUI);
 
+-- The game's own connect code (Multiplayer/Connecting.lua: a refused or lost connection, e.g.
+-- "@ServerFull") sends the player to its "Multiplayer" screen, which this menu has no entry for
+-- and no way back from: the Co-op screen instead (tests/menu-password.txt).
+if (not COOP_GotoPage) then COOP_GotoPage = GotoPage; end
+function GotoPage(PageName, Back, HideBackground)
+	if (PageName == "Multiplayer") then PageName = "Coop"; end
+	return COOP_GotoPage(PageName, Back, HideBackground);
+end
+
 Script:LoadScript("Scripts/MenuScreens/Coop.lua", 1);
 Script:LoadScript("Scripts/MenuScreens/CoopPlayer.lua", 1);
