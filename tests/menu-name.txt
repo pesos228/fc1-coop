@@ -1,0 +1,37 @@
+# The player's name is the Steam name (owner, 2026-11-15), made into a name the game can take:
+# CoopCleanName keeps printable ASCII without quotes, ";", "#", "%", "@", "$" and backslash,
+# transliterates Cyrillic as the launcher does (launcher/src/lobby.rs clean_name's cases), drops
+# the rest, 20 characters at most (the host's own limit, SDK XServerSlot ConvertToValidPlayerName;
+# a longer name came back changed and was renamed again on every load), "Player" if nothing is
+# left. The ASI hands the Steam name to Lua as escaped bytes and the SteamID as the player's key.
+# Needs a logged-in Steam (-steam).
+# Run from the repo root: tools/bin/harness.exe test tests/menu-name.txt
+up -mode host -map training -clients 0 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -steam -start #UI:ActivateScreen("Coop");#UI.PageCoop.GUI.WaitCombo:Select("1");#UI.PageCoop.Launch()
+wait server players>=1 -t 120s
+expect server CoopCleanName("Jack Carver") => Jack Carver
+expect server CoopCleanName("  ") => Player
+expect server CoopCleanName("a\"b;c#d%e\\f'g") => abcdefg
+expect server CoopCleanName("\208\146\208\176\209\129\209\143 \208\159\209\131\208\191\208\186\208\184\208\189") => Vasya Pupkin
+expect server CoopCleanName("\208\169\208\163\208\154\208\144") => SchUKA
+expect server CoopCleanName("\208\129\208\182") => Ezh
+expect server CoopCleanName("\230\151\165\230\156\172") => Player
+expect server CoopCleanName("x"..strchar(7).."y") => xy
+expect server CoopCleanName("123456789012345678901234567") => 12345678901234567890
+# "$" as strchar(36): the harness expands $NAME in scenario lines
+expect server CoopCleanName("Ca"..strchar(36).."h @home") => Cah home
+expect server CoopCleanName("\208") => Player
+# the Steam name (anyone's text) became the player's name, cleaned
+expect server COOP_SteamNameRaw and 1 or 0 => 1
+expect server COOP_SteamName == CoopCleanName(COOP_SteamNameRaw) and COOP_SteamName == getglobal("p_name") and 1 or 0 => 1
+# the player's key (whose loadout is whose in a save) is the SteamID, as the launcher sets it
+expect server strfind(tostring(COOP_PlayerKey), "^7656119%d%d%d%d%d%d%d%d%d%d$") and 1 or 0 => 1
+# the menu shows it and does not let it be typed over
+lua server UI:ActivateScreen("CoopPlayer")
+sleep 1s
+expect server UI.PageCoopPlayer.GUI.Name:GetText() == COOP_SteamName and 1 or 0 => 1
+expect server UI:IsWidgetEnabled(UI.PageCoopPlayer.GUI.Name) and 1 or 0 => 0
+lua server UI.PageCoopPlayer.GUI.Name:SetText("Someone") UI.PageCoopPlayer.Save()
+expect server getglobal("p_name") == COOP_SteamName and 1 or 0 => 1
+expect-log server coop:.player.settings.saved
+expect-no-events
+down
