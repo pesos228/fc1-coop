@@ -1,6 +1,6 @@
 # After a push to main: build the test package (games/far-cry/release/ci-package.ps1) and keep it
-# as the run's artifact "FarCryCoop-<commit>": download it from the run page (Actions), unpack it
-# into the Far Cry folder (TEST-BUILD.md).
+# as the run's artifact "FarCryCoop-<commit>": download it from the run page (Actions), put its
+# FarCryCoop folder into <game>\Mods (TEST-BUILD.md).
 name: package
 
 on:
@@ -26,6 +26,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: FarCryCoop-${{ steps.sha.outputs.short }}
-          path: dist/FarCryCoop/
+          path: dist/package/
           if-no-files-found: error
           retention-days: 30
