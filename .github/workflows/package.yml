@@ -1,0 +1,31 @@
+# After a push to main: build the test package (games/far-cry/release/ci-package.ps1) and keep it
+# as the run's artifact "FarCryCoop-<commit>": download it from the run page (Actions), unpack it
+# into the Far Cry folder (TEST-BUILD.md).
+name: package
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the package
+        shell: pwsh
+        run: ./games/far-cry/release/ci-package.ps1 -Out dist
+      - name: Short commit
+        id: sha
+        shell: pwsh
+        run: '"short=$("${{ github.sha }}".Substring(0, 7))" >> $env:GITHUB_OUTPUT'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FarCryCoop-${{ steps.sha.outputs.short }}
+          path: dist/FarCryCoop/
+          if-no-files-found: error
+          retention-days: 30
