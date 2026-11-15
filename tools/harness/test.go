@@ -18,6 +18,8 @@ import (
 //	wait <inst> <cond> [timeout]            state condition, as in `harness wait`
 //	lua <inst> <code>                       must run without a Lua error
 //	cmd <inst> <console command>            e.g. reconnect
+//	join <inst> <console line>              run from the ASI's frame hook, as a player's input
+//	                                        (menu buttons that load a level: harness join)
 //	expect <inst> <code> => <value>         `return <code>` must give <value>
 //	expect-log <inst> <regex> [timeout]     the instance log must contain a match
 //	expect-diff max=<m> [class=<re>] [exclude=<re>] [missing=0]
@@ -87,6 +89,9 @@ func cmdTest(args []string) error {
 			stepErr = runLua(inst, code, nil)
 		case "cmd":
 			stepErr = cmdCmd(strings.Fields(rest), "")
+		case "join":
+			inst, l, _ := strings.Cut(rest, " ")
+			stepErr = cmdJoin([]string{inst, l})
 		case "expect":
 			hard = false
 			inst, body, _ := strings.Cut(rest, " ")

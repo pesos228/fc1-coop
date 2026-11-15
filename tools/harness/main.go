@@ -27,6 +27,7 @@ const usage = `harness — FC1 co-op test harness
   state [inst...]         agent state (level, players, AI, position)
   cmd <inst> <command>    run a console command in the instance
   lua <inst> <code>       run Lua code in the instance
+  join <inst> <line>      run a console line from the ASI's frame hook, as a player's input runs
   wait <inst> <cond> [-t 60s]   wait for state condition: key=value, key!=value, key>=N, key<=N
   waitlog <inst> <regex> [-t 60s]
   log <inst> [-n 40] [-grep regex]
@@ -59,6 +60,8 @@ func main() {
 		err = cmdCmd(args, "")
 	case "lua":
 		err = cmdCmd(args, "lua ")
+	case "join":
+		err = cmdJoin(args)
 	case "wait":
 		err = cmdWait(args)
 	case "waitlog":
@@ -347,6 +350,42 @@ func sendCommand(in *Instance, command string) int {
 	defer f.Close()
 	fmt.Fprintf(f, "%d\t%s\n", seq, command)
 	return seq
+}
+
+// cmdJoin runs a console line the way a player's input runs: the FarCryCoop ASI reads
+// Mods\<mod>\join_<pid>.txt from its frame hook, after CXGame::Update. The agent's own
+// commands run from a script timer, and a level load there (CXGame::LoadLevelCS resets the
+// script timers) frees the timer map under CScriptTimerMgr::Update: the game crashes after
+// the level has loaded. The agent puts such commands off to Hud:OnUpdate, which does not run
+// in the menu; a menu's buttons (Co-op "Launch") are pressed through this instead.
+func cmdJoin(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: join <inst> <console line>")
+	}
+	r, err := currentRun()
+	if err != nil {
+		return err
+	}
+	in, err := r.Inst(args[0])
+	if err != nil {
+		return err
+	}
+	if r.Mod == "" {
+		return fmt.Errorf("join needs -mod (the ASI reads Mods/<mod>/join_<pid>.txt)")
+	}
+	p := filepath.Join(r.GameDir, "Mods", r.Mod, fmt.Sprintf("join_%d.txt", in.PID))
+	line := strings.Join(args[1:], " ")
+	if err := os.WriteFile(p, []byte(line), 0o644); err != nil {
+		return err
+	}
+	// the ASI deletes the file before it runs the line
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if _, err := os.Stat(p); err != nil {
+			return nil
+		}
+	}
+	os.Remove(p)
+	return fmt.Errorf("join: not read in 30 s (no FarCryCoop ASI?)")
 }
 
 func cmdCmd(args []string, prefix string) error {
