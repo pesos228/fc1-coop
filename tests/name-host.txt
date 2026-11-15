@@ -1,0 +1,20 @@
+# The host does not trust what a client sends about itself (owner, 2026-11-15: hard limits on
+# names). A modified client can send any player key (COOPID, whose loadout and save point is
+# whose: written to saves) and rename itself to anything (the engine's rename path, SDK
+# XServerSlot OnClientMsgName, has no length limit). The host keeps a key of letters, digits,
+# spaces and "_.-" only, 40 at most, and shows names in its messages through CoopCleanName.
+# Run from the repo root: tools/bin/harness.exe test tests/name-host.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 60s
+sleep 5s
+lua client1 Client:SendCommand("COOPID ab\"c;d\\e"..strrep("x", 80))
+sleep 2s
+lua server function T_Key() for id, k in COOP_SlotKeys do if (strfind(k, "^ab")) then return k; end end return "none"; end
+expect server T_Key() => abcdexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+lua client1 Client:SetName(strrep("y", 60).."\"';")
+sleep 3s
+cmd client1 disconnect
+expect-log server announce.yyyyyyyyyyyyyyyyyyyy.has.left.the.game$ 20s
+expect-no-events
+down
