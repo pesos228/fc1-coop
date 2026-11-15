@@ -56,6 +56,7 @@ API(HANDLE) GetKeyboardLayout(DWORD);
 API(HANDLE) LoadLibraryA(const char *);
 API(void *) GetProcAddress(HANDLE, const char *);
 API(BOOL) SetEnvironmentVariableA(const char *, const char *);
+API(DWORD) GetEnvironmentVariableA(const char *, char *, DWORD);
 API(char *) GetCommandLineA(void);
 
 int _fltused = 1;
@@ -1171,6 +1172,54 @@ static void __cdecl hNodeFree(void *p, DWORD n)
 	LeaveCriticalSection(g_nodeCs);
 }
 
+// ---- the mod's own CryGame.dll ----
+// With -MOD:FarCryCoop the game loads Mods\FarCryCoop\Bin32\CryGame.dll before its own (seen in a
+// dump: runs/20261115-170028, a copy of CryGame.dll put there was the one at 0x33000000). The release
+// ships this module there: nothing goes into Bin32 (no ASI loader), the mod folder is the whole
+// install. It loads the game's CryGame.dll from Bin32 and hands CrySystem its game, and hooks that
+// one as the ASI does. Loaded both ways (an old ASI loader install, or the harness injecting the
+// ASI), the first copy hooks and the other only hands over the game (FCCOOP_NET).
+static int g_proxy;          // this module is Mods\FarCryCoop\Bin32\CryGame.dll
+static int g_dupe;           // another copy of this code runs the hooks
+static HANDLE g_real;        // proxy: the game's own CryGame.dll
+static char g_realPath[300]; // <game>\Bin32\CryGame.dll
+
+__declspec(dllexport) void *__cdecl CreateGameInstance(void)
+{
+	void *(__cdecl *create)(void);
+	if (!g_real) {
+		char v[20];
+		DWORD h[1];
+		g_real = LoadLibraryA(g_realPath);
+		h[0] = (DWORD)g_real;
+		wvsprintfA(v, "%x", (va_list)h);
+		SetEnvironmentVariableA("FCCOOP_CRYGAME", v); // for a copy loaded as the ASI (realCryGame)
+	}
+	create = g_real ? (void *(__cdecl *)(void))GetProcAddress(g_real, "CreateGameInstance") : 0;
+	if (!create) {
+		logf("proxy: no CreateGameInstance in %s", g_realPath);
+		return 0;
+	}
+	return create();
+}
+
+// the game's CryGame.dll: by name it may be the mod's (this module, loaded first)
+static BYTE *realCryGame(void)
+{
+	BYTE *b;
+	char v[20];
+	DWORD n, i, a = 0;
+	if (g_proxy)
+		return (BYTE *)g_real;
+	b = (BYTE *)GetModuleHandleA("CryGame.dll");
+	if (b && *(DWORD *)(b + *(DWORD *)(b + 0x3c) + 8) == CRYGAME_TIMESTAMP)
+		return b;
+	n = GetEnvironmentVariableA("FCCOOP_CRYGAME", v, sizeof v);
+	for (i = 0; i < n && i < sizeof v; i++)
+		a = a * 16 + (v[i] <= '9' ? v[i] - '0' : (v[i] | 32) - 'a' + 10);
+	return (BYTE *)a; // 0 (wait): the mod's CryGame.dll has not loaded the game's yet
+}
+
 static DWORD __stdcall worker(void *unused)
 {
 	static const BYTE eh[] = {0xb8, 0xff, 0xff, 0xff, 0xff};                // mov eax, imm32 (EH prolog)
@@ -1194,7 +1243,7 @@ static DWORD __stdcall worker(void *unused)
 		} else
 			logf("CrySystem.dll missing or not the 1.4 build, node allocator not hooked");
 	}
-	for (i = 0; i < 120000 && !(g_base = (BYTE *)GetModuleHandleA("CryGame.dll")); i++)
+	for (i = 0; i < 120000 && !(g_base = realCryGame()); i++)
 		Sleep(1);
 	if (!g_base) {
 		logf("CryGame.dll not loaded in 120 s, nothing hooked");
@@ -1287,8 +1336,31 @@ BOOL __stdcall DllMain(HANDLE self, DWORD reason, void *reserved)
 	// keeps the resolution per process, so the server has to ask for it itself.
 	if (g_server)
 		timeBeginPeriod(1);
-	n = (int)GetModuleFileNameA(self, path, 260);
-	while (n > 0 && cut < 2) // strip "\FarCryCoopNet.asi" and "\Bin32"
+	// the game folder from FarCry.exe (in Bin32), not from this module: it is in Bin32 as the ASI,
+	// in Mods\FarCryCoop\Bin32 as the mod's CryGame.dll
+	n = (int)GetModuleFileNameA(0, path, 260);
+	for (p = path + n; p > path && p[-1] != '\\'; p--)
+		;
+	for (cut = 0; cut < (int)(p - path); cut++) // <game>\Bin32\ ...
+		g_realPath[cut] = path[cut];
+	wvsprintfA(g_realPath + cut, "CryGame.dll", 0);
+	{
+		char self_[260];
+		int m = (int)GetModuleFileNameA(self, self_, sizeof self_);
+		char *s_ = self_ + m;
+		while (s_ > self_ && s_[-1] != '\\')
+			s_--;
+		g_proxy = !lstrcmpiA(s_, "CryGame.dll");
+	}
+	{
+		char v[4];
+		g_dupe = GetEnvironmentVariableA("FCCOOP_NET", v, sizeof v) != 0;
+		if (g_dupe)
+			return 1; // the other copy hooks; this one (the mod's CryGame.dll) only hands over the game
+		SetEnvironmentVariableA("FCCOOP_NET", "1");
+	}
+	cut = 0;
+	while (n > 0 && cut < 2) // strip "\FarCry.exe" and "\Bin32"
 		if (path[--n] == '\\')
 			cut++;
 	args[0] = name;
@@ -1329,7 +1401,7 @@ BOOL __stdcall DllMain(HANDLE self, DWORD reason, void *reserved)
 	}
 	wvsprintfA(path + n, "\\Mods\\FarCryCoop\\netlog_%s_%u.txt", (va_list)args);
 	g_log = CreateFileA(path, 0x40000000, 1, 0, 2, 0x80, 0); // GENERIC_WRITE, FILE_SHARE_READ, CREATE_ALWAYS
-	logf("FarCryCoopNet loaded in %s, net presence mask %u", name, g_npMask);
+	logf("FarCryCoopNet loaded in %s, net presence mask %u%s", name, g_npMask, g_proxy ? ", as the mod's CryGame.dll" : "");
 	CreateThread(0, 0, worker, 0, 0, 0);
 	return 1;
 }
