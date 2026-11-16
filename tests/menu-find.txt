@@ -7,14 +7,16 @@
 # whole join needs a friend on another PC). Needs a logged-in Steam (-steam). The lobby is public
 # for a minute (only this mod lists it).
 # Run from the repo root: tools/bin/harness.exe test tests/menu-find.txt
-up -mode host -map training -clients 1 -idle 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -steam -start #UI:ActivateScreen("Coop");#UI.PageCoop.GUI.WaitCombo:Select("1");#UI.PageCoop.GUI.MaxCombo:Select("6");#UI.PageCoop.GUI.DifficultyCombo:Select("Veteran");#UI.PageCoop.GUI.AccessCombo:SelectIndex(1);#UI.PageCoop.GUI.Password:SetText("abc");#UI.PageCoop.Launch()
+up -mode host -map training -clients 1 -idle 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -steam -start #UI:ActivateScreen("Coop");#UI.PageCoop.GUI.WaitCombo:Select("1");#UI.PageCoop.GUI.MaxCombo:Select("6");#UI.PageCoop.GUI.DifficultyCombo:Select("Veteran");#UI.PageCoop.GUI.AccessCombo:SelectIndex(1);#UI.PageCoop.GUI.Password:SetText("abc");#UI.PageCoop.GUI.ServerName:SetText(strchar(32).."Night"..strchar(124).."run"..strchar(35).."1"..strchar(64)..strchar(32));#UI.PageCoop.Launch()
 wait server players>=1 -t 120s
 expect-netlog server lobby.[0-9a-f]+.created.\(public,.6.players\) 30s
 # the ASI marks the lobby up once the server holds its port (checked every 2 s)
 sleep 5s
 lua client1 UI:ActivateScreen("CoopFind")
 expect-log client1 coop:.find.game:.[1-9][0-9]*.game 30s
-expect-log client1 coop:.find.game:.[^|]+.\|.Training.\|.1/6.\|.Veteran.\|.pw.1 10s
+# the host's own name (Server name " Night|run#1@ ", made with strchar: the up line splits on spaces, the start line on "#"),
+# cleaned: no "|", "#", "@", spaces trimmed
+expect-log client1 coop:.find.game:.Nightrun1.\|.Training.\|.1/6.\|.Veteran.\|.pw.1 10s
 expect client1 UI.PageCoopFind.Shown >= 1 => 1
 # filters hide rows without a new search: another map, then "no password" (this game has one)
 # a Select from Lua does not fire OnChanged (the game's own screens call it after one): Show()
@@ -33,6 +35,9 @@ lua client1 UI.PageCoopFind.GUI.Internet.OnCommand(UI.PageCoopFind.GUI.Internet)
 # the log has the first answer too: wait for the list itself (Refresh empties it, Shown 0)
 sleep 5s
 expect client1 UI.PageCoopFind.Shown >= 1 => 1
+# the ping to the host (this later search: the client's relay network is up by now): Steam's
+# estimate from the host's "ploc", through the relays, so tens of ms even on one PC
+expect-log client1 coop:.find.game:.Nightrun1.\|.Training.\|.1/6.\|.Veteran.\|.pw.1.\|.ping.[0-9]+ 5s
 # Join: the row of this host's game
 lua client1 for i, g in UI.PageCoopFind.Games do if (g.Map == "Training") then UI.PageCoopFind.GUI.GameList:SelectIndex(i) end end UI.PageCoopFind.Join()
 expect-netlog client1 in.lobby.[0-9a-f]+ 30s
