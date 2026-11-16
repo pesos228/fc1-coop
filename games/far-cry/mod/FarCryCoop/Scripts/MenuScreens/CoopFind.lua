@@ -1,7 +1,8 @@
 -- FarCryCoop "Find game" screen (docs/specs/in-game-menu.md, step 3c), a server browser in the
 -- manner of Source games: tabs on top, the list, filters under it. Laid out with the game's own
 -- widgets (MultiPlayer/LANServerList.lua, Multiplayer.lua).
---   Internet: public games of this mod from Steam: "coop_steam find" (steam.c).
+--   Internet: public games of this mod from Steam: "coop_steam find" (steam.c), with the ping
+--     Steam estimates to each host (lobby data "ploc").
 --   Friends: games of Steam friends, friends-only ones too: "coop_steam friends".
 --     The ASI answers both with CoopFind_List(<count>, <kind>) and a CoopFind_Row(...) per game
 --     (steam.c emitRows); Join enters the game's lobby (coop_steam joinlobby <n>), the ASI connects
@@ -433,8 +434,9 @@ function CoopFind_List(count, kind)
 	end
 end
 
--- one game of the list: n for joinlobby, the lobby's data (steam.c luaRow) and its player limit
-function CoopFind_Row(n, name, map, diff, pw, players, limit, up)
+-- one game of the list: n for joinlobby, the lobby's data (steam.c luaRow), its player limit and
+-- the ping to its host (ms, from Steam's relay network; -1 or nil: unknown)
+function CoopFind_Row(n, name, map, diff, pw, players, limit, up, ping)
 	local Page = UI.PageCoopFind;
 	if (not Page.Accept) then
 		return;
@@ -442,10 +444,10 @@ function CoopFind_Row(n, name, map, diff, pw, players, limit, up)
 	if (name == "") then name = "Co-op game"; end
 	map = strupper(strsub(map, 1, 1))..strlower(strsub(map, 2)); -- as the filter's names: a host may send "carrier"
 	tinsert(Page.Rows, {N = n, Name = name, Map = map, Diff = UI.PageCoop.Difficulty[diff + 1] and diff, Password = pw,
-		Players = players, Limit = limit, Up = up});
+		Players = players, Limit = limit, Up = up, Ping = (ping and ping >= 0) and ping or nil});
 	Page.Show();
-	System:LogAlways(format("coop: find game: %s | %s | %d/%d | %s | pw %d", name, map, players, limit,
-		UI.PageCoop.Difficulty[diff + 1] or "", pw));
+	System:LogAlways(format("coop: find game: %s | %s | %d/%d | %s | pw %d | ping %d", name, map, players, limit,
+		UI.PageCoop.Difficulty[diff + 1] or "", pw, ping or -1));
 end
 
 -- the lobby could not be entered (gone, full, or this game still runs a server). Also for a Steam

@@ -153,11 +153,28 @@ UI.PageCoop =
 			tabstop = 7,
 		},
 
+		-- the game's name in Find game (Steam lobby, LAN sv_name); empty: "<player> - <map>"
+		ServerNameText =
+		{
+			skin = UI.skins.Label,
+			left = 210, top = 400,
+			width = 180,
+			text = "Server name (optional)",
+		},
+
+		ServerName =
+		{
+			skin = UI.skins.EditBox,
+			left = 400, top = 396,
+			width = 200,
+			tabstop = 8,
+		},
+
 		JoinIP =
 		{
 			skin = UI.skins.BottomMenuButton,
 			left = 200,
-			tabstop = 8,
+			tabstop = 9,
 			text = "Join by IP",
 			OnCommand = function(Sender)
 				UI.JoinIPBox("Join by IP", "Enter the host's IP and port (49001)", UI.PageCoop.ConnectIP);
@@ -168,7 +185,7 @@ UI.PageCoop =
 		{
 			skin = UI.skins.BottomMenuButton,
 			left = 400,
-			tabstop = 10,
+			tabstop = 11,
 			text = "Player settings",
 			OnCommand = function(Sender)
 				GotoPage("CoopPlayer");
@@ -179,7 +196,7 @@ UI.PageCoop =
 		{
 			skin = UI.skins.BottomMenuButton,
 			left = 780 - 180,
-			tabstop = 9,
+			tabstop = 10,
 			text = Localize("Launch"),
 			OnCommand = function(Sender)
 				UI.PageCoop.Launch();
@@ -193,6 +210,7 @@ UI.PageCoop =
 
 	Fill = function()
 		local GUI = UI.PageCoop.GUI;
+		GUI.ServerName:SetMaxLength(COOP_SERVER_NAME_MAX);
 		GUI.MapCombo:Clear();
 		for i, m in UI.PageCoop.Maps do
 			GUI.MapCombo:AddItem(m);
@@ -279,7 +297,10 @@ UI.PageCoop =
 		setglobal("sv_maxplayers", max);
 		setglobal("sv_password", pw);
 		COOP_MenuLaunch = 1; -- CoopMap: a new game with this screen's settings, not a console one
-		local lobby = {max = max, access = UI.PageCoop.AccessType[access], pw = (pw ~= "" and 1) or 0, map = map};
+		-- the player's own name for the game, or nil: "<player> - <map>" (CoopServerName)
+		COOP_ServerName = CoopServerName(GUI.ServerName:GetText());
+		if (COOP_ServerName == "") then COOP_ServerName = nil; end
+		local lobby = {max = max, access = UI.PageCoop.AccessType[access], pw = (pw ~= "" and 1) or 0, map = map, name = COOP_ServerName};
 		if (Game:IsServer() and COOP_Lobby) then
 			COOP_Lobby = lobby; -- a map change: the lobby follows (CoopLobbyUpdate, once a second)
 		elseif (not Game:IsServer()) then

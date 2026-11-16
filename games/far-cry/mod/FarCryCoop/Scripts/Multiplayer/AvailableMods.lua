@@ -90,6 +90,29 @@ function CoopLobbyText(s)
 	return strsub(s, 1, 48);
 end
 
+-- a map as the menus show it: "carrier" (a level end's name) is "Carrier"
+function CoopMapTitle(m)
+	m = tostring(m or "");
+	return strupper(strsub(m, 1, 1))..strlower(strsub(m, 2));
+end
+
+-- The game's name in Find game (Steam lobby "name", LAN sv_name): the host's own (Co-op screen,
+-- "Server name") or "<player> - <map>". The own one keeps what the ASI lets through to the game
+-- list (steam.c safeText): letters, digits, spaces and - _ . , ( ) ! ? : + / [ ], so the Internet
+-- and the LAN list show the same name; no "$" (a digit after it is a color code in the game's
+-- text) or "@" (a localization key). Spaces trimmed and single, 32 at most (the game's own server
+-- name boxes: CreateServer.lua). Cyrillic is dropped (the game cannot show it): "" → the default.
+COOP_SERVER_NAME_MAX = 32;
+function CoopServerName(s)
+	s = gsub(tostring(s or ""), "[^%w %-_%.,%(%)!%?:%+/%[%]]", "");
+	s = gsub(s, "[^ -~]", ""); -- %w may take a letter of the system's code page
+	s = gsub(gsub(gsub(s, "  +", " "), "^ ", ""), " $", "");
+	return strsub(s, 1, COOP_SERVER_NAME_MAX);
+end
+function CoopGameName(map)
+	return COOP_ServerName or (CoopLobbyText(getglobal("p_name") or "Player").." - "..CoopLobbyText(CoopMapTitle(map)));
+end
+
 -- "<max> <type>|name=...|map=...|..." for "coop_steam host" and "coop_steam update"
 function CoopLobbyArgs()
 	local L = COOP_Lobby;
@@ -101,8 +124,8 @@ function CoopLobbyArgs()
 	if (Server and Server.GetServerSlotMap and Game:IsServer()) then
 		for i, s in Server:GetServerSlotMap() do n = n + 1; end
 	end
-	return format("%d %s|name=%s - %s|map=%s|diff=%d|pw=%d|players=%d", L.max, L.access,
-		CoopLobbyText(getglobal("p_name") or "Player"), CoopLobbyText(map), CoopLobbyText(map),
+	return format("%d %s|name=%s|map=%s|diff=%d|pw=%d|players=%d", L.max, L.access,
+		CoopLobbyText(L.name or CoopGameName(map)), CoopLobbyText(CoopMapTitle(map)),
 		tonumber(COOP_Difficulty) or 1, L.pw, max(n, 1));
 end
 
@@ -188,12 +211,13 @@ function CoopMap(name)
 	COOP_MenuLaunch = nil;
 	if (not (running and Game:IsServer()) and not menu) then
 		COOP_Lobby = nil;
+		COOP_ServerName = nil;
 		setglobal("sv_password", "");
 		setglobal("sv_maxplayers", 16); -- the engine's default
 	end
 	COOP_Map = name; -- before loading: the COOP gamerules (and the monitor) read it on load
-	-- the game's name in LAN lists (sv_name, empty by default): as the Steam lobby's, "<player> - <map>"
-	setglobal("sv_name", CoopLobbyText(getglobal("p_name") or "Player").." - "..CoopLobbyText(strupper(strsub(name, 1, 1))..strsub(name, 2)));
+	-- the game's name in LAN lists (sv_name, empty by default): as the Steam lobby's (CoopGameName)
+	setglobal("sv_name", CoopGameName(name));
 	if (running and Game:IsServer()) then
 		Game:LoadLevelMPServer(name, mission); -- server already up: keep the clients connected
 	else
