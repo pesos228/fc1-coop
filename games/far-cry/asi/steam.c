@@ -225,6 +225,10 @@ F(int, FriendCount, (void *, int));
 F(U64, FriendByIndex, (void *, int, int));
 F(BYTE, FriendGame, (void *, U64, BYTE *)); // FriendGameInfo_t, 24 bytes: game id at 0, lobby at 16
 F(BYTE, RequestLobbyData, (void *, U64));
+F(float, LocalPingLoc, (void *, BYTE *));                 // SteamNetworkPingLocation_t: 512 bytes
+F(void, PingLocToString, (void *, const BYTE *, char *, int));
+F(BYTE, ParsePingLoc, (void *, const char *, BYTE *));
+F(int, EstimatePing, (void *, const BYTE *));
 static void *g_user, *g_friends, *g_msgs, *g_utils, *g_mm;
 static int g_pipe;
 
@@ -273,6 +277,10 @@ static int steamInit(const char *dll)
 	FriendByIndex = (U64(__cdecl *)(void *, int, int))sym("SteamAPI_ISteamFriends_GetFriendByIndex");
 	FriendGame = (BYTE(__cdecl *)(void *, U64, BYTE *))sym("SteamAPI_ISteamFriends_GetFriendGamePlayed");
 	RequestLobbyData = (BYTE(__cdecl *)(void *, U64))sym("SteamAPI_ISteamMatchmaking_RequestLobbyData");
+	LocalPingLoc = (float(__cdecl *)(void *, BYTE *))sym("SteamAPI_ISteamNetworkingUtils_GetLocalPingLocation");
+	PingLocToString = (void(__cdecl *)(void *, const BYTE *, char *, int))sym("SteamAPI_ISteamNetworkingUtils_ConvertPingLocationToString");
+	ParsePingLoc = (BYTE(__cdecl *)(void *, const char *, BYTE *))sym("SteamAPI_ISteamNetworkingUtils_ParsePingLocationString");
+	EstimatePing = (int(__cdecl *)(void *, const BYTE *))sym("SteamAPI_ISteamNetworkingUtils_EstimatePingTimeFromLocalHost");
 	{
 		void *(__cdecl * u)(void) = (void *(__cdecl *)(void))sym("SteamAPI_SteamUser_v023");
 		void *(__cdecl * f)(void) = (void *(__cdecl *)(void))sym("SteamAPI_SteamFriends_v018");
@@ -574,13 +582,38 @@ static int smallNum(const char *s) // lobby data "players", "diff", "pw": 0..999
 		n = n * 10 + s[i] - '0';
 	return n;
 }
+// Ping to a lobby's host, ms (-1: unknown): the host puts where it is on Steam's relay network
+// into its lobby ("ploc", setLobbyData), and Steam estimates the time to there from here (the
+// relays' ping times both ends measured, no packet to the host; ISteamNetworkingUtils).
+static int lobbyPing(U64 l)
+{
+	static BYTE loc[512];
+	const char *s = GetLobbyData(g_mm, l, "ploc");
+	if (!s || !s[0] || !ParsePingLoc(g_utils, s, loc))
+		return -1;
+	return EstimatePing(g_utils, loc);
+}
+// host: our place on the relay network into our lobby once Steam has measured it (a lobby made
+// before that gets it from the 2-s check)
+static int g_plocSet;
+static void setPingLocation(void)
+{
+	static BYTE loc[512];
+	static char str[1024]; // k_cchMaxSteamNetworkingPingLocationString
+	if (!g_ownLobby || g_plocSet || LocalPingLoc(g_utils, loc) < 0)
+		return;
+	PingLocToString(g_utils, loc, str, sizeof str);
+	if (str[0] && SetLobbyData(g_mm, g_ownLobby, "ploc", str))
+		g_plocSet = 1;
+}
+
 // The game list for the menu (MenuScreens/CoopFind.lua): CoopFind_List(<rows that follow>, -1 when
 // Steam failed), then CoopFind_Row(<n for joinlobby>, name, map, difficulty, password, players,
-// limit, up) per game.
+// limit, up, ping) per game.
 static void luaRow(int i, U64 l)
 {
 	static char name[48], map[32], line[300];
-	void *a[8];
+	void *a[9];
 	safeText(name, GetLobbyData(g_mm, l, "name"), 40);
 	safeText(map, GetLobbyData(g_mm, l, "map"), 24);
 	a[0] = (void *)i;
@@ -591,7 +624,8 @@ static void luaRow(int i, U64 l)
 	a[5] = (void *)smallNum(GetLobbyData(g_mm, l, "players"));
 	a[6] = (void *)LobbyLimit(g_mm, l);
 	a[7] = (void *)smallNum(GetLobbyData(g_mm, l, "up"));
-	wvsprintfA(line, "#if CoopFind_Row then CoopFind_Row(%d,\"%s\",\"%s\",%d,%d,%d,%d,%d) end", (va_list)a);
+	a[8] = (void *)lobbyPing(l);
+	wvsprintfA(line, "#if CoopFind_Row then CoopFind_Row(%d,\"%s\",\"%s\",%d,%d,%d,%d,%d,%d) end", (va_list)a);
 	runOnMain(line);
 }
 // the list in g_rows to the console and to the menu: kind "internet" or "friends", so a late answer
@@ -718,6 +752,8 @@ static void setLobbyData(void) // host: the player's key=value pairs, then ours 
 	SetLobbyData(g_mm, g_ownLobby, "fc1coop", NET_KEY);
 	SetLobbyData(g_mm, g_ownLobby, "host", id);
 	SetLobbyData(g_mm, g_ownLobby, "up", g_up ? "1" : "0");
+	g_plocSet = 0; // a new lobby (host) has none yet; an update keeps it, sets it again
+	setPingLocation();
 }
 static void lobbyFailed(const char *why)
 {
@@ -1087,8 +1123,10 @@ static DWORD __stdcall steamThread(void *dll)
 				}
 				say(g_up ? "server up: players can join" : "no server in this game");
 			}
-			if (!g_sLoop)
+			if (!g_sLoop) {
 				lobbyWait();
+				setPingLocation();
+			}
 		}
 		if (!g_sLoop)
 			callbacks();
