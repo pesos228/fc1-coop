@@ -1,0 +1,25 @@
+# Spawn-sleepers (bSleepOnSpawn) where the server has them, on a joining client.
+# The server's copies settle on the ground right after the map loads (Training: REINF_ONE2 from
+# inside the parked Gunship5 down 4.6 m, Merc_Cover.MercCover_M4_4..6 on the hill 2-3 m) and then
+# do not move. A client usually gets their ground places on joining, but not when the map start
+# (the wait for players ends) falls into its connection: then it keeps the level's heights, as
+# nothing more is sent about them (1 of 5 runs, smoke-training 3 of 3 full suites; a client that
+# joins long after the start gets them). The server sends them again 2, 5 and 15 s after a
+# client's HUDSYNC (AIPOS, COOP gamerules CoopSyncSleepers).
+# Run from the repo root: tools/bin/harness.exe test tests/sleepers-pos.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 90s
+wait client1 players>=2 -t 90s
+sleep 3s
+# they are sleepers on the server and still asleep
+expect server System:GetEntityByName("Merc_Cover.MercCover_M4_4").Properties.bSleepOnSpawn => 1
+expect server System:GetEntityByName("REINF_ONE2").Properties.bSleepOnSpawn => 1
+expect-diff max=1.0 class=^MercCover
+# the race left in place, every time: the client's copy 3 m up, as the level has it; the
+# resend 15 s after HUDSYNC puts it back on the ground
+lua client1 local e = System:GetEntityByName("Merc_Cover.MercCover_M4_4") local p = e:GetPos() e:SetPos({x = p.x, y = p.y, z = p.z + 3})
+expect client1 floor(System:GetEntityByName("Merc_Cover.MercCover_M4_4"):GetPos().z) => 74
+sleep 14s
+expect-diff max=1.0 class=^MercCover
+expect-no-events
+down

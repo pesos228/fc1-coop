@@ -521,6 +521,20 @@ ClientStuff.ServerCommandTable["PPOS"] = function(String, tk)
 	end
 end
 
+-- where the spawn-sleepers lie on the server ("AIPOS <id> x y z ...", COOP gamerules
+-- CoopSyncSleepers): ours may still be at the level's heights (REINF_ONE2 in the air inside Gunship5)
+ClientStuff.ServerCommandTable["AIPOS"] = function(String, tk)
+	if (Game:IsServer()) then return; end
+	local i = 2;
+	while (tk[i + 3]) do
+		local e = System:GetEntity(tonumber(tk[i]) or 0);
+		if (e and e.ai and not e.theVehicle and e.cnt and e.cnt.health and e.cnt.health > 0) then -- a seat is ours
+			e:SetPos({x = tonumber(tk[i + 1]) or 0, y = tonumber(tk[i + 2]) or 0, z = tonumber(tk[i + 3]) or 0});
+		end
+		i = i + 4;
+	end
+end
+
 -- a helicopter's mounted gun, bound to it on the server only ("MWBIND <gun> <heli> ...", COOP
 -- gamerules CoopSyncHeliGuns): bind our copy the way Gunship:InitMountedWeapon does
 ClientStuff.ServerCommandTable["MWBIND"] = function(String, tk)

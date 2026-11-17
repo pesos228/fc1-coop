@@ -1379,6 +1379,7 @@ function GameRules:OnUpdate(DeltaTime)
 	-- before "drops": that one moves COOP_DropResend on
 	CoopRun("heli guns", function() CoopSyncHeliGuns(COOP_DropResend[1] and _time >= COOP_DropResend[1]) end)
 	CoopRun("heli rotors", function() CoopSyncHeliRotors(COOP_DropResend[1] and _time >= COOP_DropResend[1]) end)
+	CoopRun("sleepers", function() CoopSyncSleepers(COOP_DropResend[1] and _time >= COOP_DropResend[1]) end)
 	CoopRun("drops", CoopSyncDrops)
 	CoopRun("join near team", CoopJoinNearTeam)
 	CoopRun("announce connecting", CoopAnnounceConnecting)
@@ -1872,6 +1873,43 @@ function CoopSyncHeliGuns(all)
 		end
 	end
 	if (k > 0) then CoopSendPacked("MWBIND", out); end
+end
+
+-- Spawn-sleepers (bSleepOnSpawn) settle on the server's ground right after the map loads
+-- (Training: REINF_ONE2 from inside the parked Gunship5 down 4.6 m, MercCover_M4_4..6 on the hill
+-- 2-3 m) and then do not move, so nothing about them is sent. A client that joined got their
+-- ground places only now and then: when the map started (the wait for players ended) before its
+-- slot was set up, it kept the level's heights (harness tests/sleepers-pos.txt: 1 of 5 runs, and
+-- smoke-training). Those still lying where they were a second ago go to the clients ("AIPOS <id>
+-- x y z ...", COOP ClientStuff) with the rest places, 2, 5 and 15 s after a client's HUDSYNC. One
+-- woken up by the engine (a trigger, the host's view) moves: not sent, the snapshot has it;
+-- neither are crews in their seats and hidden ones.
+function CoopSyncSleepers(all) -- once a second, with the other CoopRun sweeps
+	for i, e in System:GetEntities() do
+		if (e.ai and e.Properties and e.Properties.bSleepOnSpawn == 1) then
+			local p = e:GetPos();
+			local x, y, z = p.x, p.y, p.z; -- GetPos returns a shared table
+			local s = e.COOP_SleepAt;
+			if (s) then
+				e.COOP_SleepStill = (x - s.x) * (x - s.x) + (y - s.y) * (y - s.y) + (z - s.z) * (z - s.z) < 0.0025;
+				s.x, s.y, s.z = x, y, z;
+			else
+				e.COOP_SleepAt = {x = x, y = y, z = z};
+			end
+		end
+	end
+	if (not all) then return; end
+	local out, k = {}, 0;
+	for i, e in System:GetEntities() do
+		-- a crew's seat is the client's own vehicle's (its boat may lie a metre or two off ours)
+		if (e.COOP_SleepStill and not e.COOP_Awake and not e.theVehicle and e.Enemy_Hidden ~= 1
+			and e.cnt and e.cnt.health and e.cnt.health > 0) then
+			local s = e.COOP_SleepAt;
+			k = k + 1;
+			out[k] = format("%d %.2f %.2f %.2f", e.id, s.x, s.y, s.z);
+		end
+	end
+	if (k > 0) then CoopSendPacked("AIPOS", out); end
 end
 
 -- A helicopter's rotor (rotor shader, engine sound, dust under it) is started and stopped by map
