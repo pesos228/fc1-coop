@@ -5,8 +5,8 @@
 # separately (IAISystem::GetPerceptionValue takes the player's AI object), so the host, unseen,
 # keeps his own empty. Fixed 2026-11-12 (ASI FIX 15, PERC): the client's meter 0 before, filled after.
 # The host's meter after a respawn (review): 0 before, filled after.
-# Setup as in tests/sleepers-seen.txt: the client faces the first village and the boxcarrier wakes;
-# the host is ~95 m away with its back to the village.
+# Setup as in tests/sleepers-seen.txt: the client faces the first village, the boxcarrier wakes
+# and comes for it; the host is ~95 m away with its back to the village.
 # Run from the repo root: tools/bin/harness.exe test tests/danger-meter.txt
 up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
 wait server players>=2 -t 30s
@@ -24,19 +24,12 @@ expect server (Hud.curr_stealth < 10) and 1 => 1
 lua client1 _localplayer:SetAngles({x=0,y=0,z=100})
 sleep 15s
 expect server System:GetEntityByName("boxcarrier").COOP_Awake => 1
-# Woken, it noticed the client 60 m off only now and then (5 of 30 runs it sat down, Idle_Seat, and
-# the meter stayed empty: nobody saw the client). Whoever is to be seen stands 4 m in front of it,
-# facing it. GetDirectionVector and GetAngles share one table: read x, y before the next call
-# (Lua's sin/cos here take radians, not degrees).
-lua server function Front(P) local b=System:GetEntityByName("boxcarrier") local p=b:GetPos() local x,y,z=p.x,p.y,p.z local d=b:GetDirectionVector() local dx,dy=d.x,d.y local a=b:GetAngles().z local to,ang={x=x+4*dx,y=y+4*dy,z=z+0.5},{x=0,y=0,z=a+180} if (P==_localplayer) then P:SetPos(to) P:SetAngles(ang) else CoopMovePlayer(P,to,ang) end end
-lua server Front(Harness:RemotePlayer())
-sleep 10s
 expect client1 (Hud.curr_stealth > 40) and 1 or Hud.curr_stealth => 1
 expect server (Hud.curr_stealth < 10) and 1 or Hud.curr_stealth => 1
 
 # The host dies and comes back while the client is alive: its new AI object is registered after the
 # client's, and the AI system updates the perception of its first player only (CryAISystem.dll,
-# docs/findings.md). The boxcarrier sees the host: its own meter fills.
+# docs/findings.md). The village sees the host: its own meter fills.
 lua server COOP_God=0
 lua server local t=_localplayer local p=t:GetPos() t:Damage({shooter=t,target=t,weapon=t.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
 sleep 4s
@@ -45,9 +38,7 @@ sleep 6s
 lua server local s=Server:GetServerSlotByEntityId(_localplayer.id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
 wait server me.health>=1 -t 30s
 lua server COOP_God=1
-# The client away (95 m, back to the village) and the host in front of the boxcarrier: on the client's
-# old spot the village, holding cover on the client, missed the host 5 of 30 runs
-lua server CoopMovePlayer(Harness:RemotePlayer(), {x=482,y=927,z=30}, {x=0,y=0,z=280}) Front(_localplayer)
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=482,y=927,z=30}, {x=0,y=0,z=280}) _localplayer:SetPos({x=TX,y=TY,z=TZ+1}) _localplayer:SetAngles({x=0,y=0,z=100})
 sleep 15s
 expect server (Hud.curr_stealth > 40) and 1 or Hud.curr_stealth => 1
 expect-no-events

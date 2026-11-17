@@ -6,7 +6,10 @@
 up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
 wait server players>=2 -t 30s
 wait client1 players>=2 -t 30s
-sleep 5s
+# past the map intro (first_cutscene): it holds the client's camera on the start spot for ~18 s, and
+# a client moved before its end saw the village only then, 10-15 s late (2026-11-17: woken 0 of 15
+# runs 5 s after its turn, single player 15 of 15; moved after the intro 15 of 15)
+sleep 30s
 lua server COOP_God=1
 # the host away from the village (~95 m, ~190 m from the start), its back to it: its own view
 # wakes them otherwise, as in single player
@@ -21,16 +24,13 @@ expect server Moved() => 0
 lua server CoopMovePlayer(Harness:RemotePlayer(), {x=TX,y=TY,z=TZ+1}, {x=0,y=0,z=280})
 sleep 15s
 expect server Moved() => 0
-expect server System:GetEntityByName("boxcarrier").Behaviour.Name => Job_Observe
 
 # It turns round: the sleeper in front of it (boxcarrier) wakes and comes for it. How many of the
 # rest it rouses varies from run to run (3 or more in two runs, fewer in a third), so only that
-# one is counted. Awake, it leaves its sleeping job (Job_Observe), but now and then for a seat
-# (Idle_Seat) without walking up to the client 60 m off (3 of 35 runs, 12-16.11): moved or a
-# job left behind.
+# one is counted.
 lua client1 _localplayer:SetAngles({x=0,y=0,z=100})
 sleep 15s
 expect server System:GetEntityByName("boxcarrier").COOP_Awake => 1
-expect server (Moved() >= 1 or System:GetEntityByName("boxcarrier").Behaviour.Name ~= "Job_Observe") and 1 or 0 => 1
+expect server (Moved() >= 1) and 1 => 1
 expect-no-events
 down
