@@ -11,7 +11,10 @@
 up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
 wait server players>=2 -t 30s
 wait client1 players>=2 -t 30s
-sleep 5s
+# past the map intro (first_cutscene): it holds the client's camera on the start spot for ~18 s, and
+# a client moved before its end saw the village only then, 10-15 s late (2026-11-17: woken 0 of 15
+# runs 5 s after its turn, single player 15 of 15; moved after the intro 15 of 15)
+sleep 30s
 lua server COOP_God=1
 lua server _localplayer:SetAngles({x=0,y=0,z=100}) _localplayer:SetPos({x=482,y=927,z=30})
 lua server local tr=System:GetEntityByName("AreaTrigger80") tr:Event_Disable(tr) local t=tr:GetPos() TX,TY,TZ=t.x,t.y,t.z
