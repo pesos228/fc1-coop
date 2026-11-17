@@ -212,13 +212,15 @@ func (s *supervisor) start(in *Instance) error {
 	}
 	s.run.Save()
 	appendEvent(s.run.Dir, in.Name, "start", fmt.Sprintf("pid=%d %s", in.PID, cmd.SysProcAttr.CmdLine))
-	if s.joinMode() {
-		go s.deliverJoin(in)
-	}
-
 	s.mu.Lock()
 	s.procs[in.Name] = cmd
 	s.mu.Unlock()
+	// after procs: deliverJoin gives up on a game that is not alive(), and it did so 16 ms
+	// after the start, before the game was in procs, deleting the join file
+	// (runs/20261116-155008: menu-password's client1 never connected)
+	if s.joinMode() {
+		go s.deliverJoin(in)
+	}
 	go func() {
 		err := cmd.Wait()
 		code := uint32(0)
