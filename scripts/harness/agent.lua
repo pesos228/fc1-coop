@@ -268,6 +268,16 @@ function Harness:Use()
 	return "ok";
 end
 
+-- Hold the forward key on this game for ms milliseconds (FarCryCoopNet.asi, "fwd <ms>"): the
+-- player walks as with W, steps, animation and all.
+function Harness:Fwd(ms)
+	if (not COOP_AsiPid) then return "no asi"; end
+	appendto("Mods/FarCryCoop/seek_"..COOP_AsiPid..".txt");
+	write(format("fwd %d\n", ms));
+	writeto();
+	return "ok";
+end
+
 -- The player with this name (harness clients are named after their instance: client1, ...).
 function Harness:Player(name)
 	for i, e in System:GetEntities() do

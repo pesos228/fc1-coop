@@ -944,6 +944,9 @@ static void runJoin(const char *file)
 // CXClient::TriggerUse (0x3307ead1, thiscall (float, XActivationEvent), ret 8: push 0Ah, add ecx 60h,
 // call AddAction) adds ACTION_USE to the next command for the server, as the F key does. CXGame's
 // m_pClient is at +0x34 (Game:Connect, 0x33044222: mov ecx,[m_pGame+34h] before XConnect).
+// "fwd <ms>": hold the forward key that long (harness scenarios: a player that walks, as for the
+// AI hearing its steps). CXClient::TriggerMoveForward (0x3307f3e1, same form: SetMoveFwd(1) at
+// +0x10c, then AddAction(ACTION_MOVE_FORWARD)), called every frame until then.
 static char g_seek[600];
 static int g_pidSent;
 static void pressUse(BYTE *game)
@@ -956,11 +959,25 @@ static void pressUse(BYTE *game)
 	((void(__fastcall *)(void *, void *, float, int))CG(0x3307ead1))(client, 0, 1.0f, 0);
 	logf("use: pressed");
 }
+static DWORD g_fwdUntil;
+static void pressFwd(BYTE *game)
+{
+	void *client = game ? *(void **)(game + 0x34) : 0;
+	if (client)
+		((void(__fastcall *)(void *, void *, float, int))CG(0x3307f3e1))(client, 0, 1.0f, 0);
+}
 static void seekLine(BYTE *game, char *s)
 {
 	void *sys = getISystem(), *mov, *seq;
 	DWORD ms = 0, flags;
 	float t, was;
+	if (s[0] == 'f' && s[1] == 'w' && s[2] == 'd' && s[3] == ' ') {
+		for (s += 4; *s >= '0' && *s <= '9'; s++)
+			ms = ms * 10 + (*s - '0');
+		g_fwdUntil = GetTickCount() + ms;
+		logf("fwd: %u ms", ms);
+		return;
+	}
 	if (s[0] == 'u' && s[1] == 's' && s[2] == 'e' && !s[3]) {
 		pressUse(game);
 		return;
@@ -998,6 +1015,8 @@ static void seekTick(BYTE *game)
 		((void(__fastcall *)(void *, void *, const char *, int, int))VFN(con, 0x80))(con, 0, line, 0, 1);
 		g_pidSent = 1;
 	}
+	if ((int)(g_fwdUntil - GetTickCount()) > 0)
+		pressFwd(game);
 	f = CreateFileA(g_seek, 0x80000000, 0, 0, 3, 0x80, 0); // GENERIC_READ, OPEN_EXISTING
 	if (f == (HANDLE)-1)
 		return;
