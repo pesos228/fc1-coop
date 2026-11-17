@@ -1,0 +1,41 @@
+# Training, listen host + 1 client: the AI hear a remote player's steps as the host's. Steps reach
+# the AI as AI:SoundEvent from BasicPlayer:DoStepSoundAI, which the server's animation key handler
+# calls (BasicPlayer.Server_EventHandler, ScriptEvent_AnimationKey), and from DoBushSoundAI while
+# moving. Both players walk the same 8 s path (Harness:Fwd holds the forward key, FarCryCoopNet.asi
+# "fwd"); the server counts the calls for each. 2026-11-17, 2 runs: host 15-16 step calls and 40-41
+# sound events, client 12-14 and 38, both ~23 m.
+# Run from the repo root: tools/bin/harness.exe test tests/step-sounds.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 30s
+wait client1 players>=2 -t 30s
+# past the map intro (first_cutscene, see tests/sleepers-seen.txt)
+sleep 30s
+lua server COOP_God=1
+lua server ST_Step={} ST_Snd={} ST_OldStep=BasicPlayer.DoStepSoundAI BasicPlayer.DoStepSoundAI=function(self) ST_Step[self.id]=(ST_Step[self.id] or 0)+1 return ST_OldStep(self) end ST_OldSnd=AI.SoundEvent AI.SoundEvent=function(self,a,p,r,th,it,who) if (who) then ST_Snd[who]=(ST_Snd[who] or 0)+1 end return ST_OldSnd(self,a,p,r,th,it,who) end
+lua server function Walked(P) local p=P:GetPos() return sqrt((p.x-298)*(p.x-298)+(p.y-988)*(p.y-988)) end
+# the host walks from the start spot towards the first village (open ground) while the client waits aside
+lua server _localplayer:SetAngles({x=0,y=0,z=100}) _localplayer:SetPos({x=298,y=988,z=20.5})
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=290,y=980,z=20.5}, {x=0,y=0,z=100})
+sleep 3s
+lua server ST_Step={} ST_Snd={}
+sleep 3s
+# standing still: no steps
+expect server (ST_Step[_localplayer.id] or 0) + (ST_Snd[_localplayer.id] or 0) + (ST_Step[Harness:RemotePlayer().id] or 0) + (ST_Snd[Harness:RemotePlayer().id] or 0) => 0
+lua server Harness:Fwd(8000)
+sleep 9s
+expect server (Walked(_localplayer) > 15) and 1 or Walked(_localplayer) => 1
+expect server ((ST_Step[_localplayer.id] or 0) >= 5) and 1 or ST_Step[_localplayer.id] => 1
+expect server ((ST_Snd[_localplayer.id] or 0) >= 20) and 1 or ST_Snd[_localplayer.id] => 1
+# the client walks the same path while the host waits aside
+lua server _localplayer:SetPos({x=290,y=980,z=20.5}) CoopMovePlayer(Harness:RemotePlayer(), {x=298,y=988,z=20.5}, {x=0,y=0,z=100})
+sleep 3s
+lua client1 _localplayer:SetAngles({x=0,y=0,z=100})
+sleep 1s
+lua server ST_Step={} ST_Snd={}
+lua client1 Harness:Fwd(8000)
+sleep 9s
+expect server (Walked(Harness:RemotePlayer()) > 15) and 1 or Walked(Harness:RemotePlayer()) => 1
+expect server ((ST_Step[Harness:RemotePlayer().id] or 0) >= 5) and 1 or ST_Step[Harness:RemotePlayer().id] => 1
+expect server ((ST_Snd[Harness:RemotePlayer().id] or 0) >= 20) and 1 or ST_Snd[Harness:RemotePlayer().id] => 1
+expect-no-events
+down
