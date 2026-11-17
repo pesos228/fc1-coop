@@ -25,7 +25,8 @@ import (
 //	expect-netlog <inst> <regex> [timeout]  the same in the FarCryCoop ASI's netlog (its Steam lines)
 //	expect-diff max=<m> [class=<re>] [exclude=<re>] [missing=0]
 //	                                        clients vs server: no matching entity off by more
-//	                                        than m meters or with another health
+//	                                        than m meters or with another health; exclude
+//	                                        skips an entity whose name or "class name" matches
 //	expect-no-events                        no crash, error dialog or stalled agent so far
 //	down
 //
@@ -263,6 +264,27 @@ func expectNoEvents() error {
 	return nil
 }
 
+// diffFailures lists the mismatches an expect-diff fails on: entities whose class matches
+// classRe and whose name or "class name" does not match excludeRe (nil: none), missing or
+// extra entities only when allowMissing is false.
+func diffFailures(diffs []clientDiff, classRe, excludeRe *regexp.Regexp, allowMissing bool) []string {
+	var bad []string
+	for _, cd := range diffs {
+		for _, m := range cd.Mismatches {
+			// the name alone too: exclude=^REINF_ONE2$ never matched "MercCover REINF_ONE2"
+			if !classRe.MatchString(m.ent.Class) || (excludeRe != nil && (excludeRe.MatchString(m.ent.Name) || excludeRe.MatchString(m.ent.Class+" "+m.ent.Name))) {
+				continue
+			}
+			missing := strings.HasPrefix(m.what, "missing") || strings.HasPrefix(m.what, "extra")
+			if missing && allowMissing {
+				continue
+			}
+			bad = append(bad, fmt.Sprintf("%s: %s %s %q: %s", cd.Client, m.ent.ID, m.ent.Class, m.ent.Name, m.what))
+		}
+	}
+	return bad
+}
+
 func expectDiff(args []string) error {
 	maxD := 0.5
 	classRe := regexp.MustCompile(".")
@@ -295,19 +317,7 @@ func expectDiff(args []string) error {
 	if err != nil {
 		return err
 	}
-	var bad []string
-	for _, cd := range diffs {
-		for _, m := range cd.Mismatches {
-			if !classRe.MatchString(m.ent.Class) || (excludeRe != nil && excludeRe.MatchString(m.ent.Class+" "+m.ent.Name)) {
-				continue
-			}
-			missing := strings.HasPrefix(m.what, "missing") || strings.HasPrefix(m.what, "extra")
-			if missing && allowMissing {
-				continue
-			}
-			bad = append(bad, fmt.Sprintf("%s: %s %s %q: %s", cd.Client, m.ent.ID, m.ent.Class, m.ent.Name, m.what))
-		}
-	}
+	bad := diffFailures(diffs, classRe, excludeRe, allowMissing)
 	if len(bad) > 0 {
 		if len(bad) > 12 {
 			bad = append(bad[:12], fmt.Sprintf("... %d more", len(bad)-12))
