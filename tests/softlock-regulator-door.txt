@@ -6,8 +6,8 @@
 # dead, they respawned at checkpoint 6, outside the same door (found 2026-11-18, survey of chapter 2
 # doors, docs/findings.md: a client walked into the door and stopped at y 702.2, the door at 702.95).
 # Now it is a gate (COOP_GATES, COOP gamerules): the computer works only with more than half of the
-# living players by it, as Synergy's trigger_coop; then the others are brought there and it is the
-# respawn point: the ring's centre, the others brought to points around it.
+# living players in the zone marked on the floor in front of it, as Synergy's trigger_coop; then the
+# others are brought into the zone and its centre is the respawn point.
 # Walking: the server's teleport watch (COOP_TeleWatch) pulls a client back for a few seconds after
 # CoopMovePlayer, so a client waits before Harness:Fwd.
 # Run from the repo root: tools/bin/harness.exe test tests/softlock-regulator-door.txt
@@ -18,9 +18,9 @@ wait client2 players>=3 -t 120s
 # past the map intro
 sleep 30s
 lua server COOP_God=1
-# client2 outside the door / in the ring (1, else its position)
+# client2 outside the door / in the zone (1, else its position)
 lua server function T_C2Out() local p=Harness:Player("client2"):GetPos() if p.y < 702 and p.z > 50 then return 1 end return format("%.1f %.1f %.1f",p.x,p.y,p.z) end
-lua server function T_C2Ring() local p=Harness:Player("client2"):GetPos() local g=COOP_GATES.regulator.ProximityTrigger_ExplosionMain.c if (p.x-g.x)*(p.x-g.x)+(p.y-g.y)*(p.y-g.y) < 1.8*1.8 and abs(p.z-g.z) < 1 then return 1 end return format("%.1f %.1f %.1f",p.x,p.y,p.z) end
+lua server function T_C2Zone() local p=Harness:Player("client2"):GetPos() local g=COOP_GATES.regulator.ProximityTrigger_ExplosionMain if p.x >= g.x1 and p.x <= g.x2 and p.y >= g.y1 and p.y <= g.y2 and abs(p.z-g.z) < 1 then return 1 end return format("%.1f %.1f %.1f",p.x,p.y,p.z) end
 lua server CoopGoto(6)
 sleep 3s
 # client2 waits outside, behind checkpoint 6 (CoopGoto puts the third player 1 m aside, where it
@@ -36,25 +36,25 @@ sleep 4s
 # one of three: nothing happens, the door still works (Closed or Opened: it opens for anybody by it)
 expect server System:GetEntityByName("ProximityTrigger_ExplosionMain").bTriggered => 0
 expect server (System:GetEntityByName("AutomaticDoor7"):GetState() ~= "Inactive") and 1 or 0 => 1
-# client1 walks in from checkpoint 6 through the door and stands in the ring
+# client1 walks in from checkpoint 6 through the door and stands in the zone
 lua server CoopMovePlayer(Harness:Player("client1"), {x=1905.3,y=696.0,z=53.6}, {x=0,y=0,z=180})
 sleep 8s
 expect client1 Harness:Fwd(6000) => ok
 sleep 8s
 expect server (Harness:Player("client1"):GetPos().y > 704) and 1 or Harness:Player("client1"):GetPos().y => 1
-lua server CoopMovePlayer(Harness:Player("client1"), {x=1904.8,y=711.5,z=53.4})
+lua server CoopMovePlayer(Harness:Player("client1"), {x=1908.3,y=717.0,z=54.4})
 sleep 8s
 expect server T_C2Out() => 1
 # the host back at the computer: the fight in the room pushed it off the walkway once (runs/20261118-193214)
 lua server CoopMovePlayer(_localplayer, {x=1910.9,y=715.0,z=54.4})
 sleep 3s
-# two of three: the computer works, client2 (outside) is brought into the room
+# two of three: the computer works, client2 (outside) is brought into the zone
 expect server Harness:Use() => ok
 sleep 4s
 expect server System:GetEntityByName("ProximityTrigger_ExplosionMain").bTriggered => 1
 expect server System:GetEntityByName("AutomaticDoor7"):GetState() => Inactive
 sleep 4s
-expect server T_C2Ring() => 1
+expect server T_C2Zone() => 1
 expect server (_LastCheckPPos.y > 704) and 1 or _LastCheckPPos.y => 1
 expect-no-events
 down
