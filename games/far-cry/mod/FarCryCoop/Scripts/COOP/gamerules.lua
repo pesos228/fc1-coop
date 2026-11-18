@@ -35,19 +35,54 @@ COOP_NextWake = 0
 -- entity:StartAnimation or entity:InsertAnimationPipe: those are wrapped per entity, and the
 -- keyframes of that animation (entity.SoundEvents = AI_ANIM_KEYFRAMES of its KEYFRAME_TABLE,
 -- {anim, frame, number}) run frame/COOP_ANIM_FPS seconds later through the normal keyframe
--- handler. The animation is also sent to the clients ("ANIM"): AI animations are not replicated.
+-- handler. The animation is also sent to the clients ("ANIM" with its layer): AI animations are
+-- not replicated. A client used to play them all on layer 3: a looped one the server played on
+-- another layer (sidle, kneel_idle_loop, sitdown_breath on 0) stayed on 3 over the walk.
 -- A real keyframe (listen-server host watching that AI) cancels the pending fake one.
 -- Animations the engine starts itself (jumps, locomotion) are not covered.
 COOP_ANIM_FPS = 30
 COOP_KeyDue = {} -- {t, id, number}
-function CoopAnimStarted(e, anim)
+-- An AI's own animation system (cnt.AnimationSystemEnabled, CPlayer::m_AnimationSystemEnabled: its
+-- walk animations on layer 0, SDK XPlayer.cpp) is switched off by the poses played on layer 0
+-- (Idle_SitDown, Idle_StandLook, Idle_IndoorSmoke, ...: the walk would replace them) and the layer 3
+-- ones (Idle_Any), and on again by BackToJob. It is not replicated: on a client the copy's walk
+-- replaced a layer 0 pose as soon as its animation name changed (a move, a turn). The server sends
+-- it ("AISYS <id> <0|1> ...", COOP ClientStuff) before the animation that follows the change, once a
+-- second for changes without one, and all the switched off ones to a joining client with the other
+-- resent state (CoopSyncAnimSys).
+COOP_AnimSysSent = {} -- AI id -> flag the clients have (1 when missing: a new copy has it on)
+function CoopSendAnimSys(e)
+	local v = e.cnt and e.cnt.AnimationSystemEnabled;
+	if (v and (COOP_AnimSysSent[e.id] or 1) ~= v) then
+		COOP_AnimSysSent[e.id] = v;
+		Server:BroadcastCommand("AISYS "..e.id.." "..v);
+	end
+end
+function CoopSyncAnimSys(all)
+	local out, k = {}, 0;
+	for i, e in System:GetEntities() do
+		if (e.ai and e.classname ~= "Player" and e.cnt and e.cnt.AnimationSystemEnabled) then
+			local v = e.cnt.AnimationSystemEnabled;
+			if ((COOP_AnimSysSent[e.id] or 1) ~= v or (all and v ~= 1)) then
+				COOP_AnimSysSent[e.id] = v;
+				k = k + 1;
+				out[k] = e.id.." "..v;
+			end
+		end
+	end
+	if (k > 0) then CoopSendPacked("AISYS", out); end
+end
+function CoopAnimStarted(e, anim, layer)
 	if (type(anim) ~= "string" or not e.cnt or e.cnt.health <= 0) then return; end
-	-- behaviours re-insert the same animation while it plays: once per animation length
+	CoopSendAnimSys(e);
+	-- behaviours re-insert the same animation while it plays: once per animation length and layer
+	-- ("NULL" on 4 then on 3 within 0.3 s: the second was lost, and layer 3 kept its job loop)
+	local key = anim..layer;
 	e.COOP_AnimNext = e.COOP_AnimNext or {};
-	if (_time < (e.COOP_AnimNext[anim] or 0) and e.COOP_AnimNext[anim] - _time < 30) then return; end
-	e.COOP_AnimNext[anim] = _time + max(e:GetAnimationLength(anim) or 0, 0.3);
+	if (_time < (e.COOP_AnimNext[key] or 0) and e.COOP_AnimNext[key] - _time < 30) then return; end
+	e.COOP_AnimNext[key] = _time + max(e:GetAnimationLength(anim) or 0, 0.3);
 	-- idle animations of every AI on the map were ~5 reliable messages a second for nothing
-	if (strsub(anim, 1, 4) ~= "idle") then Server:BroadcastCommand("ANIM "..e.id.." "..anim); end
+	if (strsub(anim, 1, 4) ~= "idle") then Server:BroadcastCommand("ANIM "..e.id.." "..anim.." "..layer); end
 	for i, ev in (e.SoundEvents or {}) do
 		if (ev[1] == anim and type(ev[3]) == "number" and ev[3] ~= KEYFRAME_BREATH_SOUND) then
 			tinsert(COOP_KeyDue, {t = _time + ev[2] / COOP_ANIM_FPS, id = e.id, number = ev[3]});
@@ -58,11 +93,11 @@ function CoopWrapAnim(e)
 	e.COOP_AnimWrapped = 1;
 	local start, pipe = e.StartAnimation, e.InsertAnimationPipe;
 	e.StartAnimation = function(self, pos, anim, a, b, c)
-		CoopAnimStarted(self, anim);
+		CoopAnimStarted(self, anim, a or 0);
 		return %start(self, pos, anim, a, b, c);
 	end
 	e.InsertAnimationPipe = function(self, anim, a, b, c, d)
-		CoopAnimStarted(self, anim);
+		CoopAnimStarted(self, anim, a or 4); -- BasicAI:InsertAnimationPipe: layer 4 unless given
 		return %pipe(self, anim, a, b, c, d);
 	end
 end
@@ -1380,6 +1415,7 @@ function GameRules:OnUpdate(DeltaTime)
 	CoopRun("heli guns", function() CoopSyncHeliGuns(COOP_DropResend[1] and _time >= COOP_DropResend[1]) end)
 	CoopRun("heli rotors", function() CoopSyncHeliRotors(COOP_DropResend[1] and _time >= COOP_DropResend[1]) end)
 	CoopRun("sleepers", function() CoopSyncSleepers(COOP_DropResend[1] and _time >= COOP_DropResend[1]) end)
+	CoopRun("ai animation system", function() CoopSyncAnimSys(COOP_DropResend[1] and _time >= COOP_DropResend[1]) end)
 	CoopRun("drops", CoopSyncDrops)
 	CoopRun("join near team", CoopJoinNearTeam)
 	CoopRun("announce connecting", CoopAnnounceConnecting)

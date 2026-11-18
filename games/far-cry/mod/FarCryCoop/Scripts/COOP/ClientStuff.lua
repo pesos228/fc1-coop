@@ -580,11 +580,37 @@ ClientStuff.ServerCommandTable["HROTOR"] = function(String, tk)
 	end
 end
 
--- AI animation started by the server (melee swing, see COOP gamerules CoopUpdateMelee)
+-- an AI's own animation system on or off, as on the server (COOP gamerules CoopSendAnimSys)
+ClientStuff.ServerCommandTable["AISYS"] = function(String, tk)
+	if (Game:IsServer()) then return; end
+	local i = 2;
+	while (tk[i + 1]) do
+		local e = System:GetEntity(tonumber(tk[i]) or 0);
+		local v = tonumber(tk[i + 1]);
+		if (e and e.cnt and v and e.cnt.AnimationSystemEnabled ~= v) then
+			e.cnt.AnimationSystemEnabled = v;
+			CoopMonEvent("C", "animsys "..e:GetName().." "..v);
+		end
+		i = i + 2;
+	end
+end
+
+-- AI animation started by the server (COOP gamerules CoopAnimStarted), on the server's layer. A
+-- listen host played it already: replayed on layer 3 it left looped animations over its own AI's walk.
+-- A copy here has no AI object, and the engine goes back to the last looped animation of layers 0 and
+-- 3 after a one-shot one there only for an entity with one (layer 0 was off on the copy too): the ASI
+-- turns that on for the copy ("idle3", FarCryCoopNet.asi), or a merc's job pose ended with its start
+-- animation (push-ups) or left it in the bind pose (sitting).
 ClientStuff.ServerCommandTable["ANIM"] = function(String, toktable)
 	local e = System:GetEntity(tonumber(toktable[2]) or 0);
-	if (e and toktable[3]) then
-		e:StartAnimation(0, toktable[3], 3, 0.1);
+	if (e and toktable[3] and not Game:IsServer()) then
+		if (not e.COOP_Idle3 and COOP_AsiPid) then
+			e.COOP_Idle3 = 1;
+			appendto("Mods/FarCryCoop/seek_"..COOP_AsiPid..".txt");
+			write("idle3 "..e.id.."\n");
+			writeto();
+		end
+		e:StartAnimation(0, toktable[3], tonumber(toktable[4]) or 3, 0.1);
 		CoopMonEvent("C", "anim "..e:GetName().." "..toktable[3]);
 	end
 end
