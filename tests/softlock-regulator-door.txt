@@ -1,0 +1,43 @@
+# OPEN. Regulator, listen host + 1 client: one player operating the computer
+# (ProximityTrigger_ExplosionMain, use button) locks the other out of the computer room for good.
+# The trigger sends Deactivate to AutomaticDoor7, the room's door: Inactive, the door stays where
+# it is. In single player you are inside, the room blows up and you leave through the vent. In coop
+# the other player, still outside with the door closed behind the first (bCloseTimer, 1.5 s),
+# cannot get in and so not to the vent and the exit; dead, it respawns at checkpoint 6, outside the
+# same door. Found 2026-11-18 (survey of chapter 2 doors, docs/findings.md): the client walked into
+# the door and stopped at y 702.2, the door at 702.95.
+# Walking: the server's teleport watch (COOP_TeleWatch) pulls a client back for a few seconds after
+# CoopMovePlayer, so the client waits before Harness:Fwd.
+# Run from the repo root: tools/bin/harness.exe test tests/softlock-regulator-door.txt
+up -mode host -map regulator -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("regulator")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+# past the map intro
+sleep 30s
+lua server COOP_God=1
+lua server CoopGoto(6)
+sleep 3s
+# control: before the computer the client walks north from checkpoint 6 through the door
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=1905.3,y=696.0,z=53.6}, {x=0,y=0,z=180})
+sleep 8s
+expect client1 Harness:Fwd(6000) => ok
+sleep 8s
+expect server (Harness:RemotePlayer():GetPos().y > 704) and 1 or Harness:RemotePlayer():GetPos().y => 1
+# the host goes into the room and operates the computer once the door has closed behind it
+lua server CoopGoto(6)
+sleep 3s
+lua server CoopMovePlayer(_localplayer, {x=1910.9,y=715.0,z=54.4})
+lua server COOP_D7=nil local old=GameRules.OnUpdate GameRules.OnUpdate=function(self,a,b) if not COOP_D7 and System:GetEntityByName("AutomaticDoor7"):GetState()=="Closed" then COOP_D7=1 System:LogAlways("PROBE_door7_closed") end return %old(self,a,b) end
+expect-log server PROBE_door7_closed 60s
+sleep 1s
+expect server Harness:Use() => ok
+sleep 4s
+expect server System:GetEntityByName("AutomaticDoor7"):GetState() => Inactive
+# the client, outside, walks to the door: it must still get in
+lua server CoopMovePlayer(Harness:RemotePlayer(), {x=1905.3,y=696.0,z=53.6}, {x=0,y=0,z=180})
+sleep 8s
+expect client1 Harness:Fwd(6000) => ok
+sleep 8s
+expect server (Harness:RemotePlayer():GetPos().y > 704) and 1 or Harness:RemotePlayer():GetPos().y => 1
+expect-no-events
+down
