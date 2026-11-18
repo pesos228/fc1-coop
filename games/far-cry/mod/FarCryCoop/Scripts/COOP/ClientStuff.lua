@@ -148,6 +148,38 @@ function ClientStuff:OnUpdate()
 	if (not Game:IsServer() and (_time > nxt or _time + 2 < nxt)) then -- the host does it in gamerules
 		COOP_NextBoatSeats = _time + 1; -- second test: _time restarts with every map load
 		CoopBoatSeats();
+		call(CoopWrapClientReloads, {}, "x", function(msg)
+			if (not COOP_ReloadErrorLogged) then COOP_ReloadErrorLogged = 1; System:LogAlways("coop: reload wrap error: "..tostring(msg)); end
+		end);
+	end
+end
+
+-- CPlayer::UpdateWeapon reloads by itself when the clip is empty, unless the player is under water
+-- (m_stats.underwater, eye position below the water level) or swims (SDK XPlayer.cpp). An AI's eye
+-- position is its feet (no camera offset): on the server an AI never reloads with its feet in water.
+-- Its copy here has a player's eye height and counts as under water only 1.5-1.9 m deeper, and the
+-- clip reaches it as "empty or not" (CPlayer::Write): it reloaded every frame, BasicWeapon.Client:Reload
+-- restarting the reload animation on layer 4 up to 170 times a second (upper body stuck on its first
+-- frame). The server's rule is kept here: no reload animation for a copy whose feet are under water
+-- (Game:GetWaterHeight(pos): sea and water volumes, as the engine's level for the entity).
+-- CWeaponClass caches Client:Reload when the class loads, so the copy's StartAnimation is wrapped.
+-- tests/ai-water-reload.txt
+function CoopWrapClientReload(e)
+	e.COOP_ReloadWrapped = 1;
+	e.COOP_OrigStartAnim = e.StartAnimation;
+	e.StartAnimation = function(...)
+		local self, anim = arg[1], arg[3];
+		if (type(anim) == "string" and arg[4] == 4 and strfind(anim, "reload", 1, 1)) then
+			local p = self:GetPos();
+			local z = p.z; -- GetPos returns a shared table
+			if (z < Game:GetWaterHeight(p)) then return; end
+		end
+		return call(self.COOP_OrigStartAnim, arg);
+	end
+end
+function CoopWrapClientReloads()
+	for i, e in System:GetEntities() do
+		if (e.ai and e.cnt and not e.COOP_ReloadWrapped) then CoopWrapClientReload(e); end
 	end
 end
 
