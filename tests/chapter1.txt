@@ -2,9 +2,9 @@
 # Research, a listen host and one client. On every map: both are in with the same entities, every
 # campaign checkpoint (CoopGoto) keeps them together, the client dies and respawns, the client sets
 # off the mission end, the exit zone opens and the host walking in changes the level for both. The
-# client gets weapons on Training; Fort is saved and loaded once on the way. A respawn gives the
-# mission's starting equipment (not the player's own), so what the client carries is not checked
-# after the first death (open question, docs/changelog.md 2026-11-12).
+# client gets weapons on Training; Fort is saved and loaded once on the way. What a player carries
+# after a respawn (the last save point's equipment) is checked by tests/respawn-loadout.txt, not
+# here.
 # The players are made immune here (a GameRules.OnDamage wrapper of this test, not COOP_God: an
 # explosion over 255 kills through that, docs/findings.md 2026-11-12), the checkpoints sit in fights.
 # While the client is killed the host stays immune (COOP_TestImmune=2): a boat's rockets once killed
