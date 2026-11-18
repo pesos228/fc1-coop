@@ -39,6 +39,11 @@ lua client1 RelN=0
 sleep 3s
 expect server RelN => 0
 expect client1 RelN => 0
+# A reload the server plays itself ("ANIM") still plays here: an AI walking out of the water reloads
+# on the server as soon as its feet are out, while its copy here, a little behind, still has its feet
+# in (fresh-context review, 2026-11-18). The server never sends one for an AI with its feet in water.
+lua client1 RelN=0 ClientStuff.ServerCommandTable["ANIM"]("", {"ANIM", tostring(System:GetEntityByName("1stguy").id), "sreload", "4"})
+expect client1 RelN => 1
 cmd server ai_noupdate 0
 expect-no-events
 down
