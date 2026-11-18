@@ -513,20 +513,30 @@ ClientStuff.ServerCommandTable["TELE"] = function(String, tk)
 	CoopMonEvent("C", "tele "..strsub(String, 6));
 end
 
--- The zone of a gate (COOP gamerules COOP_GATES): "GATE <trigger id> <x> <y> <z> <r>" every 2 s
--- while it waits, "GATE <id> off" once it fired. A ring of sparks on the floor shows where to
--- stand; it goes after 5 s without news (a lost "off", a new map). The host draws it too.
+-- The zone of a gate (COOP gamerules COOP_GATES): "GATE <trigger id> <x1> <y1> <x2> <y2> <z>"
+-- every 2 s while it waits, "GATE <id> off" once it fired. Its outline in sparks on the floor shows
+-- where to stand; it goes after 5 s without news (a lost "off", a new map). The host draws it too.
 COOP_GateMarks = {}
 ClientStuff.ServerCommandTable["GATE"] = function(String, tk)
 	local id = tonumber(tk[2]);
 	if (not id) then return; end
 	if (tk[3] == "off") then COOP_GateMarks[id] = nil; return; end
-	local x, y, z, r = tonumber(tk[3]), tonumber(tk[4]), tonumber(tk[5]), tonumber(tk[6]);
-	if (not (x and y and z and r)) then return; end
-	if (not COOP_GateMarks[id]) then CoopMonEvent("C", format("gate %d ring at %.1f,%.1f,%.1f r %.1f", id, x, y, z, r)); end
-	COOP_GateMarks[id] = {x = x, y = y, z = z, r = r, t = _time + 5};
+	local x1, y1, x2, y2, z = tonumber(tk[3]), tonumber(tk[4]), tonumber(tk[5]), tonumber(tk[6]), tonumber(tk[7]);
+	if (not (x1 and y1 and x2 and y2 and z)) then return; end
+	if (not COOP_GateMarks[id]) then CoopMonEvent("C", format("gate %d zone %.1f,%.1f - %.1f,%.1f z %.1f", id, x1, y1, x2, y2, z)); end
+	-- the outline, a spark every 0.45 m or so
+	local corners = {{x1, y1}, {x2, y1}, {x2, y2}, {x1, y2}, {x1, y1}};
+	local pts, k = {}, 0;
+	for c = 1, 4 do
+		local ax, ay, bx, by = corners[c][1], corners[c][2], corners[c + 1][1], corners[c + 1][2];
+		local n = max(1, floor(sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay)) / 0.45 + 0.5));
+		for i = 0, n - 1 do
+			k = k + 1;
+			pts[k] = {x = ax + (bx - ax) * i / n, y = ay + (by - ay) * i / n, z = z + 0.05};
+		end
+	end
+	COOP_GateMarks[id] = {x = (x1 + x2) / 2, y = (y1 + y2) / 2, pts = pts, n = k, t = _time + 5};
 end
-COOP_GATE_POINTS = 28
 function CoopDrawGates()
 	if (not next(COOP_GateMarks)) then return; end
 	local at = COOP_GateDrawAt or 0;
@@ -542,9 +552,8 @@ function CoopDrawGates()
 		if (g.t < _time or g.t > _time + 6) then -- old news, or from before a map load (_time restarts)
 			COOP_GateMarks[id] = nil;
 		elseif (not me or (me.x - g.x) * (me.x - g.x) + (me.y - g.y) * (me.y - g.y) < 60 * 60) then
-			for k = 1, COOP_GATE_POINTS do
-				local a = k * 6.2832 / COOP_GATE_POINTS; -- radians (Lua sin/cos here)
-				Particle:CreateParticle({x = g.x + g.r * cos(a), y = g.y + g.r * sin(a), z = g.z + 0.05}, {x = 0, y = 0, z = 1}, COOP_GateSpark);
+			for i = 1, g.n do
+				Particle:CreateParticle(g.pts[i], {x = 0, y = 0, z = 1}, COOP_GateSpark);
 			end
 		end
 	end

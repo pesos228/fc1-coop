@@ -447,29 +447,30 @@ end
 -- Gates: use triggers whose event shuts the others out for good (2026-11-18, docs/findings.md:
 -- the Regulator computer deactivates its room's door, AutomaticDoor7, behind the one at it). As
 -- Synergy's trigger_coop: a press works only with more than half of the living players in the
--- gate's zone, a ring on the floor every player sees (GATE, COOP ClientStuff); until then the one
--- pressing is told how many are there. When it fires, the others are brought to the presser and
--- that is the respawn point. Per map (COOP_Map), by trigger name: c = the ring's centre on the
--- floor, r = its radius; a player counts within r + 1.5 m of the centre and 2 m up or down, or
--- at the trigger itself (the one pressing; the ring is on open floor, the button may be on a
--- walkway beside it).
--- Regulator: the computer is on the walkway east of the room; the ring on the lower floor
--- inside the door (floor heights probed 2026-11-18: z 53.1 over x 1903-1906, y 706-716).
+-- gate's zone, a rectangle on the floor every player sees outlined in sparks (GATE, COOP
+-- ClientStuff); until then the one pressing is told how many are there. When it fires, the others
+-- are brought into the zone (spots 1 m apart: players do not pass through each other) and its
+-- centre is the respawn point. Per map (COOP_Map), by trigger name: x1..x2, y1..y2 = the zone
+-- along the world axes, z = its floor; a player counts within 1 m of it and 2 m up or down, or at
+-- the trigger itself (the one pressing).
+-- Regulator: the zone is the raised floor in front of the computer, between the railing and the
+-- wall, from the console to the vent door (6.3 x 3.3 m, 18 spots; seen on screenshots 2026-11-18,
+-- runs/20261118-204248; floor z 54.08 probed by dropping a player over x 1905.5-1909, y 715-718).
 COOP_GATES = {
-	regulator = {ProximityTrigger_ExplosionMain = {c = {x = 1904.8, y = 711.5, z = 53.1}, r = 1.8}},
+	regulator = {ProximityTrigger_ExplosionMain = {x1 = 1904.0, y1 = 714.8, x2 = 1910.3, y2 = 718.1, z = 54.1}},
 }
 COOP_GateList, COOP_GateN = {}, 0 -- this file runs on every map load
 function CoopGateOf(e)
 	local m = COOP_GATES[strlower(tostring(COOP_Map))];
 	return m and m[e:GetName()];
 end
-function CoopGateIn(e, P)
-	if (CoopUseNear(e, P, 0.5)) then return 1; end
-	local g = e.COOP_Gate;
+-- is P within m metres of the zone g, dz up or down?
+function CoopGateBox(g, P, m, dz)
 	local q = P:GetPos();
-	local dx, dy, dz = q.x - g.c.x, q.y - g.c.y, q.z - g.c.z;
-	local r = g.r + 1.5;
-	return dx * dx + dy * dy <= r * r and abs(dz) <= 2;
+	return q.x >= g.x1 - m and q.x <= g.x2 + m and q.y >= g.y1 - m and q.y <= g.y2 + m and abs(q.z - g.z) <= dz;
+end
+function CoopGateIn(e, P)
+	return CoopUseNear(e, P, 0.5) or CoopGateBox(e.COOP_Gate, P, 1, 2);
 end
 -- living players, and those of them in the zone
 function CoopGateCount(e)
@@ -517,15 +518,24 @@ end
 -- Is P in the ring itself or at the button? (The count takes 1.5 m more, which may reach
 -- through a wall: such a player is brought in all the same.)
 function CoopGateInside(e, P)
-	if (CoopUseNear(e, P, 0.5)) then return 1; end
-	local g = e.COOP_Gate;
-	local q = P:GetPos();
-	local dx, dy, dz = q.x - g.c.x, q.y - g.c.y, q.z - g.c.z;
-	return dx * dx + dy * dy <= g.r * g.r and abs(dz) <= 1;
+	return CoopUseNear(e, P, 0.5) or CoopGateBox(e.COOP_Gate, P, 0, 1);
 end
--- Fired: the ring's centre is the respawn point, the living players not in the ring or at the
--- button are brought to points around it (the ring is measured open floor; one spot for all
--- stacked them up).
+-- spots 1 m apart inside the zone, 0.5 m from its edges, the middle first
+function CoopGateSpots(g)
+	local cx, cy = (g.x1 + g.x2) / 2, (g.y1 + g.y2) / 2;
+	local nx, ny = floor(max(g.x2 - g.x1 - 1, 0)) + 1, floor(max(g.y2 - g.y1 - 1, 0)) + 1;
+	local list, k = {}, 0;
+	for j = 0, ny - 1 do
+		for i = 0, nx - 1 do
+			k = k + 1;
+			list[k] = {x = cx + i - (nx - 1) / 2, y = cy + j - (ny - 1) / 2, z = g.z + 0.3};
+		end
+	end
+	sort(list, function(a, b) return abs(a.y - %cy) + abs(a.x - %cx) < abs(b.y - %cy) + abs(b.x - %cx); end);
+	return list, k;
+end
+-- Fired: the zone's centre is the respawn point, the living players not in it or at the button
+-- are brought to spots in it (one spot for all stacked them up).
 function CoopGateFired(e)
 	e.COOP_GateDone, e.COOP_GateWait = 1, nil;
 	Server:BroadcastCommand("GATE "..e.id.." off");
@@ -534,17 +544,17 @@ function CoopGateFired(e)
 	if (not (L and L.type == "Player" and not L.ai)) then L = nil; end
 	local ang = {x = 0, y = 0, z = 0};
 	if (L) then local t = L:GetAngles(); ang = {x = 0, y = 0, z = t.z}; end -- shared table: copy
-	_LastCheckPPos, _LastCheckPAngles = {x = g.c.x, y = g.c.y, z = g.c.z + 0.3}, ang;
+	_LastCheckPPos, _LastCheckPAngles = {x = (g.x1 + g.x2) / 2, y = (g.y1 + g.y2) / 2, z = g.z + 0.3}, ang;
 	local list, k = {}, 0;
 	for i, P in CoopPlayers() do
 		if (P ~= L and P.cnt and P.cnt.health > 0 and not CoopGateInside(e, P)) then k = k + 1; list[k] = P; end
 	end
-	local step = 6.2832 / max(k, 6); -- radians
+	local spots, n = CoopGateSpots(g);
 	for i = 1, k do
-		local a = i * step;
-		CoopMovePlayer(list[i], {x = g.c.x + 0.6 * g.r * cos(a), y = g.c.y + 0.6 * g.r * sin(a), z = g.c.z + 0.3}, ang);
+		CoopMovePlayer(list[i], spots[mod(i - 1, n) + 1], ang);
 	end
-	CoopMonEvent("S", format("gate %s fired by %s, brought %d, respawn at %.1f,%.1f,%.1f", e:GetName(), L and L:GetName() or "-", k, g.c.x, g.c.y, g.c.z));
+	local c = _LastCheckPPos;
+	CoopMonEvent("S", format("gate %s fired by %s, brought %d, respawn at %.1f,%.1f,%.1f", e:GetName(), L and L:GetName() or "-", k, c.x, c.y, c.z));
 end
 -- every 2 s: the ring of each gate still waiting, to every player (a joining one gets it too)
 function CoopGateTick()
@@ -554,7 +564,7 @@ function CoopGateTick()
 		local e = COOP_GateList[i];
 		local g = e.COOP_Gate;
 		if (System:GetEntity(e.id) == e and not CoopGateSpent(e) and e:GetState() ~= "Inactive") then
-			Server:BroadcastCommand(format("GATE %d %.2f %.2f %.2f %.2f", e.id, g.c.x, g.c.y, g.c.z, g.r));
+			Server:BroadcastCommand(format("GATE %d %.2f %.2f %.2f %.2f %.2f", e.id, g.x1, g.y1, g.x2, g.y2, g.z));
 		end
 	end
 end
