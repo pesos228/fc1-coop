@@ -966,11 +966,41 @@ static void pressFwd(BYTE *game)
 	if (client)
 		((void(__fastcall *)(void *, void *, float, int))CG(0x3307f3e1))(client, 0, 1.0f, 0);
 }
+// "idle3 <entity id>": an AI's copy on a client goes back to the last looped animation of layers 0
+// and 3 when a one-shot one there ends, as the AI itself does. CPlayer::Init turns that on for layer
+// 3 only when the entity has an AI object (SDK XPlayer.cpp: EnableLastIdleAnimationRestart(3,true)
+// under m_bIsAI; CryGame 0x330a37a1: m_bIsAI at +0x3bc), and a copy on a client has none: a merc's
+// job pose (push-ups: looped pose, then the start animation on the same layer) ended with the
+// start animation and the merc stood. Layer 0 (sitting: sitdown_breath, then sitdown) was on for
+// the AI and off for its copy, which then stood in the bind pose (its walk switched off, COOP
+// gamerules CoopSendAnimSys). COOP ClientStuff "ANIM" asks once per AI entity. From that
+// code: IEntity +0x228 GetCharInterface, IEntityCharacter +0x10 GetCharacter(0),
+// ICryCharInstance +0xb0 EnableLastIdleAnimationRestart(layer, bool); CXClient +0x4c IXSystem,
+// +0x58 GetEntity.
+static void idle3(BYTE *game, DWORD id)
+{
+	void *client = game ? *(void **)(game + 0x34) : 0, *sys, *ent, *ci, *ch;
+	sys = client ? *(void **)((BYTE *)client + 0x4c) : 0;
+	ent = sys ? ((void *(__fastcall *)(void *, void *, int))VFN(sys, 0x58))(sys, 0, (WORD)id) : 0;
+	ci = ent ? ((void *(__fastcall *)(void *, void *))VFN(ent, 0x228))(ent, 0) : 0;
+	ch = ci ? ((void *(__fastcall *)(void *, void *, int))VFN(ci, 0x10))(ci, 0, 0) : 0;
+	if (ch) {
+		((void(__fastcall *)(void *, void *, unsigned, BYTE))VFN(ch, 0xb0))(ch, 0, 0, 1);
+		((void(__fastcall *)(void *, void *, unsigned, BYTE))VFN(ch, 0xb0))(ch, 0, 3, 1);
+	}
+	logf("idle3: %u %s", id, ch ? "on" : "no character");
+}
 static void seekLine(BYTE *game, char *s)
 {
 	void *sys = getISystem(), *mov, *seq;
 	DWORD ms = 0, flags;
 	float t, was;
+	if (s[0] == 'i' && s[1] == 'd' && s[2] == 'l' && s[3] == 'e' && s[4] == '3' && s[5] == ' ') {
+		for (s += 6; *s >= '0' && *s <= '9'; s++)
+			ms = ms * 10 + (*s - '0');
+		idle3(game, ms);
+		return;
+	}
 	if (s[0] == 'f' && s[1] == 'w' && s[2] == 'd' && s[3] == ' ') {
 		for (s += 4; *s >= '0' && *s <= '9'; s++)
 			ms = ms * 10 + (*s - '0');
