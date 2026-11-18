@@ -12,8 +12,8 @@ up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoop
 wait server players>=2 -t 60s
 wait client1 players>=2 -t 120s
 lua server COOP_God=1
-lua server COOP_PA=nil COOP_PS=nil COOP_PG=System:GetEntityByName("Merc_Cover.MercCover_M4_0") COOP_PH=System:GetEntityByName("Humvee2") local old=ClientStuff.OnUpdate ClientStuff.OnUpdate=function(self) local m0=COOP_PG:GetPos() local mx,my,mz=m0.x,m0.y,m0.z local h=COOP_PH:GetPos() local dd=sqrt((mx-h.x)*(mx-h.x)+(my-h.y)*(my-h.y)) if not COOP_PA and dd<2.05 then COOP_PA=_time end if COOP_PA and not COOP_PS and mz-h.z>0.9 then COOP_PS=_time end return %old(self) end
-lua client1 COOP_PA=nil COOP_PS=nil COOP_PG=System:GetEntityByName("Merc_Cover.MercCover_M4_0") COOP_PH=System:GetEntityByName("Humvee2") local old=ClientStuff.OnUpdate ClientStuff.OnUpdate=function(self) local m0=COOP_PG:GetPos() local mx,my,mz=m0.x,m0.y,m0.z local h=COOP_PH:GetPos() local dd=sqrt((mx-h.x)*(mx-h.x)+(my-h.y)*(my-h.y)) if not COOP_PA and dd<2.05 then COOP_PA=_time end if COOP_PA and not COOP_PS and mz-h.z>0.9 then COOP_PS=_time end return %old(self) end
+lua server COOP_PA=nil COOP_PS=nil COOP_PG=System:GetEntityByName("Merc_Cover.MercCover_M4_0") COOP_PH=System:GetEntityByName("Humvee2") local old=ClientStuff.OnUpdate ClientStuff.OnUpdate=function(self) local m0=COOP_PG:GetPos() local mx,my,mz=m0.x,m0.y,m0.z local h=COOP_PH:GetPos() local dd=sqrt((mx-h.x)*(mx-h.x)+(my-h.y)*(my-h.y)) if not COOP_PA and dd<2.05 then COOP_PA=_time end if COOP_PA and not COOP_PS and mz-h.z>0.9 and mz-h.z<5 and dd<3 then COOP_PS=_time end return %old(self) end
+lua client1 COOP_PA=nil COOP_PS=nil COOP_PG=System:GetEntityByName("Merc_Cover.MercCover_M4_0") COOP_PH=System:GetEntityByName("Humvee2") local old=ClientStuff.OnUpdate ClientStuff.OnUpdate=function(self) local m0=COOP_PG:GetPos() local mx,my,mz=m0.x,m0.y,m0.z local h=COOP_PH:GetPos() local dd=sqrt((mx-h.x)*(mx-h.x)+(my-h.y)*(my-h.y)) if not COOP_PA and dd<2.05 then COOP_PA=_time end if COOP_PA and not COOP_PS and mz-h.z>0.9 and mz-h.z<5 and dd<3 then COOP_PS=_time end return %old(self) end
 lua client1 COOP_PIN=nil local oa=ClientStuff.ServerCommandTable["ANIM"] ClientStuff.ServerCommandTable["ANIM"]=function(String,tk) if not COOP_PIN and tonumber(tk[2])==COOP_PG.id and strsub(tostring(tk[3]),-3)=="_in" then COOP_PIN=_time end return %oa(String,tk) end
 sleep 3s
 lua server CoopGoto(1)
@@ -34,6 +34,8 @@ expect client1 (COOP_PA and COOP_PS) and 1 or 0 => 1
 # The server binds it with the entering animation ("ANIM ... humvee_gunner_in" or _driver_in: the seat
 # goes to whoever comes first) and seats it in
 # VC:UserEntered when that ends (3.7 s later in one run); the client seated it at the bind (0 s).
+# In the frame of the bind the client's GetPos of the merc can be garbage (0,0,1.5e13 on
+# 2026-11-18, runs/20261118-141419): "seated" counts only a position by the vehicle.
 expect client1 COOP_PIN and 1 or 0 => 1
 expect client1 (COOP_PS-COOP_PIN >= 1) and 1 or 0 => 1
 expect-no-events
