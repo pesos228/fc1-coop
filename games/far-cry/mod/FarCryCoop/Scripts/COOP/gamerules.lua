@@ -412,6 +412,7 @@ function CoopWrapUseStates(e)
 		local presser, n, inside = nil, 0, nil;
 		local key = self.bLocked == 1 and self.Properties.iNeededKey;
 		local text = self.Properties.TextInstruction or "";
+		if (self.COOP_GateWait and self.COOP_GateWait.t > _time) then text = self.COOP_GateWait.text; end
 		local hint = (self.COOP_HintAt or 0) <= _time;
 		COOP_UseOn[self.id], self.COOP_UseAt = self, _time;
 		for i, P in CoopPlayers() do
@@ -436,9 +437,124 @@ function CoopWrapUseStates(e)
 			COOP_UseOn[self.id] = nil;
 			self:GotoState("Empty");
 		elseif (presser) then
+			if (self.COOP_Gate and not CoopGateOpen(self)) then return end
 			self.Who = presser; -- the stock update goes on with its use key and keycards
 			if (not inside and self.Properties.bTriggerOnce ~= 1) then self.COOP_EdgePress = 1; end
 			return %update(self);
+		end
+	end
+end
+-- Gates: use triggers whose event shuts the others out for good (2026-11-18, docs/findings.md:
+-- the Regulator computer deactivates its room's door, AutomaticDoor7, behind the one at it). As
+-- Synergy's trigger_coop: a press works only with more than half of the living players in the
+-- gate's zone, a ring on the floor every player sees (GATE, COOP ClientStuff); until then the one
+-- pressing is told how many are there. When it fires, the others are brought to the presser and
+-- that is the respawn point. Per map (COOP_Map), by trigger name: c = the ring's centre on the
+-- floor, r = its radius; a player counts within r + 1.5 m of the centre and 2 m up or down, or
+-- at the trigger itself (the one pressing; the ring is on open floor, the button may be on a
+-- walkway beside it).
+-- Regulator: the computer is on the walkway east of the room; the ring on the lower floor
+-- inside the door (floor heights probed 2026-11-18: z 53.1 over x 1903-1906, y 706-716).
+COOP_GATES = {
+	regulator = {ProximityTrigger_ExplosionMain = {c = {x = 1904.8, y = 711.5, z = 53.1}, r = 1.8}},
+}
+COOP_GateList, COOP_GateN = {}, 0 -- this file runs on every map load
+function CoopGateOf(e)
+	local m = COOP_GATES[strlower(tostring(COOP_Map))];
+	return m and m[e:GetName()];
+end
+function CoopGateIn(e, P)
+	if (CoopUseNear(e, P, 0.5)) then return 1; end
+	local g = e.COOP_Gate;
+	local q = P:GetPos();
+	local dx, dy, dz = q.x - g.c.x, q.y - g.c.y, q.z - g.c.z;
+	local r = g.r + 1.5;
+	return dx * dx + dy * dy <= r * r and abs(dz) <= 2;
+end
+-- living players, and those of them in the zone
+function CoopGateCount(e)
+	local alive, near = 0, 0;
+	for i, P in CoopPlayers() do
+		if (P.cnt and P.cnt.health > 0) then
+			alive = alive + 1;
+			if (CoopGateIn(e, P)) then near = near + 1; end
+		end
+	end
+	return alive, near;
+end
+-- a gate that already fired (a coop save loaded after it brings back bTriggered of a one-shot)
+function CoopGateSpent(e)
+	return e.COOP_GateDone or (e.Properties.bTriggerOnce == 1 and e.bTriggered == 1);
+end
+function CoopGateOpen(e)
+	if (CoopGateSpent(e)) then return 1; end -- the stock trigger decides (a one-shot does nothing)
+	local alive, near = CoopGateCount(e);
+	local need = floor(alive / 2) + 1;
+	if (near >= need) then return 1; end
+	if (not e.COOP_GateWait or e.COOP_GateWait.t <= _time) then
+		CoopMonEvent("S", format("gate %s waits %d/%d", e:GetName(), near, need));
+	end
+	local text = format("Waiting for players: %d/%d", near, need);
+	if (not e.COOP_GateWait or e.COOP_GateWait.t <= _time or e.COOP_GateWait.text ~= text) then
+		e.COOP_HintAt = 0; -- the clients get the new text now
+	end
+	e.COOP_GateWait = {t = _time + 3, text = text};
+end
+function CoopWrapGate(e, g)
+	e.COOP_Gate = g;
+	COOP_GateN = COOP_GateN + 1;
+	COOP_GateList[COOP_GateN] = e; -- not tinsert: its field "n" would show up in the loop
+	local old = e.Event_Enter;
+	e.Event_Enter = function(self, sender)
+		local was, spent = self.Entered, CoopGateSpent(self);
+		local r = %old(self, sender);
+		if (was == 0 and self.Entered == 1 and not spent) then
+			call(CoopGateFired, {self}, "x", function(msg) System:LogAlways("coop: gate error: "..tostring(msg)); end);
+		end
+		return r;
+	end
+end
+-- Is P in the ring itself or at the button? (The count takes 1.5 m more, which may reach
+-- through a wall: such a player is brought in all the same.)
+function CoopGateInside(e, P)
+	if (CoopUseNear(e, P, 0.5)) then return 1; end
+	local g = e.COOP_Gate;
+	local q = P:GetPos();
+	local dx, dy, dz = q.x - g.c.x, q.y - g.c.y, q.z - g.c.z;
+	return dx * dx + dy * dy <= g.r * g.r and abs(dz) <= 1;
+end
+-- Fired: the ring's centre is the respawn point, the living players not in the ring or at the
+-- button are brought to points around it (the ring is measured open floor; one spot for all
+-- stacked them up).
+function CoopGateFired(e)
+	e.COOP_GateDone, e.COOP_GateWait = 1, nil;
+	Server:BroadcastCommand("GATE "..e.id.." off");
+	local g = e.COOP_Gate;
+	local L = e.Who;
+	if (not (L and L.type == "Player" and not L.ai)) then L = nil; end
+	local ang = {x = 0, y = 0, z = 0};
+	if (L) then local t = L:GetAngles(); ang = {x = 0, y = 0, z = t.z}; end -- shared table: copy
+	_LastCheckPPos, _LastCheckPAngles = {x = g.c.x, y = g.c.y, z = g.c.z + 0.3}, ang;
+	local list, k = {}, 0;
+	for i, P in CoopPlayers() do
+		if (P ~= L and P.cnt and P.cnt.health > 0 and not CoopGateInside(e, P)) then k = k + 1; list[k] = P; end
+	end
+	local step = 6.2832 / max(k, 6); -- radians
+	for i = 1, k do
+		local a = i * step;
+		CoopMovePlayer(list[i], {x = g.c.x + 0.6 * g.r * cos(a), y = g.c.y + 0.6 * g.r * sin(a), z = g.c.z + 0.3}, ang);
+	end
+	CoopMonEvent("S", format("gate %s fired by %s, brought %d, respawn at %.1f,%.1f,%.1f", e:GetName(), L and L:GetName() or "-", k, g.c.x, g.c.y, g.c.z));
+end
+-- every 2 s: the ring of each gate still waiting, to every player (a joining one gets it too)
+function CoopGateTick()
+	if (COOP_GateAt and COOP_GateAt > _time and COOP_GateAt - _time <= 2) then return; end -- _time restarts with a map load
+	COOP_GateAt = _time + 2;
+	for i = 1, COOP_GateN do
+		local e = COOP_GateList[i];
+		local g = e.COOP_Gate;
+		if (System:GetEntity(e.id) == e and not CoopGateSpent(e) and e:GetState() ~= "Inactive") then
+			Server:BroadcastCommand(format("GATE %d %.2f %.2f %.2f %.2f", e.id, g.c.x, g.c.y, g.c.z, g.r));
 		end
 	end
 end
@@ -1420,6 +1536,7 @@ function GameRules:OnUpdate(DeltaTime)
 	CoopRun("join near team", CoopJoinNearTeam)
 	CoopRun("announce connecting", CoopAnnounceConnecting)
 	CoopRun("mission items", CoopKeepItems)
+	CoopRun("gates", CoopGateTick)
 	call(CoopApplyLoadouts, {}, "x", function(msg) System:LogAlways("coop: loadout error: "..tostring(msg)); end)
 	call(CoopApplyPrefs, {}, "x", function(msg) System:LogAlways("coop: prefs error: "..tostring(msg)); end)
 	call(CoopUpdateBots, {}, "x", function(msg) System:LogAlways("coop: bot error: "..tostring(msg)); end)
@@ -1438,6 +1555,7 @@ function GameRules:OnUpdate(DeltaTime)
 		if e.IsValidSource and e.Properties and e.Properties.bOnlyMyPlayer and not e.COOP_ProxWrapped then CoopWrapProximity(e) end
 		if e.OccupiedUse and e.OccupiedUse.OnUpdate and e.Empty and e.Occupied and not e.OccupiedUse.COOP_UseWrapped then CoopWrapUseStates(e) end
 		if e.Occupied and e.Occupied.COOP_LeaveWrapped then CoopSweepOccupied(e) end
+		if e.OccupiedUse and not e.COOP_GateChecked then e.COOP_GateChecked = 1 local g = CoopGateOf(e) if g then CoopWrapGate(e, g) end end
 		if e.Behaviour and e.cnt and e.Properties and e.Properties.species and not e.COOP_Awake
 			and e.Enemy_Hidden ~= 1 and e.Properties.bSleepOnSpawn ~= 1 then
 			local t = e:GetPos()

@@ -132,6 +132,7 @@ function ClientStuff:OnUpdate()
 	-- a use-trigger hint the server sends once a second while we stand in it (MHUD label)
 	if (COOP_LabelUntil and _time < COOP_LabelUntil and _time + 3 > COOP_LabelUntil and Hud) then Hud.label = COOP_Label; end
 	CoopMonitor("C");
+	call(CoopDrawGates, {}, "x", function(msg) if (not COOP_GateErr) then COOP_GateErr = 1; System:LogAlways("coop: gate ring error: "..tostring(msg)); end end);
 	CoopShowSpawnWeapon();
 	CoopApplyMyItems();
 	CoopHookHud();
@@ -510,6 +511,43 @@ ClientStuff.ServerCommandTable["TELE"] = function(String, tk)
 	_localplayer:SetPos({x = tonumber(tk[2]) or 0, y = tonumber(tk[3]) or 0, z = tonumber(tk[4]) or 0});
 	if (tk[7]) then _localplayer:SetAngles({x = tonumber(tk[5]) or 0, y = tonumber(tk[6]) or 0, z = tonumber(tk[7]) or 0}); end
 	CoopMonEvent("C", "tele "..strsub(String, 6));
+end
+
+-- The zone of a gate (COOP gamerules COOP_GATES): "GATE <trigger id> <x> <y> <z> <r>" every 2 s
+-- while it waits, "GATE <id> off" once it fired. A ring of sparks on the floor shows where to
+-- stand; it goes after 5 s without news (a lost "off", a new map). The host draws it too.
+COOP_GateMarks = {}
+ClientStuff.ServerCommandTable["GATE"] = function(String, tk)
+	local id = tonumber(tk[2]);
+	if (not id) then return; end
+	if (tk[3] == "off") then COOP_GateMarks[id] = nil; return; end
+	local x, y, z, r = tonumber(tk[3]), tonumber(tk[4]), tonumber(tk[5]), tonumber(tk[6]);
+	if (not (x and y and z and r)) then return; end
+	if (not COOP_GateMarks[id]) then CoopMonEvent("C", format("gate %d ring at %.1f,%.1f,%.1f r %.1f", id, x, y, z, r)); end
+	COOP_GateMarks[id] = {x = x, y = y, z = z, r = r, t = _time + 5};
+end
+COOP_GATE_POINTS = 28
+function CoopDrawGates()
+	if (not next(COOP_GateMarks)) then return; end
+	local at = COOP_GateDrawAt or 0;
+	if (at > _time and at - _time <= 0.2) then return; end -- _time restarts with a map load
+	COOP_GateDrawAt = _time + 0.15;
+	if (not COOP_GateSpark) then
+		COOP_GateSpark = {focus = 0, start_color = {0.35, 1, 0.45}, end_color = {0.1, 0.6, 0.2}, speed = 0, count = 1,
+			size = 0.1, size_speed = 0, gravity = {x = 0, y = 0, z = 0.35}, rotation = {x = 0, y = 0, z = 0},
+			lifetime = 0.9, frames = 0, blend_type = 2, draw_last = 1, tid = System:LoadTexture("Textures/Decal/Spark.dds")};
+	end
+	local me = _localplayer and _localplayer:GetPos();
+	for id, g in COOP_GateMarks do
+		if (g.t < _time or g.t > _time + 6) then -- old news, or from before a map load (_time restarts)
+			COOP_GateMarks[id] = nil;
+		elseif (not me or (me.x - g.x) * (me.x - g.x) + (me.y - g.y) * (me.y - g.y) < 60 * 60) then
+			for k = 1, COOP_GATE_POINTS do
+				local a = k * 6.2832 / COOP_GATE_POINTS; -- radians (Lua sin/cos here)
+				Particle:CreateParticle({x = g.x + g.r * cos(a), y = g.y + g.r * sin(a), z = g.z + 0.05}, {x = 0, y = 0, z = 1}, COOP_GateSpark);
+			end
+		end
+	end
 end
 
 -- an entity hidden or shown by a mission event on the server (COOP gamerules CoopWrapHide)
