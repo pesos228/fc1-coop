@@ -1,0 +1,44 @@
+# Training, listen host + 1 client: a merc standing in water with an empty clip does not reload on
+# the client either. CPlayer::UpdateWeapon reloads by itself when the clip is empty and there is
+# ammo, unless m_stats.underwater > 0 or the player swims (SDK XPlayer.cpp). underwater counts while
+# the eye position is below the water level (UpdateSwimState); an AI's eye position is its feet (no
+# camera offset): on the server a merc counts as under water as soon as its feet are (feet at z 15.9
+# with the water at 16: under, 16.1: not), so it never reloads there. Its copy here has a player's
+# eye height: it counts only 1.5-1.9 m deeper (14.5: not, 14.1: under). The clip reaches a client
+# only as "empty or not" (CPlayer::Write), so the copy reloaded every frame: BasicWeapon.Client:Reload
+# restarted sreload on layer 4 30-170 times a second (2026-11-17, 1stguy waist-deep in the sea with
+# DigIn: the upper body stuck on the reload's first frame). The client does not start a reload
+# animation for a copy whose feet are under water (COOP ClientStuff CoopWrapClientReload).
+# Counted: reload animations that reach the engine (StartAnimation; with the fix in place the one
+# behind its wrapper, COOP_OrigStartAnim).
+# Run from the repo root: tools/bin/harness.exe test tests/ai-water-reload.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 30s
+wait client1 players>=2 -t 30s
+# past the map intro (first_cutscene, see tests/sleepers-seen.txt)
+sleep 30s
+lua server COOP_God=1
+lua server function GuyWet() local e=System:GetEntityByName("1stguy") local p=e:GetPos() local z=p.z local w=Game:GetWaterHeight(p) if (z < w) then return format("wet %.2f %.2f %.3f", z, w, e.cnt.underwater) end end
+cmd server ai_noupdate 1
+lua server RelN=0 local e=System:GetEntityByName("1stguy") local k=e.COOP_OrigStartAnim and "COOP_OrigStartAnim" or "StartAnimation" local old=e[k] e[k]=function(...) if (type(arg[3])=="string" and strfind(arg[3],"reload")) then RelN=RelN+1 end return call(%old,arg) end
+lua client1 RelN=0 local e=System:GetEntityByName("1stguy") local k=e.COOP_OrigStartAnim and "COOP_OrigStartAnim" or "StartAnimation" local old=e[k] e[k]=function(...) if (type(arg[3])=="string" and strfind(arg[3],"reload")) then RelN=RelN+1 end return call(%old,arg) end
+# on the beach (z 17.26, water 16) the empty clip is reloaded: once on the server, and the client
+# plays it (the server's reload flag, CPlayer::Read, and "ANIM")
+lua server local e=System:GetEntityByName("1stguy") e:SetPos({x=392.6,y=942.11,z=17.5}) e.cnt.ammo_in_clip=0
+sleep 4s
+expect server GuyWet() or 1 => 1
+expect server (RelN >= 1 and RelN <= 3) and 1 or RelN => 1
+expect client1 (RelN >= 1 and RelN <= 10) and 1 or RelN => 1
+# in the sea (feet at ~15.8)
+lua server local e=System:GetEntityByName("1stguy") e:SetPos({x=393.75,y=941.75,z=17.5}) e.cnt.ammo_in_clip=0
+sleep 2s
+expect server (System:GetEntityByName("1stguy").cnt.underwater > 0) and 1 or GuyWet() => 1
+expect client1 System:GetEntityByName("1stguy").cnt.ammo_in_clip => 0
+lua server RelN=0
+lua client1 RelN=0
+sleep 3s
+expect server RelN => 0
+expect client1 RelN => 0
+cmd server ai_noupdate 0
+expect-no-events
+down
