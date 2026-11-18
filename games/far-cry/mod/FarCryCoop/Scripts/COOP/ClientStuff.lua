@@ -169,7 +169,9 @@ function CoopWrapClientReload(e)
 	e.COOP_OrigStartAnim = e.StartAnimation;
 	e.StartAnimation = function(...)
 		local self, anim = arg[1], arg[3];
-		if (type(anim) == "string" and arg[4] == 4 and strfind(anim, "reload", 1, 1)) then
+		-- not the server's own ("ANIM"): an AI walking out of the water reloads on the server while its
+		-- copy here, a little behind, still has its feet in
+		if (not COOP_AnimFromServer and type(anim) == "string" and arg[4] == 4 and strfind(anim, "reload", 1, 1)) then
 			local p = self:GetPos();
 			local z = p.z; -- GetPos returns a shared table
 			if (z < Game:GetWaterHeight(p)) then return; end
@@ -642,7 +644,9 @@ ClientStuff.ServerCommandTable["ANIM"] = function(String, toktable)
 			write("idle3 "..e.id.."\n");
 			writeto();
 		end
-		e:StartAnimation(0, toktable[3], tonumber(toktable[4]) or 3, 0.1);
+		COOP_AnimFromServer = 1; -- CoopWrapClientReload
+		call(e.StartAnimation, {e, 0, toktable[3], tonumber(toktable[4]) or 3, 0.1}, "x", function(msg) System:LogAlways("coop: ANIM error: "..tostring(msg)); end);
+		COOP_AnimFromServer = nil;
 		CoopMonEvent("C", "anim "..e:GetName().." "..toktable[3]);
 	end
 end
