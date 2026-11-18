@@ -1,0 +1,78 @@
+# Training, listen host + 1 client: a merc in a job pose (push-ups, sitting, smoking, ...) holds it on
+# the client too. The idle behaviours (Idle_Any ANCHOR_REACHED, stock) play the looped pose on layer
+# 3, then the one-shot start animation on the same layer (BasicAI:InsertAnimationPipe is a plain
+# StartAnimation plus a timeout). The character goes back to the layer's last looped animation when
+# the one-shot ends only if the layer's idle restart is on, and CPlayer::Init turns it on for layer 3
+# only when the entity has an AI object (SDK XPlayer.cpp, EnableLastIdleAnimationRestart(3,true) under
+# m_bIsAI). A client's copy has none: the server sends both animations ("ANIM"), the start one ends
+# and layer 3 stops, the merc stands (2026-11-18, seen: patrol_c doing push-ups on the host,
+# standing on the client). Layer 3's time (GetAnimationTime(0,3)) goes round the loop while a
+# looped pose plays and stays put once the layer stops; it is watched every frame for 3 s (two
+# reads ~1.4 s apart, the loop's length, read the same time). Only after layer 3 played something:
+# on a layer that never played it crashes the game. Characters are not animated off screen: both
+# players look at the merc.
+# The AI system is frozen (ai_noupdate 1, a CrySystem cvar) so the merc does not fight the client:
+# ai_ignoreplayer hides only the host's player.
+# Run from the repo root: tools/bin/harness.exe test tests/ai-job-pose.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 30s
+wait client1 players>=2 -t 30s
+# past the map intro (first_cutscene, see tests/sleepers-seen.txt)
+sleep 30s
+lua server COOP_God=1
+cmd server ai_noupdate 1
+lua server local p=System:GetEntityByName("patrol_c"):GetPos() local x,y,z=p.x,p.y,p.z _localplayer:SetPos({x=x+6,y=y,z=z+0.5}) _localplayer:SetAngles({x=0,y=0,z=90}) CoopMovePlayer(Harness:RemotePlayer(),{x=x+6,y=y+2,z=z+0.5},{x=0,y=0,z=90})
+sleep 2s
+lua server function LookAt(n) local p=System:GetEntityByName(n):GetPos() local c=_localplayer:GetCameraPosition() local dx,dy,dz=p.x-c.x,p.y-c.y,p.z+1-c.z _localplayer:SetAngles({x=-atan2(dz,sqrt(dx*dx+dy*dy))*180/3.14159,y=0,z=atan2(dx,-dy)*180/3.14159}) end LookAt("patrol_c")
+lua client1 function LookAt(n) local p=System:GetEntityByName(n):GetPos() local c=_localplayer:GetCameraPosition() local dx,dy,dz=p.x-c.x,p.y-c.y,p.z+1-c.z _localplayer:SetAngles({x=-atan2(dz,sqrt(dx*dx+dy*dy))*180/3.14159,y=0,z=atan2(dx,-dy)*180/3.14159}) end LookAt("patrol_c")
+lua server local e=System:GetEntityByName("patrol_c") AIBehaviour.Idle_Exercise.ANCHOR_REACHED(AIBehaviour.Idle_Exercise, e)
+sleep 1s
+expect-log client1 anim.patrol_c.pushup_start
+# the start animation (2.2 s at speed 0.8-1.2) is over: the push-up loop plays on both
+sleep 5s
+lua server PoseLo=nil PoseHi=nil PoseOldTick=Harness.Tick Harness.Tick=function(self) PoseOldTick(self) local t=System:GetEntityByName("patrol_c"):GetAnimationTime(0,PoseLayer or 3) if (not PoseLo or t<PoseLo) then PoseLo=t end if (not PoseHi or t>PoseHi) then PoseHi=t end end
+lua client1 PoseLo=nil PoseHi=nil PoseOldTick=Harness.Tick Harness.Tick=function(self) PoseOldTick(self) local t=System:GetEntityByName("patrol_c"):GetAnimationTime(0,PoseLayer or 3) if (not PoseLo or t<PoseLo) then PoseLo=t end if (not PoseHi or t>PoseHi) then PoseHi=t end end
+sleep 3s
+expect server (PoseHi - PoseLo > 0.3) and 1 or format("%.3f..%.3f", PoseLo, PoseHi) => 1
+expect client1 (PoseHi - PoseLo > 0.3) and 1 or format("%.3f..%.3f", PoseLo, PoseHi) => 1
+# The pose ends the stock way (Idle_Any DECIDE_TO_BREAK_OR_NOT, no breaks left): "NULL" on layer 3,
+# "sidle" on layer 0, then the one-shot end animation on layer 3. The server's layer 3 is empty
+# after it. The client used to play every "ANIM" on layer 3: sidle (looped) stayed there over the
+# walk ("they move but keep their pose", owner), and once the restart was on it came back after
+# the end animation. Now "ANIM" carries the server's layer. A "NULL" on layer 4 just before (an AI
+# blinded or talking, then leaving its job) must not swallow the one on layer 3: the server sends
+# one animation once per its length (min 0.3 s), now per layer.
+lua server local e=System:GetEntityByName("patrol_c") e:StartAnimation(0,"NULL",4) AIBehaviour.Idle_Exercise.NrBreaks=0 AIBehaviour.Idle_Exercise.DECIDE_TO_BREAK_OR_NOT(AIBehaviour.Idle_Exercise, e)
+sleep 1s
+expect-log client1 anim.patrol_c.pushup_end
+sleep 5s
+lua server PoseLo=nil PoseHi=nil
+lua client1 PoseLo=nil PoseHi=nil
+sleep 3s
+expect server (PoseHi - PoseLo < 0.01) and 1 or format("%.3f..%.3f", PoseLo, PoseHi) => 1
+expect client1 (PoseHi - PoseLo < 0.01) and 1 or format("%.3f..%.3f", PoseLo, PoseHi) => 1
+# Poses on layer 0 (sitting, smoking, looking around): the server switches the merc's own animation
+# system off (cnt.AnimationSystemEnabled = 0, CPlayer::m_AnimationSystemEnabled: its walk animations,
+# SDK XPlayer.cpp) so its walk does not replace the pose; on a client the copy's walk would replace
+# it as soon as the walk animation's name changes (any move or turn). The flag goes to the clients.
+# (Behaviours load when an AI first needs them: Idle_SitDown is loaded here.)
+lua server if (not AIBehaviour.Idle_SitDown) then Script:ReloadScript("Scripts/AI/Behaviors/Personalities/SHARED/Idles/Idle_SitDown.lua") end local e=System:GetEntityByName("patrol_c") AIBehaviour.Idle_SitDown.Sitting=nil AIBehaviour.Idle_SitDown.START_ANIM(AIBehaviour.Idle_SitDown, e)
+sleep 2s
+expect-log client1 anim.patrol_c.sitdown_breath
+expect server System:GetEntityByName("patrol_c").cnt.AnimationSystemEnabled => 0
+expect client1 System:GetEntityByName("patrol_c").cnt.AnimationSystemEnabled => 0
+# The one-shot "sitdown" (1.7 s) is over: layer 0 is back on the looped sitdown_breath, as layer 3
+# is for the push-ups (the server's layer 0 restart is on for every player, the copy's was off: with
+# its walk switched off it stood in the bind pose, arms out)
+lua server PoseLo=nil PoseHi=nil PoseLayer=0
+lua client1 PoseLo=nil PoseHi=nil PoseLayer=0
+sleep 3s
+expect server (PoseHi - PoseLo > 0.3) and 1 or format("%.3f..%.3f", PoseLo, PoseHi) => 1
+expect client1 (PoseHi - PoseLo > 0.3) and 1 or format("%.3f..%.3f", PoseLo, PoseHi) => 1
+lua server local e=System:GetEntityByName("patrol_c") AIBehaviour.Idle_SitDown.BackToJob(AIBehaviour.Idle_SitDown, e) e:StartAnimation(0,"NULL",0)
+sleep 2s
+expect server System:GetEntityByName("patrol_c").cnt.AnimationSystemEnabled => 1
+expect client1 System:GetEntityByName("patrol_c").cnt.AnimationSystemEnabled => 1
+cmd server ai_noupdate 0
+expect-no-events
+down
