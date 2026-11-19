@@ -839,6 +839,7 @@ function CoopSetKey(server_slot, cmd)
 	end
 	if (COOP_SlotKeys[id] ~= key) then CoopMonEvent("S", "key slot "..id.." "..key); end
 	COOP_SlotKeys[id] = key;
+	CoopCheckBan(server_slot, key);
 end
 
 -- the slot's key, or nil while its COOPID may still come
@@ -1515,6 +1516,7 @@ function GameRules:OnUpdate(DeltaTime)
 		return
 	end
 	CoopRun("level end", CoopExitTick)
+	CoopRun("votes", CoopVoteCheck) -- the time runs out, a player leaves
 	CoopRun("preload weapons", CoopPreloadWeapons)
 	if next(COOP_HPDirty) then
 		CoopRun("ai health", function() CoopSyncAIHealth(COOP_HPDirty) end)
@@ -1808,6 +1810,8 @@ function GameRules:OnClientCmd(server_slot, cmd)
 	elseif (tk[1] == "COOPID") then CoopSetKey(server_slot, cmd);
 	elseif (tk[1] == "COOPVER") then CoopSetVersion(server_slot, tk[2]);
 	elseif (tk[1] == "SKIPVOTE") then CoopCountSkipVote(server_slot, tonumber(tk[2]));
+	elseif (tk[1] == "CALLVOTE") then CoopCallVote(server_slot, tk);
+	elseif (tk[1] == "CASTVOTE") then CoopCastVote(server_slot, tonumber(tk[2]));
 	elseif (tk[1] == "SEEN") then CoopWakeSeen(tk); end
 end
 
@@ -2218,6 +2222,138 @@ function CoopCountSkipVote(server_slot, v)
 		local text = format("Skip cutscene: %d/%d", c, need);
 		Server:BroadcastCommand("MSUB "..text);
 		CoopMonEvent("S", "announce "..text);
+	end
+end
+
+-- Votes (owner, 2026-11-19: kick, ban and map change by vote, as in TF2, drawn as the game's own
+-- HUD): a player calls one from the in-game menu (MenuScreens/CoopVote.lua, "CALLVOTE kick <player
+-- entity id>", "CALLVOTE ban <player entity id>", "CALLVOTE map <map>"), everyone answers with the vote keys (F3
+-- yes, F4 no; "CASTVOTE 1/0"), the caller has said yes. It passes once more than half of the
+-- players who vote said yes (the one to be kicked does not vote), fails once that cannot happen
+-- any more or after COOP_VOTE_TIME. One vote at a time; a caller whose vote failed waits
+-- COOP_VOTE_COOLDOWN. The host is never kicked: it is the game.
+-- A ban keeps the player's key (Steam ID, COOP gamerules CoopSetKey) in Mods/FarCryCoop/bans.lua
+-- on the host: the player is turned away when the key comes, in this game and the next ones.
+-- The clients get "VOTEUP <seconds left> <yes> <no> <needed> <question>" on every change and
+-- "VOTEEND <1 passed/0 failed> <question>" at the end (COOP ClientStuff draws them).
+COOP_VOTE_TIME = 30
+COOP_VOTE_COOLDOWN = 60
+COOP_Vote = nil
+COOP_VoteWait = COOP_VoteWait or {} -- caller key -> no new vote before this _time
+if (not COOP_Banned) then
+	COOP_Banned = {}; -- key -> name
+	local f = openfile("Mods/FarCryCoop/bans.lua", "r");
+	if (f) then closefile(f); dofile("Mods/FarCryCoop/bans.lua"); end
+end
+
+function CoopSaveBans()
+	local f = openfile("Mods/FarCryCoop/bans.lua", "w");
+	if (not f) then System:LogAlways("coop: cannot write Mods/FarCryCoop/bans.lua"); return; end
+	write(f, "COOP_Banned = {\n");
+	for k, name in COOP_Banned do write(f, format("\t[%q] = %q,\n", k, tostring(name))); end
+	write(f, "}\n");
+	closefile(f);
+end
+
+function CoopVoteSlot(id)
+	for i, slot in Server:GetServerSlotMap() do
+		if (slot:GetId() == id) then return slot; end
+	end
+end
+function CoopIsHostSlot(slot)
+	return _localplayer and slot:GetPlayerId() == _localplayer.id;
+end
+function CoopVoteTell(slot, text) slot:SendCommand("VOTEMSG "..text); end
+
+function CoopCallVote(slot, tk)
+	local kind, arg = tk[2], tk[3];
+	local key = COOP_SlotKeys[slot:GetId()] or ("slot"..slot:GetId());
+	if (COOP_Vote) then CoopVoteTell(slot, "A vote is already on."); return; end
+	local w = COOP_VoteWait[key];
+	if (w and w > _time and w < _time + COOP_VOTE_COOLDOWN + 1) then
+		CoopVoteTell(slot, format("You can call a vote again in %d s.", ceil(w - _time)));
+		return;
+	end
+	local v = {kind = kind, caller = slot:GetId(), callerkey = key, yes = {}, no = {}, ends = _time + COOP_VOTE_TIME};
+	if (kind == "kick" or kind == "ban") then
+		local t = Server:GetServerSlotByEntityId(tonumber(arg) or 0);
+		if (not t) then CoopVoteTell(slot, "That player is gone."); return; end
+		if (t:GetId() == slot:GetId()) then CoopVoteTell(slot, "Not yourself."); return; end
+		if (CoopIsHostSlot(t)) then CoopVoteTell(slot, "The host cannot be kicked."); return; end
+		v.target, v.targetname, v.targetkey = t:GetId(), t:GetName(), COOP_SlotKeys[t:GetId()];
+		v.text = format("%s %s?", (kind == "kick") and "Kick" or "Ban", tostring(t:GetName()));
+	elseif (kind == "map") then
+		if (not arg or not Game:GetMapDefaultMission(arg)) then CoopVoteTell(slot, "No such map."); return; end
+		v.map = arg;
+		v.text = format("Change the map to %s?", arg);
+	else
+		return;
+	end
+	COOP_Vote = v;
+	v.yes[slot:GetId()] = 1;
+	CoopMonEvent("S", format("vote called by %s: %s", tostring(slot:GetName()), v.text));
+	CoopVoteCheck();
+end
+
+function CoopCastVote(slot, yes)
+	local v = COOP_Vote;
+	if (not v or slot:GetId() == v.target) then return; end
+	local id = slot:GetId();
+	if (yes == 1) then v.yes[id], v.no[id] = 1, nil; else v.yes[id], v.no[id] = nil, 1; end
+	CoopVoteCheck();
+end
+
+-- who votes: everyone in the game but the one to be kicked
+function CoopVoteCount(v)
+	local n, y, no = 0, 0, 0;
+	for i, slot in Server:GetServerSlotMap() do
+		local id = slot:GetId();
+		if (id ~= v.target) then
+			n = n + 1;
+			if (v.yes[id]) then y = y + 1; elseif (v.no[id]) then no = no + 1; end
+		end
+	end
+	return n, y, no, floor(n / 2) + 1;
+end
+
+function CoopVoteCheck()
+	local v = COOP_Vote;
+	if (not v) then return; end
+	-- the one to be kicked left: nothing to do; a ban goes on (the key is still there)
+	if (v.target and v.kind == "kick" and not CoopVoteSlot(v.target)) then return CoopVoteEnd(v, nil); end
+	local n, y, no, need = CoopVoteCount(v);
+	if (y >= need) then return CoopVoteEnd(v, 1); end
+	if (n - no < need or _time > v.ends or _time + COOP_VOTE_TIME + 1 < v.ends) then return CoopVoteEnd(v, nil); end
+	local s = format("VOTEUP %d %d %d %d %s", max(0, ceil(v.ends - _time)), y, no, need, v.text);
+	if (s ~= v.sent) then
+		v.sent = s;
+		Server:BroadcastCommand(s);
+	end
+end
+
+function CoopVoteEnd(v, passed)
+	COOP_Vote = nil;
+	Server:BroadcastCommand(format("VOTEEND %d %s", passed and 1 or 0, v.text));
+	CoopMonEvent("S", format("vote %s: %s", passed and "passed" or "failed", v.text));
+	if (not passed) then COOP_VoteWait[v.callerkey] = _time + COOP_VOTE_COOLDOWN; return; end
+	if (v.kind == "kick" or v.kind == "ban") then
+		if (v.kind == "ban" and v.targetkey) then
+			COOP_Banned[v.targetkey] = v.targetname or v.targetkey;
+			CoopSaveBans();
+		end
+		local t = CoopVoteSlot(v.target);
+		if (t) then t:Disconnect((v.kind == "ban") and "You were banned from this game by vote.\n" or "You were kicked from this game by vote.\n"); end
+	elseif (v.kind == "map") then
+		COOP_PendingMap = v.map; -- GameRules:OnUpdate changes it, as a level end does
+	end
+end
+
+-- a banned player's key: turned away (CoopSetKey)
+function CoopCheckBan(slot, key)
+	if (COOP_Banned[key] and not CoopIsHostSlot(slot)) then
+		CoopMonEvent("S", format("banned %s (%s) turned away", tostring(slot:GetName()), key));
+		slot:Disconnect("You are banned from this game.\n");
+		return 1;
 	end
 end
 

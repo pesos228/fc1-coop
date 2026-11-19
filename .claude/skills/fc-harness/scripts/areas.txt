@@ -9,7 +9,7 @@ vehicles: vehicle-crews steam-boat-crew heli-guns heli-rotor heli-standing heli-
 progress: progress respawn-hint player-key name-host respawn-loadout spawn-protection mission-items-save level-change join-and-progress
 sync: join-and-progress sleepers-seen sleepers-pos rest-resend heli-standing heli-flight drops-river late-sequence boat-sync boat-drift boat-parked
 sequences: late-sequence level-change-sequence skip-key skip-vote
-lobby: wait-players announce name-host skip-vote skip-key player-info cooler-start version-check
+lobby: votes wait-players announce name-host skip-vote skip-key player-info cooler-start version-check
 ai: cooler-start sleepers-seen sleepers-pos join-and-progress vehicle-crews player-info danger-meter step-sounds ai-job-pose ai-water-reload
 chapter1: chapter1
 chapter2: chapter2

@@ -66,6 +66,7 @@ AddUISideMenu(UI.PageMainScreenInGame.GUI,
 	{ "Return", Localize("ReturnToGame"), "$Return$", },
 	{ "-", "-", "-", },
 	{ "Coop", "Co-op", "Coop", },
+	{ "CoopVote", "Call a vote", "CoopVote", },
 	{ "Options", Localize("Options"), "Options", },
 	{ "Profiles", Localize("Profiles"), "Profiles", },
 	{ "Mods", Localize("Mods"), "Mods", },
@@ -88,3 +89,4 @@ Script:LoadScript("Scripts/MenuScreens/CoopPlayer.lua", 1);
 Script:LoadScript("Scripts/MenuScreens/CoopFind.lua", 1);
 Script:LoadScript("Scripts/MenuScreens/CoopVoice.lua", 1);
 Script:LoadScript("Scripts/MenuScreens/CoopView.lua", 1);
+Script:LoadScript("Scripts/MenuScreens/CoopVote.lua", 1);

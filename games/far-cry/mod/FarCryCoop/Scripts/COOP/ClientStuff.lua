@@ -33,6 +33,7 @@ function ClientStuff:OnInit()
 	CoopWrapStartLevel();
 	-- the skip key votes (COOP gamerules CoopCountSkipVote) instead of skipping for this player only
 	if (Input) then Input:BindCommandToKey("#CoopSkipVote()", "spacebar", 1); end
+	CoopBindVoteKeys(); -- F3 / F4, or the keys of Options > Controls (MenuScreens/CoopVote.lua)
 	COOP_SeqPlayed = {}; -- a new map: its sequences (SEQ, SEQAT)
 	CoopMonEvent("C", "map");
 end
@@ -489,6 +490,7 @@ function CoopDrawHud(hud)
 	CoopDrawRespawnHint(hud);
 	CoopDrawExit();
 	CoopDrawVoice(hud);
+	CoopDrawVote(hud);
 end
 
 -- Voice chat (asi/voice.c, push-to-talk: K, or the key set in Options > Controls, MenuScreens/
@@ -934,4 +936,81 @@ ClientStuff.ServerCommandTable["SEQSKIP"] = function(String, toktable)
 end
 ClientStuff.ServerCommandTable["SEQSTOP"] = function(String, toktable)
 	if (not Game:IsServer()) then Movie:StopSequence(strsub(String, 9)); end
+end
+
+-- Votes (COOP gamerules CoopCallVote; called from the in-game menu, MenuScreens/CoopVote.lua):
+-- a box on the left of the screen while one is on, as TF2 shows it, drawn as the voice boxes are
+-- (the game's HUD: a dark fill, a thin dull green outline): the question, the keys with the yes
+-- and no count, the time left as a bar. The result stays a few seconds. The keys (F3 yes, F4 no
+-- by default; F1 is the game's view change) are kept by MenuScreens/CoopVote.lua.
+-- COOP_VoteBox is what the box shows, read by tests/votes.txt.
+COOP_VOTE_RESULT_TIME = 4
+COOP_VOTE_X, COOP_VOTE_Y, COOP_VOTE_W, COOP_VOTE_H = 8, 150, 236, 66
+function CoopVoteYes() CoopCastMyVote(1); end
+function CoopVoteNo() CoopCastMyVote(0); end
+function CoopCastMyVote(v)
+	local b = COOP_VoteBox;
+	if (not Client or not b or b.result) then return; end
+	b.mine = v;
+	Client:SendCommand("CASTVOTE "..v);
+	CoopMonEvent("C", "vote "..v);
+end
+function CoopBindVoteKeys()
+	if (not Input) then return; end
+	if (CoopVoteKeysLoad) then CoopVoteKeysLoad(); end
+	Input:BindCommandToKey("#CoopVoteYes()", strlower(tostring(COOP_VoteYesKey or "f3")), 1);
+	Input:BindCommandToKey("#CoopVoteNo()", strlower(tostring(COOP_VoteNoKey or "f4")), 1);
+end
+ClientStuff.ServerCommandTable["VOTEUP"] = function(String, tk)
+	local s, e, secs, y, n, need, text = strfind(String, "^VOTEUP (%d+) (%d+) (%d+) (%d+) (.*)$");
+	if (not s) then return; end
+	local b = COOP_VoteBox;
+	local mine = b and not b.result and b.text == text and b.mine or nil;
+	COOP_VoteBox = {text = text, yes = tonumber(y), no = tonumber(n), need = tonumber(need),
+		ends = _time + tonumber(secs), len = max(1, tonumber(secs)), mine = mine};
+	if (b and not b.result and b.text == text) then COOP_VoteBox.len = b.len; end
+	if (not (b and b.text == text and not b.result)) then CoopMonEvent("C", "vote on: "..text); end
+end
+ClientStuff.ServerCommandTable["VOTEEND"] = function(String, tk)
+	local s, e, ok, text = strfind(String, "^VOTEEND (%d) (.*)$");
+	if (not s) then return; end
+	COOP_VoteBox = {text = text, result = (ok == "1") and 1 or 0, ends = _time + COOP_VOTE_RESULT_TIME};
+	CoopMonEvent("C", "vote "..((ok == "1") and "passed" or "failed")..": "..text);
+end
+ClientStuff.ServerCommandTable["VOTEMSG"] = function(String, tk)
+	local text = strsub(String, 9);
+	if (Hud and Hud.AddMessage) then Hud:AddMessage(text); end
+	CoopMonEvent("C", "vote message: "..text);
+end
+function CoopDrawVote(hud)
+	local b = COOP_VoteBox;
+	if (not b) then return; end
+	-- shown its time (a vote whose end got lost: 2 s more), or from the last map (_time restarts)
+	if (_time > b.ends + (b.result and 0 or 2) or b.ends > _time + 120) then COOP_VoteBox = nil; return; end
+	if (tonumber(cl_display_hud) == 0 or hud.bHide) then return; end
+	if (not COOP_VoiceBox) then COOP_VoiceBox = System:LoadImage("Textures/white16x16.dds") or 0; end
+	if (COOP_VoiceBox == 0) then return; end
+	local x, y, w, h = COOP_VOTE_X, COOP_VOTE_Y, COOP_VOTE_W, COOP_VOTE_H;
+	local a = 1;
+	if (b.result) then a = min(1, (b.ends - _time) / 0.5); h = 58; end
+	System:DrawImageColor(COOP_VoiceBox, x, y, w, h, 4, 0, 0, 0, 0.5 * a);
+	CoopVoiceFrame(x, y, w, h, a);
+	Game:SetHUDFont("default", "default");
+	Game:WriteHudString(x + 8, y + 5, "Vote", 0.62, 0.8, 0.5, a, 13, 13);
+	Game:WriteHudString(x + 8, y + 20, CoopVoiceFit(b.text or "", w - 16), 0.95, 0.95, 0.9, a, 15, 15);
+	if (b.result) then
+		local t, r, g = "Vote failed", 0.95, 0.4;
+		if (b.result == 1) then t, r, g = "Vote passed", 0.5, 0.95; end
+		Game:WriteHudString(x + 8, y + 38, t, r, g, 0.4, a, 14, 14);
+		return;
+	end
+	local yk, nk = strupper(tostring(COOP_VoteYesKey or "f3")), strupper(tostring(COOP_VoteNoKey or "f4"));
+	local ys, ns = format("%s Yes: %d", yk, b.yes or 0), format("%s No: %d", nk, b.no or 0);
+	local ya, na = 0.75, 0.75;
+	if (b.mine == 1) then ya = 1; elseif (b.mine == 0) then na = 1; end
+	Game:WriteHudString(x + 8, y + 38, ys, 0.6 * ya, 0.95 * ya, 0.5 * ya, a, 14, 14);
+	Game:WriteHudString(x + 8 + w * 0.5, y + 38, ns, 0.95 * na, 0.5 * na, 0.45 * na, a, 14, 14);
+	-- the time left
+	local f = max(0, min(1, (b.ends - _time) / (b.len or 30)));
+	System:DrawImageColor(COOP_VoiceBox, x + 8, y + h - 8, (w - 16) * f, 3, 4, COOP_VOICE_LINE[1], COOP_VOICE_LINE[2], COOP_VOICE_LINE[3], 0.9 * a);
 end

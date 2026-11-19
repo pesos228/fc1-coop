@@ -1,0 +1,78 @@
+# Votes (owner, 2026-11-19: kick, ban and map change by vote, as in TF2, in the game's HUD style;
+# COOP gamerules CoopCallVote, ClientStuff CoopDrawVote, MenuScreens/CoopVote.lua). Three players:
+# a map vote two say no to fails and its caller waits; the host cannot be kicked; a ban the host
+# calls and client1 backs turns client2 away, now and when it comes back; a map vote that passes
+# changes the map. The harness cannot press F3/F4: the scenario calls what the keys run, and the
+# vote is called through the menu screen's own functions. The harness keeps the host's bans.lua
+# and votekeys.lua and puts them back at down (tools/harness cfgFiles).
+# Run from the repo root: tools/bin/harness.exe test tests/votes.txt
+up -mode host -map training -clients 2 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=3;#CoopMap("training")
+wait server players>=3 -t 60s
+wait client1 players>=3 -t 150s
+wait client2 players>=3 -t 150s
+sleep 20s
+lua client2 function T_Wrap() if (ClientOnDisconnect ~= T_Mine) then T_Disc = ClientOnDisconnect; T_Mine = function(r) System:LogAlways("T disconnect: "..tostring(r)); T_Disc(r); end; ClientOnDisconnect = T_Mine; end end T_Wrap()
+lua server function T_P(name) for i, P in CoopPlayers() do if (P:GetName() == name) then return P; end end end
+lua client1 function T_Call(kind, target) local G = UI.PageCoopVote.GUI UI.PageCoopVote.Fill() G.KindCombo:SelectIndex(kind) UI.PageCoopVote.FillTargets() G.TargetCombo:Select(target) return UI.PageCoopVote.Call() end
+lua server function T_Call(kind, target) local G = UI.PageCoopVote.GUI UI.PageCoopVote.Fill() G.KindCombo:SelectIndex(kind) UI.PageCoopVote.FillTargets() G.TargetCombo:Select(target) return UI.PageCoopVote.Call() end
+# the keys are bound (F3 yes, F4 no)
+expect client1 COOP_VoteYesKey.." "..COOP_VoteNoKey => f3 f4
+# Options > Controls has a row for each; a key taken by the other one swaps them
+expect client1 UI.PageOptionsControl.FillBindList() or 1 => 1
+lua client1 CoopVoteSetKey("yes", "f4")
+expect client1 COOP_VoteYesKey.." "..COOP_VoteNoKey => f4 f3
+lua client1 CoopVoteSetKey("yes", "f3")
+expect client1 COOP_VoteYesKey.." "..COOP_VoteNoKey => f3 f4
+
+# a map vote: client1 calls it (yes), everyone sees it
+expect client1 T_Call(3, "Pier") => 1
+sleep 2s
+expect client2 tostring(COOP_VoteBox and COOP_VoteBox.text) => Change the map to Pier?
+expect server COOP_VoteBox.yes.." "..COOP_VoteBox.no.." "..COOP_VoteBox.need => 1 0 2
+# two say no: it fails, the map stays
+lua server CoopVoteNo()
+lua client2 CoopVoteNo()
+sleep 2s
+expect client1 tostring(COOP_VoteBox and COOP_VoteBox.result) => 0
+expect server tostring(COOP_Vote) => nil
+expect server strlower(COOP_Map) => training
+# its caller has to wait for the next one
+expect client1 T_Call(3, "Pier") => 1
+expect-log client1 vote.message:.You.can.call.a.vote.again 10s
+expect server tostring(COOP_Vote) => nil
+
+# the host cannot be kicked
+lua server COOP_VoteWait = {}
+lua client2 local h for i, P in CoopMonPlayers() do if (P:GetName() ~= "client1" and P:GetName() ~= "client2" and not P.ai) then h = P end end Client:SendCommand("CALLVOTE kick "..h.id)
+expect-log client2 vote.message:.The.host.cannot.be.kicked 10s
+expect server tostring(COOP_Vote) => nil
+
+# a ban: the host calls it, client1 backs it; client2 is out and turned away when it comes back
+lua server T_K2 = COOP_SlotKeys[Server:GetServerSlotByEntityId(T_P("client2").id):GetId()]
+expect server type(T_K2) => string
+expect server T_Call(2, "client2") => 1
+sleep 2s
+expect client2 tostring(COOP_VoteBox and COOP_VoteBox.text) => Ban client2?
+expect server COOP_VoteBox.need => 2
+lua client1 CoopVoteYes()
+expect-log client2 T.disconnect:.*banned.from.this.game.by.vote 30s
+wait server players<=2 -t 30s
+expect server COOP_Banned[T_K2] => client2
+expect client1 tostring(COOP_VoteBox and COOP_VoteBox.result) => 1
+join client2 #Game:Connect("127.0.0.1",1,1)
+expect-log server banned.client2.*turned.away 120s
+wait server players<=2 -t 30s
+sleep 5s
+expect server getn(CoopPlayers()) => 2
+
+# a map vote that passes: the map changes for both
+sleep 3s
+expect client1 T_Call(3, "Fort") => 1
+sleep 1s
+lua server CoopVoteYes()
+wait server players>=2 -t 120s
+sleep 30s
+expect server strlower(COOP_Map) => fort
+wait client1 players>=2 -t 150s
+expect-no-events
+down

@@ -69,6 +69,12 @@ function CoopVoicePatchControls()
 		list:AddItem("$8CO-OP"); -- a section title, as the game's ($8: its orange)
 		local i = list:AddItem(COOP_VOICE_ACTION.desc, strupper(tostring(COOP_VoiceKey)), "");
 		if (i) then UI.PageOptionsControl.Actions[i] = COOP_VOICE_ACTION; end
+		if (COOP_VOTE_ACTIONS) then -- the vote keys (MenuScreens/CoopVote.lua)
+			i = list:AddItem(COOP_VOTE_ACTIONS[1].desc, strupper(tostring(COOP_VoteYesKey)), "");
+			if (i) then UI.PageOptionsControl.Actions[i] = COOP_VOTE_ACTIONS[1]; end
+			i = list:AddItem(COOP_VOTE_ACTIONS[2].desc, strupper(tostring(COOP_VoteNoKey)), "");
+			if (i) then UI.PageOptionsControl.Actions[i] = COOP_VOTE_ACTIONS[2]; end
+		end
 	end
 	local change = P.GUI.change.OnCommand;
 	P.GUI.change.OnCommand = function(Sender)
@@ -77,6 +83,11 @@ function CoopVoicePatchControls()
 			local Action = UI.PageOptionsControl.Actions[list:GetSelection(0)];
 			if (Action and Action.coop_voice) then
 				UI:ActivateScreen("CoopBindVoice");
+				return;
+			end
+			if (Action and Action.coop_vote) then
+				UI.PageCoopBindVote.Action = Action;
+				UI:ActivateScreen("CoopBindVote");
 				return;
 			end
 		end
