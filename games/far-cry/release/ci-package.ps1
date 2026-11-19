@@ -1,6 +1,6 @@
 # Build the test package of the current commit, as CI does after a push (.github/workflows/package.yml),
 # or locally. The package is one folder, FarCryCoop, to drop into <game>\Mods: FarCryCoop.pak,
-# ModDesc.txt, Bin32\CryGame.dll (FarCryCoopNet built here: the game loads a mod's own CryGame.dll
+# ModDesc.txt, ModPreview.dds, Bin32\CryGame.dll (FarCryCoopNet built here: the game loads a mod's own CryGame.dll
 # with -MOD, and this one loads the game's and hooks it; nothing goes into the game's Bin32) and
 # Steam\steam_api.dll when the repo has it, plus the notes.
 # Usage: pwsh games/far-cry/release/ci-package.ps1 [-Out dist]

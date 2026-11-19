@@ -13,5 +13,7 @@ try {
     [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_.FullName, $entry) | Out-Null
   }
 } finally { $zip.Dispose() }
+# ModDesc.txt and ModPreview.dds: the title, author, version and picture in the game's Mods menu
 Copy-Item (Join-Path $src 'ModDesc.txt') $dst -Force
+Copy-Item (Join-Path $src 'ModPreview.dds') $dst -Force
 Get-ChildItem $dst | Select-Object Name, Length
