@@ -14,5 +14,6 @@ ai: cooler-start sleepers-seen sleepers-pos join-and-progress vehicle-crews play
 chapter1: chapter1
 chapter2: chapter2
 steam: steam-loop voice-relay proxy-install menu-create menu-lobby menu-lobby-private menu-name menu-find
-menu: menu-create menu-load menu-player menu-relaunch menu-lobby menu-lobby-private menu-name menu-password menu-find menu-find-lan steam-loop wait-players
+menu: fov menu-create menu-load menu-player menu-relaunch menu-lobby menu-lobby-private menu-name menu-password menu-find menu-find-lan steam-loop wait-players
 voice: voice-relay steam-loop menu-player
+view: fov

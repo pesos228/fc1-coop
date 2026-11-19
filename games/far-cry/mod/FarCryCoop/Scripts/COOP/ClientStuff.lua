@@ -84,7 +84,8 @@ end
 -- System:GetViewCameraPos is no use here: on a client in the background it gave a spot 95 m away.
 COOP_SEE_DIST = 100 -- ponytail: the renderer's distance for characters is not known; tune
 -- the game's 90 degree field of view (Game:GetCameraFov) is ~42 degrees either side horizontally
--- at 4:3 and 16:9 (CCamera::Update, SDK Cry_Camera.h); 45 leaves room for the body's width
+-- at 4:3 and 16:9 (CCamera::Update, SDK Cry_Camera.h); 45 leaves room for the body's width. The
+-- player may choose another angle (MenuScreens/CoopView.lua): half of the angle, as half of 90.
 COOP_SEE_COS = 0.707
 function CoopReportSeen()
 	local P = _localplayer;
@@ -98,6 +99,8 @@ function CoopReportSeen()
 	local cx, cy, cz = c.x, c.y, c.z;
 	c = {x = cx, y = cy, z = cz};
 	local d = P:GetDirectionVector();
+	local seecos, fov = COOP_SEE_COS, Game:GetCameraFov(); -- radians; cos takes radians here
+	if (fov and fov > 0.5 and fov < 3) then seecos = cos(fov * 0.5); end
 	local dx, dy = d.x, d.y;
 	local dl = sqrt(dx * dx + dy * dy);
 	if (dl < 0.01) then return; end
@@ -108,7 +111,7 @@ function CoopReportSeen()
 			local p = e:GetPos();
 			local x, y, z = p.x - cx, p.y - cy, p.z - cz;
 			local l = sqrt(x * x + y * y);
-			if (l < COOP_SEE_DIST and (x * dx + y * dy) >= COOP_SEE_COS * l * dl
+			if (l < COOP_SEE_DIST and (x * dx + y * dy) >= seecos * l * dl
 				and (System:RayTraceCheck(c, {x = p.x, y = p.y, z = p.z + 1}, P.id, e.id)
 					or System:RayTraceCheck(c, {x = p.x, y = p.y, z = p.z + 1.6}, P.id, e.id))) then
 				COOP_SeenSent[e.id] = 1;
@@ -168,6 +171,9 @@ function ClientStuff:OnUpdate()
 	CoopShowSpawnWeapon();
 	CoopApplyMyItems();
 	CoopHookHud();
+	if (CoopViewTick) then -- field of view (MenuScreens/CoopView.lua)
+		call(CoopViewTick, {}, "x", function(msg) if (not COOP_ViewErr) then COOP_ViewErr = 1; System:LogAlways("coop: view error: "..tostring(msg)); end end);
+	end
 	CoopHookPerception();
 	CoopWrapClientSeat();
 	CoopWrapClientAIDriver();
@@ -655,6 +661,7 @@ function ClientStuff:OnSetPlayer()
 	System:ExecuteCommand("coop_voice name "..tostring(vname or "Player"));
 	if (CoopVoiceApply) then CoopVoiceApply(); end -- the talk key of Options > Controls
 	if (CoopVoicePatchMenus) then CoopVoicePatchMenus(); end -- the chat line holds the key
+	if (CoopViewPatchMenus) then CoopViewPatchMenus(); end -- Options > Game: field of view
 	-- player settings (prefs.lua; COOP gamerules CoopSetPrefs); the host sends them too, over loopback
 	if (COOP_Color) then Client:SendCommand("PREF "..COOP_Color.." "..tostring(COOP_Weapons or "")); end
 	-- again once connected: asked in OnInit only, the server kept sending the default 20

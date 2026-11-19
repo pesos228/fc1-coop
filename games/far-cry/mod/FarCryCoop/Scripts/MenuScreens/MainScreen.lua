@@ -10,6 +10,7 @@ UI.PageMainScreen =
 		OnActivate = function(self)
 			self.fActivateTime = System:GetCurrAsyncTime();
 			if (CoopVoicePatchMenus) then CoopVoicePatchMenus(); end -- all menu scripts are in now
+			if (CoopViewPatchMenus) then CoopViewPatchMenus(); end
 		end,
 
 		-- as in the game: credits and demo loops quit with escape into the game otherwise
@@ -86,3 +87,4 @@ Script:LoadScript("Scripts/MenuScreens/Coop.lua", 1);
 Script:LoadScript("Scripts/MenuScreens/CoopPlayer.lua", 1);
 Script:LoadScript("Scripts/MenuScreens/CoopFind.lua", 1);
 Script:LoadScript("Scripts/MenuScreens/CoopVoice.lua", 1);
+Script:LoadScript("Scripts/MenuScreens/CoopView.lua", 1);

@@ -1,0 +1,107 @@
+# Field of view from Options > Game (owner, 2026-11-19; MenuScreens/CoopView.lua): the player's
+# angle out of zoom, the game's own zoom steps for the sights and the binoculars, back to the
+# player's angle after them (a narrow angle still zooms in: angle / step), after a respawn (a new
+# entity starts at 90); another angle a script asks for is scaled by the same ratio. The mouse turns the view by angle / 90 (SDK CXClient): out of zoom it is
+# scaled by 90 / angle, while zoomed ZoomView's own 0.3. Kept in Mods/FarCryCoop/view.lua (the
+# harness keeps the player's own and puts it back at down, tools/harness cfgFiles).
+# Run from the repo root: tools/bin/harness.exe test tests/fov.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 20s
+lua client1 function T_Deg() return floor(Game:GetCameraFov() * 180 / 3.1415962 + 0.5) end function T_Mouse() return floor(Input:GetMouseSensitivityScale() * 1000 + 0.5) end
+expect client1 T_Deg() => 90
+expect client1 T_Mouse() => 1000
+
+# wider
+lua client1 CoopFovSet(110)
+sleep 1s
+expect client1 T_Deg() => 110
+expect client1 T_Mouse() => 818
+
+# a weapon sight (P90: 1.4 times, faded in): the game's own angle, then back
+lua server COOP_God=1 CoopGiveLoadout(Harness:RemotePlayer(), {weapons={"P90"}, ammo={SMG=77}, current="P90", clips={P90={fm=0, clip={20}}}})
+sleep 3s
+lua client1 Player.EventHandlers[ScriptEvent_ZoomToggle](_localplayer, ScriptEvent_ZoomToggle, 1)
+sleep 2s
+expect client1 tostring(ZoomView.active) => 1
+expect client1 T_Deg() => 64
+expect client1 T_Mouse() => 300
+lua client1 Player.EventHandlers[ScriptEvent_ZoomToggle](_localplayer, ScriptEvent_ZoomToggle, 0)
+sleep 2s
+expect client1 tostring(ZoomView.active) => nil
+expect client1 T_Deg() => 110
+expect client1 T_Mouse() => 818
+
+# the binoculars: 2 times, then 4
+lua client1 ClientStuff.vlayers:ActivateLayer("Binoculars")
+sleep 2s
+expect client1 T_Deg() => 45
+lua client1 ZoomView:ZoomIn()
+sleep 1s
+expect client1 T_Deg() => 23
+expect client1 T_Mouse() => 300
+lua client1 ClientStuff.vlayers:DeactivateLayer("Binoculars")
+sleep 2s
+expect client1 T_Deg() => 110
+expect client1 T_Mouse() => 818
+
+# another angle (VehicleCommon has a 70 for ground vehicles, turned off there), scaled; 90 again
+lua client1 Game:SetCameraFov((70*3.14)/180.0)
+expect client1 T_Deg() => 86
+lua client1 Game:SetCameraFov(90 * 3.1415962 / 180)
+expect client1 T_Deg() => 110
+
+# narrow: the sight still zooms in (60 / 1.4), and back
+lua client1 CoopFovSet(60)
+sleep 1s
+expect client1 T_Deg() => 60
+expect client1 T_Mouse() => 1500
+lua client1 Player.EventHandlers[ScriptEvent_ZoomToggle](_localplayer, ScriptEvent_ZoomToggle, 1)
+sleep 2s
+expect client1 T_Deg() => 43
+lua client1 Player.EventHandlers[ScriptEvent_ZoomToggle](_localplayer, ScriptEvent_ZoomToggle, 0)
+sleep 2s
+expect client1 T_Deg() => 60
+lua client1 CoopFovSet(110)
+sleep 1s
+
+# in the menu the cursor moves as the game made it (scale 1), back in the game ours again
+lua client1 Game:SendMessage("Switch")
+sleep 1s
+expect client1 T_Mouse() => 1000
+lua client1 Game:SendMessage("Switch")
+sleep 1s
+expect client1 T_Mouse() => 818
+
+# a respawn: the new entity starts at 90
+lua server local t=Harness:RemotePlayer() local p=new(t:GetPos()) COOP_God=0 t:Damage({shooter=t,target=t,weapon=t.cnt.weapon,damage=1000,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0})
+sleep 4s
+lua server local s=Server:GetServerSlotByEntityId(Harness:RemotePlayer().id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1) COOP_God=1
+wait client1 me.health>=1 -t 30s
+sleep 1s
+expect client1 T_Deg() => 110
+
+# Options > Game shows the angle as it is now; the slider sets it (60..120)
+lua client1 Game:SendMessage("Switch") GotoPage("Options")
+sleep 2s
+expect client1 UI.PageOptionsGame.GUI.coopfovvalue:GetText() => 110
+expect client1 floor(UI.PageOptionsGame.GUI.coopfov:GetValue() * 60 + 0.5) => 50
+lua client1 local w=UI.PageOptionsGame.GUI.coopfov w:SetValue(1) w.OnChanged(w)
+expect client1 COOP_Fov => 120
+expect client1 UI.PageOptionsGame.GUI.coopfovvalue:GetText() => 120
+lua client1 local w=UI.PageOptionsGame.GUI.coopfov w:SetValue(50/60) w.OnChanged(w)
+expect client1 COOP_Fov => 110
+lua client1 Game:SendMessage("Switch")
+sleep 2s
+expect client1 T_Deg() => 110
+
+# kept for the next start
+lua client1 CoopViewSave() COOP_Fov=nil dofile("Mods/FarCryCoop/view.lua")
+expect client1 COOP_Fov => 110
+lua client1 CoopFovSet(90)
+sleep 1s
+expect client1 T_Deg() => 90
+expect client1 T_Mouse() => 1000
+expect-no-events
+down
