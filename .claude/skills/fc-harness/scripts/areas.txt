@@ -16,4 +16,4 @@ chapter2: chapter2
 steam: steam-loop voice-relay proxy-install menu-create menu-lobby menu-lobby-private menu-name menu-find
 menu: fov menu-create menu-load menu-player menu-relaunch menu-lobby menu-lobby-private menu-name menu-password menu-find menu-find-lan steam-loop wait-players
 voice: voice-relay steam-loop menu-player
-view: fov
+view: fov view-distance

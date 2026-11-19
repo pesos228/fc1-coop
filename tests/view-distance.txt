@@ -1,0 +1,46 @@
+# View distance from Options > Game (owner, 2026-11-19: bushes and trees pop up right in front of
+# the player; MenuScreens/CoopView.lua): the engine's draw distances scaled from the player's own
+# video settings, 100..300 percent. The game writes two of them to system.cfg on quit, so a
+# restart finds the scaled values: they must not be scaled again. A value the player changes in
+# the Video options is the new base. Kept in Mods/FarCryCoop/view.lua (the harness keeps the
+# player's own and puts it back at down, tools/harness cfgFiles).
+# Run from the repo root: tools/bin/harness.exe test tests/view-distance.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 20s
+lua client1 function T_V() return format("%g %g %g", e_obj_view_dist_ratio, floor(e_vegetation_sprites_distance_ratio * 100 + 0.5) / 100, e_obj_lod_ratio) end
+# the harness runs at Medium: the game's own values
+expect client1 T_V() => 55 0.9 5
+
+# twice as far
+lua client1 CoopViewDistSet(200)
+expect client1 T_V() => 110 1.8 10
+sleep 2s
+expect client1 T_V() => 110 1.8 10
+
+# a restart: the scaled values come back from system.cfg, view.lua says what they are
+lua client1 COOP_ViewDist, COOP_ViewBase, COOP_ViewSet = nil, nil, nil dofile("Mods/FarCryCoop/view.lua")
+expect client1 COOP_ViewDist => 200
+lua client1 CoopViewApply()
+expect client1 T_V() => 110 1.8 10
+
+# the player changes a value in the Video options: the new base
+lua client1 setglobal("e_obj_view_dist_ratio", 70)
+sleep 3s
+expect client1 T_V() => 140 1.8 10
+
+# Options > Game shows it; the slider sets it
+lua client1 Game:SendMessage("Switch") GotoPage("Options")
+sleep 2s
+expect client1 UI.PageOptionsGame.GUI.coopviewvalue:GetText() => 200%
+lua client1 local w=UI.PageOptionsGame.GUI.coopview w:SetValue(0) w.OnChanged(w)
+expect client1 COOP_ViewDist => 100
+expect client1 UI.PageOptionsGame.GUI.coopviewvalue:GetText() => 100%
+lua client1 Game:SendMessage("Switch")
+sleep 1s
+expect client1 T_V() => 70 0.9 5
+# the host has its own (nothing goes over the network)
+expect server format("%g", e_obj_view_dist_ratio) => 55
+expect-no-events
+down
