@@ -914,16 +914,25 @@
 
 ## 2026-11-19 — Проверка версии мода
 
-- **Как устроено.** Версия задаётся одной строкой: `COOP_VERSION` в `Scripts/COOP/Version.lua`, сейчас `0.4-dev`. Её грузят и `gamerules.lua`, и `ClientStuff.lua`. Лаунчер берёт её при сборке (`build.rs`).
+- **Как устроено.** Версия задаётся одной строкой: `COOP_VERSION` в `Scripts/COOP/Version.lua`, сейчас `0.4-dev`. Её грузят и `gamerules.lua`, и `ClientStuff.lua`.
   - Клиент при каждом спавне шлёт `COOPVER <версия>`. Хост отвечает своей или отключает слот через `slot:Disconnect(причина)`.
   - Если клиент так и не прислал версию за `COOP_VER_WAIT` = 15 с после появления его игрока, хост отключает и его: это версия до проверки.
   - Причина заканчивается переводом строки. Стоковый `ClientOnDisconnect` (`Multiplayer/Connecting.lua`) показывает такую причину как есть, в `UI.MessageBox("@DisconnectedFromServer", …)`, а без перевода строки приписывает `@` и ищет строку локализации.
 - **Сам клиент не отключается.** `Game:Disconnect()` из `ClientStuff:OnUpdate` уронил клиента (Critical Exception, `runs/20261119-085845`). По SDK `CXGame::ShutdownClient` уничтожает клиента сразу, внутри его же апдейта. Отключение, пришедшее от сервера, идёт через `MarkClientForDestruct` (отложенно) и не падает. Отложенной консольной команды в SDK нет (`IConsole::ExecuteString`). Поэтому если хост не ответил за 15 с, клиент пишет в HUD «The host runs an older FC1 Co-op», раз в 30 с.
 - **Ревью (субагент) нашло:** отказ при повторном входе затирал сохранённое снаряжение. `OnClientDisconnect` сохранял стартовое снаряжение свежего спавна поверх прогресса игрока. Сценарий падал: после возвращения `none` вместо M4 (`runs/20261119-091652`). Теперь отвергнутый слот помечен (`COOP_VerRefused`): при его отключении не сохраняется снаряжение, не раздаются предметы и нет объявления «has left». Попутно версия от клиента обрезается до 24 символов, чтобы причина не вылезла за лимит и не потеряла перевод строки.
 - **Не сделано:** клиент, у которого `SET PLAYER` не нашёл сущность, тоже получит «у вас старая версия». Раньше он просто висел без игрока, так что хуже не стало, но причина неточная.
-- **Лаунчер:** лобби сравнивает версии до запуска игры.
-  - Хост отвечает `{"t":"refused","reason"}` и закрывает соединение.
-  - Клиент уходит сам, если в `state` хоста другая версия или её нет (старый лаунчер).
-  - Причина видна в строке статуса, по-русски и по-английски.
-  - Юнит-тест `lobby::tests::versions` зелёный. Само лобби харнесом не проверяется.
+- **Лаунчер:** сверку версий в его лобби я сделал, но не включил: лаунчер в тот же день удалили (всё есть в меню игры), коммит выброшен до пуша.
 - **Проверка:** `tests/version-check.txt` (область `lobby`), 51 шаг: другая версия, повторный вход с другой версией (снаряжение цело), молчащий клиент, молчащий хост. 2 из 2 после последней правки (`runs/20261119-092153`, `-092618`).
+
+## 2026-11-19 — Лаунчер убран, запуск через меню игры «Mods»
+
+- **Решение владельца:** отдельный лаунчер (`games/far-cry/launcher`, Tauri, от FarCryCoop) не нужен: всё, что он делал (карта и сохранения, сложность, лобби, цвет и выкладка, Steam), есть в меню игры. Удалены: лаунчер, `tools/fcc/build-launcher.cmd` и старый пакет апстрима `release/release.ps1` + `INSTALL.md` (ASI-загрузчик в `Bin32` игры и лаунчер). Пакет игрока — `release/ci-package.ps1` + `TEST-BUILD.md`: одна папка `FarCryCoop` в `Mods`. Механизмы, которыми пользовался лаунчер, остались: `join_<pid>.txt` (харнес), `prefs.lua` (пишет «Player settings»), `CoopLoad`, `COOP_PlayerKey` (SteamID от ASI).
+- **Проверка руками (без харнеса, без `-DEVMODE`).** Пакет игрока поставлен в папку игры: пак и `ModDesc.txt` из `deploy.ps1`, `Bin32\CryGame.dll` = `tools/bin/FarCryCoopNet.asi`, `Steam\steam_api.dll` из `release/redist`. `Bin32\FarCry.exe` запущен без параметров, клики — относительными движениями мыши (`mouse_event`): курсор меню игры идёт по приращениям DirectInput, абсолютный `SetCursorPos` он не видит.
+  - Меню «Mods» показывает «FarCryCoop (FarCryCoop)». «Load MOD» → окно «may require the game to relaunch» → «Yes» → игра закрылась и запустилась снова с `FarCry.exe -MOD:FarCryCoop -RELAUNCHING` (наблюдал: командная строка нового процесса). По SDK `CGameMods::SetCurrentMod(имя, bNeedsRestart)` при смене мода во время игры шлёт `Relaunch` (`GameMods.cpp`).
+  - В новом процессе ASI загрузился как `CryGame.dll` мода и поставил все хуки, Steam поднялся (AppID 13520), ключ и ник из Steam выставлены (`netlog_FarCry_<pid>.txt`). Строки `#…` от ASI работают и без `-DEVMODE`: ASI вызывает `IConsole::ExecuteString(…, bIgnoreDevMode=1)` (SDK `IConsole.h`).
+  - Главное меню мода: Co-op, Options, Profiles, Mods, Demo Loop, Credits, Quit. Co-op → Training, «Launch» → `Level Training loaded`, `coop: Steam lobby created`, на HUD «Waiting for players: 1/2».
+- **Попутно (не разбирал):**
+  - после «Launch» хост оказался в меню паузы (Return to Game / Load Check Point), а не в игре. Один раз; пока шла загрузка, окно могло терять фокус. Проверить: `Game:IsInMenu()` после «Launch» в `tests/menu-create.txt` или глазами у владельца;
+  - у нового игрока без `prefs.lua` в консоли `SCRIPT ERROR … Unable to open mods/farcrycoop/prefs.lua` (`Coop.lua` строка 273, `ClientStuff.lua` строка 18): безвредно, но выглядит как ошибка;
+  - `ModDesc.txt` мода: `_Version_ = "0.2-beta"`, «up to 4 players», автор «FarCryCoop» — расходится с `COOP_VERSION` (`0.4-dev`). Меню «Mods» показывает 0.2.0.0;
+  - `ci-package.ps1` локально не собрал ASI (`vcvarsall` не найден по пути из `vswhere`/2019 BuildTools); `toolsccuild-asi.cmd` собирает. В CI на GitHub это не мешает.
