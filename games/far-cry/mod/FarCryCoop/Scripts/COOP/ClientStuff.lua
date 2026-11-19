@@ -445,31 +445,44 @@ function CoopDrawHud(hud)
 end
 
 -- Voice chat (asi/voice.c, push-to-talk: K, or the key set in Options > Controls, MenuScreens/
--- CoopVoice.lua): the ASI says who talks. A box per speaker at the bottom right, above the health
--- bars (as Source games list speakers), drawn as the game's own HUD is: a dark fill with a thin
--- dull green outline; the Steam avatar (avatars/<SteamID hex>.dds, written by the ASI; none
--- without Steam) and the name. We come first while our key is held.
-COOP_VoiceTalk = COOP_VoiceTalk or {}   -- speaker id (SteamID hex) -> {name, t: when the ASI last said "talks", since}
+-- CoopVoice.lua): the ASI says who talks. A box per speaker above the health bars, as Source games
+-- list speakers (one that stops fades out, the others slide into its place), drawn as the game's
+-- own HUD is: a dark fill with a thin dull green outline; the Steam avatar (avatars/<SteamID
+-- hex>.dds, written by the ASI; an empty frame without Steam) and the name. We come first while our
+-- key is held. Also in cutscenes, when the rest of the HUD is hidden.
+COOP_VoiceTalk = COOP_VoiceTalk or {}   -- speaker id (SteamID hex, "" is us) -> {name, t, since, off, y}
 COOP_VoiceAvatar = COOP_VoiceAvatar or {} -- speaker id ("" is us) -> avatar file name
 COOP_VoiceTex = COOP_VoiceTex or {}     -- avatar file name -> texture id, 0 if it did not load
-COOP_VOICE_KEEP = 1.5 -- s: a box the ASI stopped refreshing (every 0.5 s while one talks) goes
+COOP_VOICE_KEEP = 1.5 -- s: the ASI says "talks" every 0.5 s while one talks; silent longer: done
+COOP_VOICE_FADE = 0.4 -- s: a box fades out over this
+COOP_VOICE_SLIDE = 12 -- per s: how fast a box moves to its new place
+function CoopVoiceSet(id, name, on)
+	local v = COOP_VoiceTalk[id];
+	if (on == 1) then
+		if (v and not v.off and CoopVoiceFresh(v.t)) then v.t, v.name = _time, name; -- keeps its place
+		else COOP_VoiceTalk[id] = {name = name, t = _time, since = _time}; end
+	elseif (v and not v.off) then
+		v.off = _time;
+	end
+end
 function CoopVoice_Talk(id, name, on, av)
 	if (av and av ~= "") then COOP_VoiceAvatar[id] = av; end
-	local v = COOP_VoiceTalk[id];
-	if (on ~= 1) then COOP_VoiceTalk[id] = nil;
-	elseif (v and CoopVoiceFresh(v.t)) then v.t, v.name = _time, name; -- still talking: keeps its place
-	else COOP_VoiceTalk[id] = {name = name, t = _time, since = _time}; end
+	CoopVoiceSet(id, name, on);
 end
 function CoopVoice_Me(name, on, av)
 	if (av and av ~= "") then COOP_VoiceAvatar[""] = av; end
-	if (on == 1) then COOP_VoiceMe = _time; else COOP_VoiceMe = nil; end
-	COOP_VoiceMeName = name;
+	CoopVoiceSet("", name, on);
 end
 function CoopVoice_Avatar(id, av)
 	COOP_VoiceAvatar[id] = av;
 end
 function CoopVoiceFresh(t) -- refreshed lately (_time starts again with a map: older is newer)
 	return t and t <= _time and _time - t < COOP_VOICE_KEEP;
+end
+function CoopVoiceTalking(id) -- for the harness: 1 while a box is up and not fading
+	local v = COOP_VoiceTalk[id];
+	if (v and not v.off and CoopVoiceFresh(v.t)) then return 1; end
+	return nil; -- a value: tostring(CoopVoiceTalking(id)) errs on none (Lua 4)
 end
 function CoopVoiceTexture(av)
 	if (not av or av == "") then return nil; end
@@ -481,40 +494,61 @@ function CoopVoiceTexture(av)
 	if (t == 0) then return nil; end
 	return t;
 end
-COOP_VOICE_W = 170 -- a box: 170 x 26, 4 apart, the lowest one ends at y 536 (the health bars below)
-COOP_VOICE_H = 26
+-- the boxes sit over the health bars' block (x 560-722 in 800x600 units), the lowest one ends at
+-- y 536, 4 apart
+COOP_VOICE_X, COOP_VOICE_W, COOP_VOICE_H, COOP_VOICE_BOTTOM = 560, 162, 26, 536
 COOP_VOICE_LINE = {0.3, 0.56, 0.43, 0.8} -- the outline of the HUD's bars and radar
-function CoopVoiceFrame(x, y, w, h)
+function CoopVoiceFrame(x, y, w, h, a)
 	local c = COOP_VOICE_LINE;
-	System:DrawImageColor(COOP_VoiceBox, x, y, w, 1, 4, c[1], c[2], c[3], c[4]);
-	System:DrawImageColor(COOP_VoiceBox, x, y + h - 1, w, 1, 4, c[1], c[2], c[3], c[4]);
-	System:DrawImageColor(COOP_VoiceBox, x, y + 1, 1, h - 2, 4, c[1], c[2], c[3], c[4]);
-	System:DrawImageColor(COOP_VoiceBox, x + w - 1, y + 1, 1, h - 2, 4, c[1], c[2], c[3], c[4]);
+	System:DrawImageColor(COOP_VoiceBox, x, y, w, 1, 4, c[1], c[2], c[3], c[4] * a);
+	System:DrawImageColor(COOP_VoiceBox, x, y + h - 1, w, 1, 4, c[1], c[2], c[3], c[4] * a);
+	System:DrawImageColor(COOP_VoiceBox, x, y + 1, 1, h - 2, 4, c[1], c[2], c[3], c[4] * a);
+	System:DrawImageColor(COOP_VoiceBox, x + w - 1, y + 1, 1, h - 2, 4, c[1], c[2], c[3], c[4] * a);
+end
+function CoopVoiceFit(name, w) -- the name cut to w with ".." (15 px font)
+	if (Game:GetHudStringSize(name, 15, 15) <= w) then return name; end
+	local n = strlen(name);
+	while (n > 1 and Game:GetHudStringSize(strsub(name, 1, n).."..", 15, 15) > w) do n = n - 1; end
+	return strsub(name, 1, n)..".."
 end
 function CoopDrawVoice(hud)
-	if (tonumber(cl_display_hud) == 0 or hud.bHide) then return; end
+	local dt = _time - (COOP_VoiceDrawnAt or _time);
+	COOP_VoiceDrawnAt = _time;
+	if (dt < 0 or dt > 0.5) then dt = 0.5; end -- a new map, a pause: just snap
+	-- talking or fading out; gone after the fade (an "off" lost on the way: the refresh stops)
 	local rows = {};
-	if (CoopVoiceFresh(COOP_VoiceMe)) then tinsert(rows, {COOP_VoiceMeName or getglobal("p_name") or "", COOP_VoiceAvatar[""]}); end
-	local talk = {};
 	for id, v in COOP_VoiceTalk do
-		if (CoopVoiceFresh(v.t)) then tinsert(talk, {v.name, COOP_VoiceAvatar[id], v.since}); end
+		if (not v.off and not CoopVoiceFresh(v.t)) then v.off = (v.t and v.t <= _time) and v.t + COOP_VOICE_KEEP or _time; end
+		if (v.off and (v.off > _time or _time - v.off >= COOP_VOICE_FADE)) then COOP_VoiceTalk[id] = nil;
+		else tinsert(rows, {id = id, v = v}); end
 	end
-	sort(talk, function(a, b) return a[3] < b[3]; end); -- who started first stays on top
-	for i = 1, getn(talk) do tinsert(rows, talk[i]); end
+	-- us first, then who started first; a fading box keeps its place until it is gone
+	sort(rows, function(a, b)
+		if (a.id == "" or b.id == "") then return a.id == ""; end
+		if (a.v.since ~= b.v.since) then return a.v.since < b.v.since; end
+		return a.id < b.id; -- started in the same frame: still one order
+	end);
 	local n = getn(rows);
+	-- shown with the HUD hidden too: cutscenes set cl_display_hud 0 (Hud.OnUpdate still runs), and
+	-- the players talk through them (owner, 2026-11-19)
 	if (n == 0) then return; end
 	if (not COOP_VoiceBox) then COOP_VoiceBox = System:LoadImage("Textures/white16x16.dds") or 0; end
 	if (COOP_VoiceBox == 0) then return; end
 	Game:SetHUDFont("default", "default");
-	local x, y = 790 - COOP_VOICE_W, 536 - n * (COOP_VOICE_H + 4) + 4;
+	local x = COOP_VOICE_X;
 	for i = 1, n do
-		System:DrawImageColor(COOP_VoiceBox, x, y, COOP_VOICE_W, COOP_VOICE_H, 4, 0, 0, 0, 0.45);
-		CoopVoiceFrame(x, y, COOP_VOICE_W, COOP_VOICE_H);
-		local tex = CoopVoiceTexture(rows[i][2]); -- none (no Steam, not loaded yet): an empty frame
-		if (tex) then System:DrawImageColor(tex, x + 4, y + 4, 18, 18, 4, 1, 1, 1, 1); end
-		CoopVoiceFrame(x + 3, y + 3, 20, 20);
-		Game:WriteHudString(x + 30, y + 5, rows[i][1], 0.9, 0.92, 0.86, 1, 15, 15);
-		y = y + COOP_VOICE_H + 4;
+		local v = rows[i].v;
+		local y = COOP_VOICE_BOTTOM - (n - i + 1) * (COOP_VOICE_H + 4) + 4;
+		if (not v.y) then v.y = y; else v.y = v.y + (y - v.y) * min(1, dt * COOP_VOICE_SLIDE); end
+		local a = 1;
+		if (v.off) then a = max(0, 1 - (_time - v.off) / COOP_VOICE_FADE); end
+		local yy = floor(v.y + 0.5);
+		System:DrawImageColor(COOP_VoiceBox, x, yy, COOP_VOICE_W, COOP_VOICE_H, 4, 0, 0, 0, 0.45 * a);
+		CoopVoiceFrame(x, yy, COOP_VOICE_W, COOP_VOICE_H, a);
+		local tex = CoopVoiceTexture(COOP_VoiceAvatar[rows[i].id]);
+		if (tex) then System:DrawImageColor(tex, x + 4, yy + 4, 18, 18, 4, 1, 1, 1, a); end
+		CoopVoiceFrame(x + 3, yy + 3, 20, 20, a);
+		Game:WriteHudString(x + 30, yy + 5, CoopVoiceFit(v.name or "", COOP_VOICE_W - 36), 0.9, 0.92, 0.86, a, 15, 15);
 	end
 end
 
