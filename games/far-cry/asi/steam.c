@@ -5,7 +5,7 @@
 //   "connect" is set, so friends see Join. Every remote player gets a local UDP socket that
 //   talks to the server on 127.0.0.1:49001.
 //   Client: Join, an accepted invite, a lobby or "coop_steam join <SteamID>" give the host;
-//   the tunnel listens on 127.0.0.1:49011 and the game connects there.
+//   the tunnel listens on 127.0.0.1:49011 (loop: the next free one up to 49018) and the game connects there.
 // Runs as Far Cry (AppID 13520: SteamAppId in the environment, as Steam sets it when it starts
 // the game). Off unless Mods\FarCryCoop\Steam\steam_api.dll is there (SDK redistributable, x86).
 // Mods\FarCryCoop\steam_loop.txt: no Steam, the "Steam" between two games on one PC is UDP on
@@ -110,6 +110,24 @@ static void __fastcall hExec(void *con, void *edx, const char *cmd, int slash, i
 	if (c) {
 		while (*c == ' ' || *c == '\\' || *c == '/')
 			c++;
+		// first: a voice name may hold "CoopMap(" or "Game:Connect(" (the checks below)
+		if (starts(c, "coop_voice") && (!c[10] || c[10] == ' ')) { // to the Steam thread as "voice ..."
+			static char v[300];
+			int i = 0;
+			const char *t;
+			for (t = "voice "; *t; t++)
+				v[i++] = *t;
+			for (t = c + 10; *t == ' '; t++)
+				;
+			for (; *t && i < 290; t++)
+				v[i++] = *t;
+			v[i] = 0;
+			if (g_sOff)
+				conPrint(con, "coop_voice: Steam is off (see the netlog)");
+			else
+				qPut(g_inQ, 8, &g_inHead, g_inTail, 0, v);
+			return;
+		}
 		if (starts(c, "coop_map ") || starts(c, "coop_loadgame ") || hasText(c, "CoopMap(") || hasText(c, "CoopLoad("))
 			g_ownsServer = g_coop = 1;
 		else if (starts(c, "coop_connect ") || hasText(c, "Game:Connect("))
@@ -341,8 +359,10 @@ static SOCKET udp(int port) // on 127.0.0.1, non-blocking; -1 if the port is tak
 // ---- tunnel (Steam thread) ----
 static int g_up;                   // a Far Cry server runs in this process
 static U64 g_me, g_host;           // client: the host we joined
+static DWORD g_hostLast;            // client: when its last packet came (voice.c: still in a game)
 static SOCKET g_game = (SOCKET)-1;  // client: 127.0.0.1:49011
 static SOCKET g_loopS = (SOCKET)-1; // loop: our fake Steam socket
+static int g_loopPort;              // loop: its port (our id there)
 static Addr g_gameAddr;
 static int g_gameKnown;
 static struct { U64 id; SOCKET s; DWORD last; } g_peers[MAX_PEERS]; // host: one per remote player
@@ -405,6 +425,7 @@ static void hostReceived(U64 from, const BYTE *data, int n) // remote game -> ou
 static void received(U64 from, const BYTE *data, int n)
 {
 	if (g_host && from == g_host) { // host's server -> our game
+		g_hostLast = GetTickCount(); // voice.c: still in that game
 		if (g_gameKnown)
 			pSendTo(g_game, (const char *)data, n, 0, &g_gameAddr, sizeof g_gameAddr);
 	} else
@@ -455,12 +476,17 @@ static void join(U64 host)
 {
 	char line[100];
 	int port[1];
+	static int gamePort = CL_PORT;
 	if (g_up) {
 		say("this game runs a server: leave it before joining another");
 		runOnMain("#if CoopFind_JoinFailed then CoopFind_JoinFailed() end");
 		return;
 	}
-	if (g_game == (SOCKET)-1 && (g_game = udp(CL_PORT)) == (SOCKET)-1) {
+	// loop: more clients on one PC (the harness) take the next free port; with Steam one client a PC
+	if (g_sLoop && g_game == (SOCKET)-1)
+		for (gamePort = CL_PORT; gamePort < CL_PORT + 8 && (g_game = udp(gamePort)) == (SOCKET)-1; gamePort++)
+			;
+	if (g_game == (SOCKET)-1 && (g_game = udp(gamePort = CL_PORT)) == (SOCKET)-1) {
 		say("UDP port %d is taken: is FarCryCoopSteam.exe or another game running?", CL_PORT);
 		runOnMain("#if CoopFind_JoinFailed then CoopFind_JoinFailed() end");
 		return;
@@ -469,10 +495,12 @@ static void join(U64 host)
 		int p;
 		for (p = LOOP_HOST + 1; p < LOOP_HOST + 17 && (g_loopS = udp(p)) == (SOCKET)-1; p++)
 			;
+		if (g_loopS != (SOCKET)-1)
+			g_loopPort = p;
 	}
 	g_host = host;
 	g_gameKnown = 0;
-	port[0] = CL_PORT;
+	port[0] = gamePort;
 	// as the LAN server list: late switch, no CD key check (that one crashed the game)
 	wvsprintfA(line, "#Game:Connect(\"127.0.0.1:%d\",1)", (va_list)port);
 	runOnMain("#if CoopFind_Connecting then CoopFind_Connecting() end"); // the menu's join is done
@@ -575,6 +603,8 @@ static void safeText(char *out, const char *s, int max)
 	}
 	out[n] = 0;
 }
+#include "voice.c"
+
 static int smallNum(const char *s) // lobby data "players", "diff", "pw": 0..999, else 0
 {
 	int n = 0, i;
@@ -952,6 +982,8 @@ static void command(char *c) // a "coop_steam ..." line
 			wvsprintfA(line, "%.64s, %s, relay %d (100 = ready), lobby %x", (va_list)a);
 			say("%s", line);
 		}
+	} else if (starts(c, "voice")) { // coop_voice ... (hExec)
+		voiceCommand(c + 5);
 	} else if (starts(c, "join ")) { // join <hex>|loop
 		join(starts(c + 5, "loop") ? (U64)LOOP_HOST : parseHex(c + 5));
 	} else if (g_sLoop) {
@@ -1097,8 +1129,12 @@ static DWORD __stdcall steamThread(void *dll)
 				g_up = now;
 				g_presence = 0;
 				if (g_sLoop) {
-					if (g_up && g_loopS == (SOCKET)-1 && (g_loopS = udp(LOOP_HOST)) == (SOCKET)-1)
-						say("loop port %d is taken", LOOP_HOST);
+					if (g_up && g_loopS == (SOCKET)-1) {
+						if ((g_loopS = udp(LOOP_HOST)) == (SOCKET)-1)
+							say("loop port %d is taken", LOOP_HOST);
+						else
+							g_loopPort = LOOP_HOST;
+					}
 				} else if (g_up) {
 					static char connect[40];
 					wvsprintfA(connect, "+coop %x%08x", (va_list)id);
@@ -1133,6 +1169,7 @@ static DWORD __stdcall steamThread(void *dll)
 		if (g_friendsWait && (int)(GetTickCount() - g_friendsUntil) > 0)
 			friendsDone();
 		pump();
+		voiceTick();
 		Sleep(1);
 	}
 }

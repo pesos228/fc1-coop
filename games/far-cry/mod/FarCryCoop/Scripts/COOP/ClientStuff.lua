@@ -441,6 +441,81 @@ function CoopDrawHud(hud)
 	COOP_HudDrawnAt = _time;
 	CoopDrawPlayerInfo(hud);
 	CoopDrawExit();
+	CoopDrawVoice(hud);
+end
+
+-- Voice chat (asi/voice.c, push-to-talk: K, or the key set in Options > Controls, MenuScreens/
+-- CoopVoice.lua): the ASI says who talks. A box per speaker at the bottom right, above the health
+-- bars (as Source games list speakers), drawn as the game's own HUD is: a dark fill with a thin
+-- dull green outline; the Steam avatar (avatars/<SteamID hex>.dds, written by the ASI; none
+-- without Steam) and the name. We come first while our key is held.
+COOP_VoiceTalk = COOP_VoiceTalk or {}   -- speaker id (SteamID hex) -> {name, t: when the ASI last said "talks", since}
+COOP_VoiceAvatar = COOP_VoiceAvatar or {} -- speaker id ("" is us) -> avatar file name
+COOP_VoiceTex = COOP_VoiceTex or {}     -- avatar file name -> texture id, 0 if it did not load
+COOP_VOICE_KEEP = 1.5 -- s: a box the ASI stopped refreshing (every 0.5 s while one talks) goes
+function CoopVoice_Talk(id, name, on, av)
+	if (av and av ~= "") then COOP_VoiceAvatar[id] = av; end
+	local v = COOP_VoiceTalk[id];
+	if (on ~= 1) then COOP_VoiceTalk[id] = nil;
+	elseif (v and CoopVoiceFresh(v.t)) then v.t, v.name = _time, name; -- still talking: keeps its place
+	else COOP_VoiceTalk[id] = {name = name, t = _time, since = _time}; end
+end
+function CoopVoice_Me(name, on, av)
+	if (av and av ~= "") then COOP_VoiceAvatar[""] = av; end
+	if (on == 1) then COOP_VoiceMe = _time; else COOP_VoiceMe = nil; end
+	COOP_VoiceMeName = name;
+end
+function CoopVoice_Avatar(id, av)
+	COOP_VoiceAvatar[id] = av;
+end
+function CoopVoiceFresh(t) -- refreshed lately (_time starts again with a map: older is newer)
+	return t and t <= _time and _time - t < COOP_VOICE_KEEP;
+end
+function CoopVoiceTexture(av)
+	if (not av or av == "") then return nil; end
+	local t = COOP_VoiceTex[av];
+	if (not t) then
+		t = System:LoadImage("Mods/FarCryCoop/avatars/"..av..".dds") or 0;
+		COOP_VoiceTex[av] = t;
+	end
+	if (t == 0) then return nil; end
+	return t;
+end
+COOP_VOICE_W = 170 -- a box: 170 x 26, 4 apart, the lowest one ends at y 536 (the health bars below)
+COOP_VOICE_H = 26
+COOP_VOICE_LINE = {0.3, 0.56, 0.43, 0.8} -- the outline of the HUD's bars and radar
+function CoopVoiceFrame(x, y, w, h)
+	local c = COOP_VOICE_LINE;
+	System:DrawImageColor(COOP_VoiceBox, x, y, w, 1, 4, c[1], c[2], c[3], c[4]);
+	System:DrawImageColor(COOP_VoiceBox, x, y + h - 1, w, 1, 4, c[1], c[2], c[3], c[4]);
+	System:DrawImageColor(COOP_VoiceBox, x, y + 1, 1, h - 2, 4, c[1], c[2], c[3], c[4]);
+	System:DrawImageColor(COOP_VoiceBox, x + w - 1, y + 1, 1, h - 2, 4, c[1], c[2], c[3], c[4]);
+end
+function CoopDrawVoice(hud)
+	if (tonumber(cl_display_hud) == 0 or hud.bHide) then return; end
+	local rows = {};
+	if (CoopVoiceFresh(COOP_VoiceMe)) then tinsert(rows, {COOP_VoiceMeName or getglobal("p_name") or "", COOP_VoiceAvatar[""]}); end
+	local talk = {};
+	for id, v in COOP_VoiceTalk do
+		if (CoopVoiceFresh(v.t)) then tinsert(talk, {v.name, COOP_VoiceAvatar[id], v.since}); end
+	end
+	sort(talk, function(a, b) return a[3] < b[3]; end); -- who started first stays on top
+	for i = 1, getn(talk) do tinsert(rows, talk[i]); end
+	local n = getn(rows);
+	if (n == 0) then return; end
+	if (not COOP_VoiceBox) then COOP_VoiceBox = System:LoadImage("Textures/white16x16.dds") or 0; end
+	if (COOP_VoiceBox == 0) then return; end
+	Game:SetHUDFont("default", "default");
+	local x, y = 790 - COOP_VOICE_W, 536 - n * (COOP_VOICE_H + 4) + 4;
+	for i = 1, n do
+		System:DrawImageColor(COOP_VoiceBox, x, y, COOP_VOICE_W, COOP_VOICE_H, 4, 0, 0, 0, 0.45);
+		CoopVoiceFrame(x, y, COOP_VOICE_W, COOP_VOICE_H);
+		local tex = CoopVoiceTexture(rows[i][2]); -- none (no Steam, not loaded yet): an empty frame
+		if (tex) then System:DrawImageColor(tex, x + 4, y + 4, 18, 18, 4, 1, 1, 1, 1); end
+		CoopVoiceFrame(x + 3, y + 3, 20, 20);
+		Game:WriteHudString(x + 30, y + 5, rows[i][1], 0.9, 0.92, 0.86, 1, 15, 15);
+		y = y + COOP_VOICE_H + 4;
+	end
 end
 
 -- The danger meter by the radar (Hud:DrawStealthMeter) reads AI:GetPerception(): on a client, no AI
@@ -498,6 +573,13 @@ function ClientStuff:OnSetPlayer()
 	-- for (the server renames a second "Jack Carver" to "Jack Carver_")
 	Client:SendCommand("COOPID "..tostring(COOP_PlayerKey or getglobal("p_name") or ""));
 	CoopSendVersion();
+	-- the name others see by our voice (the ASI's voice chat, asi/voice.c); the player's own name is
+	-- still "" here
+	local vname = _localplayer and _localplayer:GetName();
+	if (not vname or vname == "") then vname = getglobal("p_name"); end
+	System:ExecuteCommand("coop_voice name "..tostring(vname or "Player"));
+	if (CoopVoiceApply) then CoopVoiceApply(); end -- the talk key of Options > Controls
+	if (CoopVoicePatchMenus) then CoopVoicePatchMenus(); end -- the chat line holds the key
 	-- player settings (prefs.lua; COOP gamerules CoopSetPrefs); the host sends them too, over loopback
 	if (COOP_Color) then Client:SendCommand("PREF "..COOP_Color.." "..tostring(COOP_Weapons or "")); end
 	-- again once connected: asked in OnInit only, the server kept sending the default 20
