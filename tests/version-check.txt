@@ -1,0 +1,75 @@
+# Everyone needs the same mod version (owner's idea 2026-11-19, docs/ideas.md): a player with
+# another one is turned away with a box that says both versions, instead of playing a broken game.
+# The client says its version (COOPVER, COOP ClientStuff), the host answers with its own
+# (COOP gamerules):
+# - another version: the host disconnects the client, the reason says both;
+# - a client that never says it (a version before this check): the host disconnects it after
+#   COOP_VER_WAIT seconds;
+# - a host that never answers (a version before this check): after COOP_VER_WAIT seconds the client
+#   says so on its HUD (it stays: leaving from the client's own update crashed the game,
+#   runs/20261119-085845).
+# The other versions are made up on one side: the harness gives every instance the same pack.
+# The reason, the box and the HUD messages are logged by wrappers of this test.
+# Run from the repo root: tools/bin/harness.exe test tests/version-check.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 20s
+# the same version: in, and the client knows the host's
+expect server type(COOP_VERSION) == "string" and strlen(COOP_VERSION) > 0 and 1 => 1
+expect client1 COOP_HostVersion == COOP_VERSION and 1 or tostring(COOP_HostVersion) => 1
+expect server getn(CoopPlayers()) => 2
+expect-no-events
+lua server T_Ver = COOP_VERSION
+lua client1 T_Ver = COOP_VERSION
+lua client1 function T_Wrap() if (ClientOnDisconnect ~= T_Mine) then T_Disc = ClientOnDisconnect; T_Mine = function(r) System:LogAlways("T disconnect: "..tostring(r)); T_Disc(r); end; ClientOnDisconnect = T_Mine; end if (UI.MessageBox ~= T_MineBox) then T_Box = UI.MessageBox; T_MineBox = function(a, b) System:LogAlways("T box: "..tostring(a).." | "..tostring(b)); return T_Box(a, b); end; UI.MessageBox = T_MineBox; end end
+lua client1 T_Wrap()
+
+# 1. the client has another version: turned away, the box says both
+lua client1 COOP_VERSION = "0.0-test" CoopSendVersion()
+expect-log client1 T.disconnect:.*0\.0-test 30s
+expect-log client1 T.box:.*0\.0-test 10s
+wait server players<=1 -t 30s
+lua client1 COOP_VERSION = T_Ver
+join client1 #Game:Connect("127.0.0.1",1,1)
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 120s
+sleep 10s
+expect server getn(CoopPlayers()) => 2
+
+# 1b. turned away when coming back: the equipment kept from the last game stays (review
+# 2026-11-19: the disconnect kept the fresh spawn's empty one over it, as if the player had played).
+# The host's version is the made-up one here: the client's comes back with its scripts on a join.
+lua server CoopGiveLoadout(Harness:RemotePlayer(), {weapons={"M4"}, ammo={Assault=90}, current="M4", clips={M4={fm=0, clip={30}}}})
+sleep 3s
+lua client1 Game:Disconnect()
+wait server players<=1 -t 30s
+lua server COOP_VERSION = "0.0-test"
+join client1 #Game:Connect("127.0.0.1",1,1)
+expect-log client1 T.disconnect:.*0\.0-test.*you.have 60s
+wait server players<=1 -t 30s
+lua server COOP_VERSION = T_Ver
+join client1 #Game:Connect("127.0.0.1",1,1)
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 120s
+sleep 10s
+expect server strfind(Harness:Loadout(Harness:RemotePlayer()), "^M4") and 1 or Harness:Loadout(Harness:RemotePlayer()) => 1
+
+# 2. a client that never says its version
+lua client1 T_Wrap()
+lua server for i, slot in Server:GetServerSlotMap() do if (System:GetEntity(slot:GetPlayerId()) ~= _localplayer) then COOP_SlotVer[slot:GetId()] = nil; COOP_VerSeen[slot:GetId()] = nil; end end
+expect-log client1 T.disconnect:.*older 40s
+expect-log client1 T.box:.*older 10s
+wait server players<=1 -t 30s
+join client1 #Game:Connect("127.0.0.1",1,1)
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 120s
+sleep 10s
+expect server getn(CoopPlayers()) => 2
+
+# 3. a host that never answers
+lua client1 T_Hud = T_Hud or Hud.AddMessage Hud.AddMessage = function(self, m) System:LogAlways("T hud: "..tostring(m)); return T_Hud(self, m); end
+lua client1 COOP_HostVersion = nil COOP_VerAsked = _time
+expect-log client1 T.hud:.*host.*older 40s
+expect server getn(CoopPlayers()) => 2
+down
