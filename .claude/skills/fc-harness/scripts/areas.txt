@@ -3,7 +3,7 @@
 # run-suite.sh warns about the ones that are not. "always" runs with every -a.
 always: smoke-training smoke-dam training-basic
 level-end: level-end level-end-area level-end-areas level-end-solo level-change level-change-sequence
-items: pickups mission-items mission-items-explosives mission-items-save items-hud items-hud-host spawn-weapon drops-river
+items: weapon-clip pickups mission-items mission-items-explosives mission-items-save items-hud items-hud-host spawn-weapon drops-river
 use: use-triggers use-nearest use-rotated use-valve only-my-player trigger-occupants softlock-regulator-door
 vehicles: vehicle-crews steam-boat-crew heli-guns heli-rotor heli-standing heli-flight board-early drops-river rest-resend boat-sync boat-drift boat-parked
 progress: progress player-key name-host respawn-loadout spawn-protection mission-items-save level-change join-and-progress

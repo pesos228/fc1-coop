@@ -1,0 +1,31 @@
+# A shot takes a round from the clip, the host's too (owner, 2026-11-19: the host never reloads).
+# BasicWeapon.Server:OnFire counts the shot for the multiplayer stats before it takes the round:
+# SVplayerTrack:SetBySs, and SVplayerTrack is loaded only by the deathmatch rules
+# (Multiplayer/GameRulesLib.lua), so in COOP the call raised a Lua error and the round stayed. The
+# harness cannot pull the trigger, so the scenario calls the weapon's own server handler the way a
+# shot does, for the host and for the client, and the client must see its clip go down by one.
+# Run from the repo root: tools/bin/harness.exe test tests/weapon-clip.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 20s
+lua server COOP_God=1
+lua server CoopGiveLoadout(_localplayer, {weapons={"P90"}, ammo={SMG=77}, current="P90", clips={P90={fm=0, clip={20}}}})
+lua server CoopGiveLoadout(Harness:RemotePlayer(), {weapons={"P90"}, ammo={SMG=77}, current="P90", clips={P90={fm=0, clip={20}}}})
+sleep 3s
+expect server _localplayer.cnt.ammo_in_clip => 20
+expect client1 _localplayer.cnt.ammo_in_clip => 20
+# the host shoots twice
+lua server COOP_FireErr=nil local P=_localplayer local f=function() call(BasicWeapon.Server.OnFire, {%P.cnt.weapon, {shooter=%P, bullets=1, pos=%P:GetPos(), dir={x=1,y=0,z=0}}}, "x", function(m) COOP_FireErr=m end) end f() f()
+expect server tostring(COOP_FireErr) => nil
+expect server _localplayer.cnt.ammo_in_clip => 18
+expect server _localplayer.cnt.ammo => 77
+# the client shoots once (the server runs the handler for it)
+lua server local P=Harness:RemotePlayer() call(BasicWeapon.Server.OnFire, {P.cnt.weapon, {shooter=P, bullets=1, pos=P:GetPos(), dir={x=1,y=0,z=0}}}, "x", function(m) COOP_FireErr=m end)
+expect server tostring(COOP_FireErr) => nil
+expect server Harness:RemotePlayer().cnt.ammo_in_clip => 19
+sleep 2s
+expect client1 _localplayer.cnt.ammo_in_clip => 19
+expect client1 _localplayer.cnt.ammo => 77
+expect-no-events
+down

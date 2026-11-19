@@ -6,6 +6,16 @@ Script:LoadScript("scripts/COOP/LevelEnd.lua");
 Script:LoadScript("scripts/COOP/Version.lua");
 CoopMonEvent("S", "map "..tostring(COOP_Map)); -- this file runs on every map load
 
+-- In a multiplayer game BasicWeapon.Server:OnFire counts the shot of a player for the deathmatch
+-- statistics (SVplayerTrack:SetBySs) before it takes the round from the clip, and Server:OnHit does
+-- the same before it sends the hit effect. SVplayerTrack is loaded only by the deathmatch rules
+-- (Multiplayer/GameRulesLib.lua): here the call raised a Lua error, so no player's clip ever went
+-- down on the server (the host never had to reload; tests/weapon-clip.txt). Co-op keeps no such
+-- statistics: an empty stand-in.
+if (not SVplayerTrack) then
+	SVplayerTrack = {SetBySs = function() end, GetBySs = function() return 0; end};
+end
+
 -- Load every weapon class on the server before players spawn: a player's weapon table
 -- (CPlayer::m_mapPlayerWeapons) only has the classes loaded at that time, so weapons outside the
 -- mission's <Weapons><Used> list could never be given (MakeWeaponAvailable returned -1).
