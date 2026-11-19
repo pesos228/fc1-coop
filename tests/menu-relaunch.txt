@@ -15,7 +15,7 @@ sleep 20s
 expect server tostring(COOP_Map) => Carrier
 expect server Game:IsServer() and 1 or 0 => 1
 expect-log server Level.Carrier.loaded
-# a game started from the console (or the launcher) after a menu game: none of that game's
+# a game started from the console after a menu game: none of that game's
 # password, limit or Steam lobby
 lua server Game:Disconnect()
 sleep 3s

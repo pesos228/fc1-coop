@@ -16,8 +16,8 @@ COOP_SPWeapons = 1
 
 -- Player names. A name goes into Lua strings and console lines (p_name) and the game font has
 -- Latin letters only, so a name keeps printable ASCII without quotes, ";", "#", "%", "@", "$" and
--- backslash, Cyrillic (UTF-8: a Steam name) is transliterated as the launcher does
--- (launcher/src/lobby.rs clean_name, tests/menu-name.txt has its cases), anything else is dropped;
+-- backslash, Cyrillic (UTF-8: a Steam name) is transliterated
+-- (tests/menu-name.txt has the cases), anything else is dropped;
 -- 20 characters at most, "Player" if nothing is left. Steam names can hold any text: this is the
 -- only way one gets in. 20, "@" and "$": the host's own check (SDK XServerSlot
 -- ConvertToValidPlayerName) keeps 20, turns "@" into "_" and garbles a "$" without a digit after
@@ -68,7 +68,7 @@ end
 
 -- With Steam the player's name is the Steam name (owner, 2026-11-15: nobody types somebody
 -- else's name). The ASI sets COOP_SteamNameRaw once Steam is up (steam.c sendName) and calls
--- this; prefs.lua (the launcher's, the menu's) sets p_name too, so its loaders call it again.
+-- this; prefs.lua (Player settings) sets p_name too, so its loaders call it again.
 function CoopApplySteamName()
 	if (not COOP_SteamNameRaw) then return; end
 	COOP_SteamName = CoopCleanName(COOP_SteamNameRaw);
@@ -186,7 +186,7 @@ function CoopMap(name)
 	-- a new game (not the next level, CoopSaveLoadouts): the last game's save points are gone
 	if (not COOP_MapChanging) then COOP_SavePoint, COOP_RespawnOwed = {}, {}; end
 	COOP_MapChanging = nil;
-	if (COOP_Difficulty) then CoopApplyDifficulty(tonumber(COOP_Difficulty)); end -- the launcher sets it
+	if (COOP_Difficulty) then CoopApplyDifficulty(tonumber(COOP_Difficulty)); end -- the Co-op menu sets it
 	local mission = Game:GetMapDefaultMission(name);
 	if (not mission) then
 		System:LogAlways("coop_map: map '"..tostring(name).."' not found");
@@ -205,7 +205,7 @@ function CoopMap(name)
 	-- stops them the same way
 	if (Movie and Movie.StopAllSequences) then Movie:StopAllSequences(); end
 	local running = COOP_Map;
-	-- a new game started from the console or the launcher takes nothing of an earlier menu game:
+	-- a new game started from the console takes nothing of an earlier menu game:
 	-- no password, no player limit, no Steam lobby (MenuScreens/Coop.lua Launch sets them for its own)
 	local menu = COOP_MenuLaunch;
 	COOP_MenuLaunch = nil;
@@ -242,8 +242,8 @@ Game:AddCommand("coop_connect", "CoopConnect(%%)", "coop_connect <address>[:port
 Game:AddCommand("coop_restart", "if (COOP_Map) then CoopMap(COOP_Map) end", "coop_restart: reload the current co-op map, clients stay connected");
 
 -- Co-op saves (written by CoopSave, COOP gamerules): Mods\FarCryCoop\save_<name>.lua. Loading
--- lives here and not in the gamerules: the launcher continues a campaign with CoopLoad("<name>")
--- from the menu, before any co-op map (and its gamerules) is loaded.
+-- lives here and not in the gamerules: a campaign continues with CoopLoad("<name>")
+-- (coop_loadgame) from the main menu, before any co-op map (and its gamerules) is loaded.
 COOP_SAVE_PATH = "Mods/FarCryCoop/save_";
 
 function CoopSaveMessage(text)
@@ -265,7 +265,7 @@ function CoopLoad(name)
 	if (COOP_Map and Game:IsServer()) then
 		COOP_PendingMap = save.map; -- GameRules:OnUpdate loads it, never from inside an entity script
 	else
-		CoopMap(save.map); -- from the launcher: no server yet, the host's game starts it
+		CoopMap(save.map); -- from the main menu: no server yet, the host's game starts it
 	end
 	CoopSaveMessage("loading "..name);
 end
@@ -289,7 +289,7 @@ function CoopStartLevel(msg)
 	-- most maps end with "StartLevelFade <map>" (Game.cpp: the same with a fade out)
 	local s, e, map = strfind(msg, "^StartLevel%a*%s+(%S+)");
 	if (not map) then return; end
-	-- a host started by CoopMap (the launcher) has COOP_Map, which stays set after leaving: only
+	-- a host started by CoopMap (console, harness) has COOP_Map, which stays set after leaving: only
 	-- while it serves a game, or New game from the menu would only set COOP_PendingMap
 	if (not COOP_Started and not (COOP_Map and Game:IsMultiplayer() and Game:IsServer())) then
 		if (COOP_Joined and not Game:IsServer()) then

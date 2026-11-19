@@ -1,6 +1,6 @@
 # "Find game" → LAN (MenuScreens/CoopFind.lua): the engine's own LAN search, this mod's games only,
-# and Join by the found address (coop_connect). No Steam: the host is a co-op game started as the
-# launcher does, a second game in the menu finds it on the network (named "<player> - <map>":
+# and Join by the found address (coop_connect). No Steam: the host is a co-op game started from
+# the console, a second game in the menu finds it on the network (named "<player> - <map>":
 # sv_name, CoopMap) and joins.
 # Run from the repo root: tools/bin/harness.exe test tests/menu-find-lan.txt
 up -mode host -map training -clients 1 -idle 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=1;#CoopMap("training")

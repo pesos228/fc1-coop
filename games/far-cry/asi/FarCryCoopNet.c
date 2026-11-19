@@ -782,7 +782,7 @@ static void keyboardUS(void)
 // included) is wrapped and polls the file twice a second, after the frame. Console:
 // ISystem::GetIConsole +0x60, IConsole::ExecuteString +0x80 (CXConsole vtable 0x36571c58;
 // +0x84 is Exit, which shows "No comments from application" and quits the game).
-// The launcher writes join_<pid>.txt for the one game it started: with two games on one PC a
+// The harness writes join_<pid>.txt for the one game it started: with two games on one PC a
 // listen host with no client yet sends no snapshots, so hosting() was 0 and the host's game took
 // the client's "connect" line from the shared join.txt and timed out connecting to itself.
 // FIX 13: AI jumps. CXPuppetProxy starts the jump animation itself (C++, not from Lua) and the jump
@@ -1115,7 +1115,7 @@ static void steamJoin(void)
 		logf("steam: no IGame in 120 s, Steam join off");
 		return;
 	}
-	steamStart(); // its console hook first: the frame hook below runs the launcher's join line
+	steamStart(); // its console hook first: the frame hook below runs a join line
 	slot = &(*(void ***)game)[1]; // IGame::Update
 	oGameUpdate = (BYTE(__fastcall *)(void *, void *))*slot;
 	VirtualProtect(slot, 4, 0x04, &old); // PAGE_READWRITE

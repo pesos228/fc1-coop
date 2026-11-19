@@ -119,7 +119,7 @@ func cmdUp(args []string) error {
 	sound := fs.Bool("sound", false, "keep the game's sound (muted by default: effects and music volume 0)")
 	start := fs.String("start", "", "server start commands separated by ';' (default by mode)")
 	gameDir := fs.String("game", gameDir(), "Far Cry install dir (default: $FC1_GAME_DIR, .harness/game-dir.txt, Steam)")
-	pname := fs.String("pname", "", "every client plays under this p_name and is told apart by its COOP_PlayerKey, as the launcher does")
+	pname := fs.String("pname", "", "every client plays under this p_name and is told apart by its COOP_PlayerKey")
 	keys := fs.String("keys", "", "with -pname: the clients' COOP_PlayerKey in order, separated by ',' (default: the instance name)")
 	connect := fs.String("connect", "", "client join command instead of the direct connect")
 	steamLoop := fs.Bool("steamloop", false, "the ASI's Steam tunnel without Steam (Mods/<mod>/steam_loop.txt): clients join with 'coop_steam join loop'")

@@ -1,6 +1,6 @@
 -- FarCryCoop "Co-op" screen (docs/specs/in-game-menu.md, step 3b): create a co-op game, or join one
 -- by address. Laid out like the game's own Create Server screen (MultiPlayer/CreateServer.lua).
--- "Launch" sets what the launcher used to put in the console line (COOP_ExpectPlayers,
+-- "Launch" sets the host's settings (COOP_ExpectPlayers,
 -- COOP_Difficulty, COOP_LoadoutMode) and starts the map or save with the console commands
 -- coop_map / coop_loadgame: the ASI marks the game as a co-op one from those lines (steam.c hExec),
 -- and they run without -DEVMODE, unlike "#" Lua lines.
@@ -268,7 +268,7 @@ UI.PageCoop =
 		if (not sel) then return; end
 		-- loads the level at once (CXGame::LoadLevelCS resets the script timers): run it from a
 		-- click or a console line, never from a Game:SetTimer callback (docs/findings.md 2026-11-15)
-		-- the launcher's settings first (shirt color, weapons; COOP ClientStuff would load them at the
+		-- the player settings first (shirt color, weapons; COOP ClientStuff would load them at the
 		-- map start, over the choices below, while COOP_Color is unset)
 		if (not COOP_Color) then Script:LoadScript("Mods/FarCryCoop/prefs.lua"); end
 		CoopApplySteamName(); -- the Steam name over prefs.lua's p_name (the lobby name uses it)

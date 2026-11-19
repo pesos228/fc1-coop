@@ -1,4 +1,4 @@
-# Two players with the same name are told apart by their key (COOP_PlayerKey from the launcher:
+# Two players with the same name are told apart by their key (COOP_PlayerKey:
 # the SteamID), not by the order they join in (docs/specs/persistent-progress.md).
 # Both clients play as "Carver"; the second run swaps their keys, so a server that went by name or
 # by join order would hand out the other player's equipment.

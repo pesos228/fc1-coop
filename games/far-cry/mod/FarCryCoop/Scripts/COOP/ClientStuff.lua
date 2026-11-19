@@ -12,8 +12,9 @@ Coop_DefaultClientOnInit = ClientStuff.OnInit;
 function ClientStuff:OnInit()
 	Coop_DefaultClientOnInit(self);
 	COOP_MyItems, COOP_MyItemsOn = nil, nil; -- the last session's or map's (ITEMS)
-	-- written by the launcher: COOP_Color, COOP_Weapons, COOP_LoadoutMode (used by the host only).
-	-- The launcher's console line (join_<pid>.txt) sets them first: two games on one PC share this file.
+	-- written by Player settings (MenuScreens/CoopPlayer.lua): COOP_Color, COOP_Weapons, COOP_LoadoutMode
+	-- (used by the host only). A console line (join_<pid>.txt, the harness) sets them first: two games
+	-- on one PC share this file.
 	if (not COOP_Color) then Script:LoadScript("Mods/FarCryCoop/prefs.lua"); end
 	if (CoopApplySteamName) then CoopApplySteamName(); end -- the Steam name over prefs.lua's p_name
 	for name, def in WeaponClassesEx do
@@ -26,7 +27,7 @@ function ClientStuff:OnInit()
 	-- when g_MapChanged is set, which single player's ClientStuff:OnMapChange does on a map change
 	if (Game:IsServer()) then g_MapChanged = 1; end
 	-- a joined player must not start the next level itself at a mission end (CoopStartLevel); the
-	-- host changes it for everyone (it starts with CoopMap from the launcher, not coop_start, so
+	-- host changes it for everyone (it starts with CoopMap or coop_map, not coop_start, so
 	-- without this a mission end loaded the next map as single player and dropped the clients)
 	if (not Game:IsServer()) then COOP_Joined = 1; end
 	CoopWrapStartLevel();
@@ -493,21 +494,21 @@ function ClientStuff:OnSetPlayer()
 	Coop_DefaultOnSetPlayer(self);
 	if (not Game:IsServer()) then Client:SendCommand("HUDSYNC"); end
 	-- who we are, so the host gives us our own equipment back after a reconnect or a restart
-	-- (COOP gamerules CoopSetKey): the launcher's COOP_PlayerKey, else the player name we asked
+	-- (COOP gamerules CoopSetKey): COOP_PlayerKey (the Steam ID, steam.c), else the player name we asked
 	-- for (the server renames a second "Jack Carver" to "Jack Carver_")
 	Client:SendCommand("COOPID "..tostring(COOP_PlayerKey or getglobal("p_name") or ""));
 	CoopSendVersion();
-	-- launcher settings (COOP gamerules CoopSetPrefs); the host sends them too, over loopback
+	-- player settings (prefs.lua; COOP gamerules CoopSetPrefs); the host sends them too, over loopback
 	if (COOP_Color) then Client:SendCommand("PREF "..COOP_Color.." "..tostring(COOP_Weapons or "")); end
 	-- again once connected: asked in OnInit only, the server kept sending the default 20
 	if (Client and Client.SetUpdateRate) then Client:SetUpdateRate(COOP_UPDATE_RATE); end
 end
 
--- shirt color of a player from the launcher (COOP gamerules CoopApplyPrefs). Multiplayer turns on
+-- shirt color of a player from Player settings (COOP gamerules CoopApplyPrefs). Multiplayer turns on
 -- the color mask shader with the "FX" command (BasicPlayer.SecondShader_TeamColoring, effect 2);
 -- the single-player rules never do. The shader's ColorR/G/B come from entity.cnt:GetColor(),
 -- which the single-player spawn leaves white and Lua cannot set: UpdatePlayerEffectParams is
--- wrapped to use the launcher color (entity.COOP_Color) instead.
+-- wrapped to use the player's color (entity.COOP_Color) instead.
 ClientStuff.ServerCommandTable["PCOLOR"] = function(String, toktable)
 	local e = System:GetEntity(tonumber(toktable[2]) or 0);
 	local c = MultiplayerUtils and MultiplayerUtils.ModelColor[(tonumber(toktable[3]) or 1) + 1];

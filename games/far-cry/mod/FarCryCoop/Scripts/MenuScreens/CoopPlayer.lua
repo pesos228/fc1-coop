@@ -1,14 +1,14 @@
 -- FarCryCoop "Player settings" screen (docs/specs/in-game-menu.md, step 3d): the name (with Steam:
 -- the Steam name, not editable; AvailableMods.lua CoopCleanName either way), the shirt
--- color and the 4 weapons of the loadout, as the launcher sets them. Saved to
--- Mods/FarCryCoop/prefs.lua, the file the launcher writes (COOP ClientStuff loads it at the map
+-- color and the 4 weapons of the loadout. Saved to
+-- Mods/FarCryCoop/prefs.lua (COOP ClientStuff loads it at the map
 -- start, MenuScreens/Coop.lua before a launch); the player model is not offered yet.
 
 UI.PageCoopPlayer =
 {
 	-- MultiplayerUtils.ModelColor, 0..9
 	Colors = {"Black", "White", "Blue", "Green", "Red", "Cyan", "Yellow", "Magenta", "Orange", "Grey"},
-	-- COOP gamerules COOP_LOADOUT_WEAPONS, in the launcher's order
+	-- COOP gamerules COOP_LOADOUT_WEAPONS, in the same order
 	Weapons = {"Machete", "Falcon", "MP5", "P90", "M4", "AG36", "OICW", "Shotgun", "SniperRifle", "M249", "RL"},
 	DefaultWeapons = {"Falcon", "MP5", "M4", "Shotgun"},
 	NONE = "-",
@@ -146,7 +146,7 @@ UI.PageCoopPlayer =
 			return;
 		end
 		write(f, format("COOP_Color=%d COOP_Weapons=\"%s\" setglobal(\"p_name\",\"%s\")\n", color, weapons, name));
-		-- what the launcher wrote besides: the player key (its Steam ID: the saves keep each
+		-- what else the file may hold: the player key (its Steam ID: the saves keep each
 		-- player's weapons under it) and the host's settings
 		if (COOP_PlayerKey and strfind(tostring(COOP_PlayerKey), "^[%w_%.%-]+$")) then
 			write(f, format("COOP_PlayerKey=\"%s\"\n", tostring(COOP_PlayerKey)));

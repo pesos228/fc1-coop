@@ -802,8 +802,8 @@ function CoopGiveLoadout(P, L)
 	P.COOP_Carried = 1; -- CoopApplyPrefs: keep these, only refill the ammo
 end
 
--- Who the player in a server slot is: the key sent by COOP ClientStuff ("COOPID", the launcher's
--- player key or name). A client without it is known by its slot number for this session only.
+-- Who the player in a server slot is: the key sent by COOP ClientStuff ("COOPID", the Steam
+-- ID or the name). A client without it is known by its slot number for this session only.
 if (not COOP_SlotKeys) then COOP_SlotKeys = {}; end -- server slot id -> key
 if (not COOP_KeyWait) then COOP_KeyWait = {}; end -- server slot id -> _time its player was first seen without a key
 if (not COOP_Progress) then COOP_Progress = {}; end -- key -> loadout (CoopCollectLoadout)
@@ -819,7 +819,7 @@ COOP_KEY_WAIT = 5 -- seconds to wait for COOPID before falling back to the slot 
 function CoopSetKey(server_slot, cmd)
 	local s, e, key = strfind(cmd, "^COOPID%s+(.-)%s*$");
 	-- any client's text (it goes to saves and logs): letters, digits, spaces and "_.-" (a SteamID,
-	-- the launcher's name fallback), 40 at most (tests/name-host.txt)
+	-- or the player name), 40 at most (tests/name-host.txt)
 	key = strsub(gsub(key or "", "[^%w _%.%-]", ""), 1, 40);
 	if (key == "") then return; end
 	local id = server_slot:GetId();
@@ -1222,7 +1222,7 @@ function CoopApplyLoadouts()
 	end
 end
 
--- Launcher settings (prefs.lua, loaded by COOP ClientStuff): every client sends its shirt color
+-- Player settings (prefs.lua, loaded by COOP ClientStuff): every client sends its shirt color
 -- and chosen weapons ("PREF", OnClientCmd). Once per spawned player entity (a respawn is a new
 -- entity): everyone paints it ("PCOLOR", COOP ClientStuff). With the host's COOP_LoadoutMode=1
 -- it also gets its own 4 weapons instead of the mission's, unless it carried
@@ -1431,7 +1431,7 @@ function CoopWrapDrop()
 end
 
 -- Players who join after the intro started never see it (a sequence is forwarded only when it
--- starts). The launcher / lobby knows how many players come: COOP_ExpectPlayers (coop_minplayers N)
+-- starts). The host knows how many players come (the Co-op menu): COOP_ExpectPlayers (coop_minplayers N)
 -- holds the map start until that many are in (docs/specs/lobby-and-cutscenes.md, points 1-3),
 -- for at most COOP_ExpectTimeout seconds of the map, or until the host types coop_start. Who is in
 -- already waits where he spawned: kept on that spot (moved back if he walks off more than 3 m),
@@ -1957,7 +1957,7 @@ function Game:OnAfterSave()
 	if (COOP_OldAfterSave ~= 0) then return COOP_OldAfterSave(self); end
 end
 
--- CoopLoad, CoopQuickLoad: Scripts/Multiplayer/AvailableMods.lua (the launcher calls CoopLoad from the menu)
+-- CoopLoad, CoopQuickLoad: Scripts/Multiplayer/AvailableMods.lua (CoopLoad runs from the main menu, before any co-op map)
 
 Game:AddCommand("coop_save", "CoopQuickSave()", "coop_save: quicksave (F6)");
 Game:AddCommand("coop_load", "CoopQuickLoad()", "coop_load: quickload (F7)");

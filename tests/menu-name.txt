@@ -1,6 +1,6 @@
 # The player's name is the Steam name (owner, 2026-11-15), made into a name the game can take:
 # CoopCleanName keeps printable ASCII without quotes, ";", "#", "%", "@", "$" and backslash,
-# transliterates Cyrillic as the launcher does (launcher/src/lobby.rs clean_name's cases), drops
+# transliterates Cyrillic, drops
 # the rest, 20 characters at most (the host's own limit, SDK XServerSlot ConvertToValidPlayerName;
 # a longer name came back changed and was renamed again on every load), "Player" if nothing is
 # left. The ASI hands the Steam name to Lua as escaped bytes and the SteamID as the player's key.
@@ -23,7 +23,7 @@ expect server CoopCleanName("\208") => Player
 # the Steam name (anyone's text) became the player's name, cleaned
 expect server COOP_SteamNameRaw and 1 or 0 => 1
 expect server COOP_SteamName == CoopCleanName(COOP_SteamNameRaw) and COOP_SteamName == getglobal("p_name") and 1 or 0 => 1
-# the player's key (whose loadout is whose in a save) is the SteamID, as the launcher sets it
+# the player's key (whose loadout is whose in a save) is the SteamID
 expect server strfind(tostring(COOP_PlayerKey), "^7656119%d%d%d%d%d%d%d%d%d%d$") and 1 or 0 => 1
 # the menu shows it and does not let it be typed over
 lua server UI:ActivateScreen("CoopPlayer")

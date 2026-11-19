@@ -1,6 +1,6 @@
 # The mod's menu, "Player settings" (docs/specs/in-game-menu.md, step 3d): the host sets its name,
 # shirt color and first loadout weapon, saves, and launches with the loadout on. The settings go
-# to Mods/FarCryCoop/prefs.lua (the launcher's file) and reach the game: the player's name, and
+# to Mods/FarCryCoop/prefs.lua and reach the game: the player's name, and
 # the color and weapons the host's client sends to the server (PREF, COOP gamerules CoopSetPrefs).
 # The harness keeps the real prefs.lua and puts it back at down (tools/harness cfgFiles).
 # Run from the repo root: tools/bin/harness.exe test tests/menu-player.txt
@@ -13,7 +13,7 @@ lua server COOP_MenuColor, COOP_MenuWeapons = COOP_Color, COOP_Weapons COOP_Colo
 expect server COOP_Color => 4
 expect server COOP_Weapons => RL MP5 M4 Shotgun
 expect server tostring(getglobal("p_name")) => Bob
-# the launcher's player key (a Steam ID) stays in the file
+# the player key (a Steam ID) stays in the file
 expect server tostring(COOP_PlayerKey) => 76561190000000001
 # in the game
 expect server _localplayer:GetName() => Bob

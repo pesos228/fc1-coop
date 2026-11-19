@@ -15,7 +15,7 @@ import (
 )
 
 // cfgFiles are written by the game on quit or touched by the harness; restored after the run.
-// Mods/FarCryCoop/prefs.lua: the launcher's and the menu's player settings (tests/menu-player.txt writes it).
+// Mods/FarCryCoop/prefs.lua: the menu's player settings (tests/menu-player.txt writes it).
 var cfgFiles = []string{"system.cfg", "game.cfg", "SystemCfgOverride.cfg", "Mods/FarCryCoop/prefs.lua"}
 
 type supervisor struct {
@@ -158,15 +158,15 @@ func (s *supervisor) start(in *Instance) error {
 	for _, f := range []string{"cmd.txt", "ack.txt", "state.txt", "state.tmp"} {
 		os.Remove(filepath.Join(in.Dir, f))
 	}
-	// FarCry.exe truncates its command line at 256 chars (MAX_CMDLINE_LEN in the
-	// launcher), so everything except a short dofile goes into boot.lua.
+	// FarCry.exe truncates its command line at 256 chars (MAX_CMDLINE_LEN in
+	// FarCry.exe), so everything except a short dofile goes into boot.lua.
 	boot := fmt.Sprintf("HARNESS_DIR = '%s'\nHARNESS_NAME = '%s'\ndofile('%s')\n",
 		slash(in.Dir), in.Name, slash(s.run.Agent))
 	if in.Role == "client" {
 		// Players have their own names; all games here would be "Jack Carver" from system.cfg
 		// (the co-op host keys a player's equipment by it).
 		if s.run.PName != "" {
-			// as the launcher: one name for everybody, the key tells the players apart
+			// one name for everybody, the key tells the players apart
 			boot += fmt.Sprintf("setglobal(\"p_name\", %q)\nCOOP_PlayerKey = %q\n", s.run.PName, in.Key)
 		} else {
 			boot += fmt.Sprintf("System:ExecuteCommand(%q)\n", "p_name "+in.Name)
@@ -463,7 +463,7 @@ func copyFile(src, dst string) error {
 
 // joinMode: the FarCryCoop ASI only treats a game as co-op (and, e.g., skips the level
 // files' baked physics states that crash Treehouse/Swamp in multiplayer) when its start
-// line comes through Mods\FarCryCoop\join_<pid>.txt, as its launcher does. So with that
+// line comes through Mods\FarCryCoop\join_<pid>.txt. So with that
 // ASI the start commands go through the join file instead of boot.lua.
 func (s *supervisor) joinMode() bool {
 	return s.run.ASI != "" && strings.EqualFold(s.run.Mod, "FarCryCoop")

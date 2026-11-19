@@ -3,7 +3,7 @@
 -- COOP_EXIT_MIN across), drawn with glowing edges and smoke at the corners. Who walks in stays on
 -- his spot, takes no damage and deals none, and everybody sees the countdown; in the zone also how
 -- many more players it waits for. The next level loads when more than half of the living players
--- are in the zone, or when the countdown (COOP_ExitTime, the host sets it: launcher or
+-- are in the zone, or when the countdown (COOP_ExitTime, the host sets it with
 -- coop_exittime) runs out. Loaded by COOP gamerules (server) and COOP ClientStuff (client).
 COOP_ExitTime = COOP_ExitTime or 120
 COOP_EXIT_MIN = 6 -- the zone is at least this wide and long

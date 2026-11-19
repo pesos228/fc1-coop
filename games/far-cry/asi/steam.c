@@ -102,7 +102,7 @@ static void conPrint(void *con, const char *s) // IConsole::PrintLine
 // ---- console hook (main thread) ----
 // Installed with or without Steam: the mod's menu starts a co-op game with console commands
 // (coop_map <map>, coop_loadgame <save>, coop_connect <address>; MenuScreens/Coop.lua), and this
-// game must know it is a co-op one as when the launcher's join line says so (runJoin, g_coop).
+// game must know it is a co-op one as when a join line says so (runJoin, g_coop).
 static void(__fastcall *oExec)(void *, void *, const char *, int, int);
 static void __fastcall hExec(void *con, void *edx, const char *cmd, int slash, int dev)
 {
@@ -866,7 +866,7 @@ static void sendName(const char *name)
 }
 
 // The player's key (gamerules COOPID: whose loadout and save point is whose) is the SteamID in
-// decimal, as the launcher sets it, so menu and launcher games share saves; without it the key
+// decimal, so a player's saves follow the Steam account; without it the key
 // was the name, and two players of the same name could get each other's. Decimal without the
 // CRT's 64-bit division: four 16-bit limbs divided by 10.
 static void sendKey(U64 me)
