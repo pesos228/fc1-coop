@@ -1,5 +1,5 @@
 _Title_ = "FC1 Co-op"
-_Author_ = "pesos228, FarCryCoop by Bantila"
+_Author_ = "pesos228"
 _Version_ = "0.4-dev"
 _Website_ = "github.com/pesos228/fc1-coop"
 _Description_ = "Co-op for the Far Cry campaign"
