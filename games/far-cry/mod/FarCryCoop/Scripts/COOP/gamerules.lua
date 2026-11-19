@@ -3,6 +3,7 @@
 Script:LoadScript("scripts/Default/gamerules.lua");
 Script:LoadScript("scripts/COOP/Monitor.lua");
 Script:LoadScript("scripts/COOP/LevelEnd.lua");
+Script:LoadScript("scripts/COOP/Version.lua");
 CoopMonEvent("S", "map "..tostring(COOP_Map)); -- this file runs on every map load
 
 -- Load every weapon class on the server before players spawn: a player's weapon table
@@ -1098,11 +1099,17 @@ end
 COOP_DefaultOnClientDisconnect = GameRules.OnClientDisconnect; -- the single-player rules, loaded above
 function GameRules:OnClientDisconnect(server_slot)
 	if (COOP_SeqSent) then COOP_SeqSent[server_slot:GetId()] = nil; end -- a rejoin gets the sequences again (CoopSendSequences)
-	call(CoopKeepLoadout, {server_slot}, "x", function(msg) System:LogAlways("coop: loadout keep error: "..tostring(msg)); end);
-	call(CoopHandOverItems, {server_slot}, "x", function(msg) System:LogAlways("coop: hand over error: "..tostring(msg)); end);
-	call(CoopWriteProgress, {"player left"}, "x", CoopWriteProgressError);
-	call(CoopAnnounce, {server_slot:GetName().." has left the game"}, "x", function(msg) System:LogAlways("coop: announce error: "..tostring(msg)); end);
+	-- turned away for its version (CoopSetVersion): it never played, its equipment from the last
+	-- game stays as it was (its fresh spawn's had replaced it, review 2026-11-19)
+	if (not COOP_VerRefused[server_slot:GetId()]) then
+		call(CoopKeepLoadout, {server_slot}, "x", function(msg) System:LogAlways("coop: loadout keep error: "..tostring(msg)); end);
+		call(CoopHandOverItems, {server_slot}, "x", function(msg) System:LogAlways("coop: hand over error: "..tostring(msg)); end);
+		call(CoopWriteProgress, {"player left"}, "x", CoopWriteProgressError);
+		call(CoopAnnounce, {server_slot:GetName().." has left the game"}, "x", function(msg) System:LogAlways("coop: announce error: "..tostring(msg)); end);
+	end
+	COOP_VerRefused[server_slot:GetId()] = nil;
 	COOP_SlotKeys[server_slot:GetId()], COOP_KeyWait[server_slot:GetId()] = nil, nil;
+	COOP_SlotVer[server_slot:GetId()], COOP_VerSeen[server_slot:GetId()] = nil, nil;
 	COOP_JoinedSlots[server_slot:GetId()], COOP_Entered[server_slot:GetId()], COOP_Connecting[server_slot:GetId()] = nil, nil, nil;
 	return COOP_DefaultOnClientDisconnect(self, server_slot);
 end
@@ -1552,6 +1559,7 @@ function GameRules:OnUpdate(DeltaTime)
 	CoopRun("announce connecting", CoopAnnounceConnecting)
 	CoopRun("mission items", CoopKeepItems)
 	CoopRun("gates", CoopGateTick)
+	CoopRun("versions", CoopCheckVersions)
 	call(CoopApplyLoadouts, {}, "x", function(msg) System:LogAlways("coop: loadout error: "..tostring(msg)); end)
 	call(CoopApplyPrefs, {}, "x", function(msg) System:LogAlways("coop: prefs error: "..tostring(msg)); end)
 	call(CoopUpdateBots, {}, "x", function(msg) System:LogAlways("coop: bot error: "..tostring(msg)); end)
@@ -1740,6 +1748,47 @@ function CoopHudSync(server_slot)
 	if (Hud and Hud.COOP_Radar) then server_slot:SendCommand("MHUD radar "..Hud.COOP_Radar); end
 end
 
+-- The mod's version (COOP Version.lua): every client says its own (COOPVER, COOP ClientStuff) and
+-- gets ours back. One with another version is disconnected with a reason that says both, and so is
+-- one that has not said it COOP_VER_WAIT seconds after its player came (a version before this
+-- check). The reason ends with a newline: the stock ClientOnDisconnect (Multiplayer/Connecting.lua)
+-- shows such a reason as it is and takes any other for a string id ("@" in front).
+COOP_SlotVer, COOP_VerSeen = COOP_SlotVer or {}, COOP_VerSeen or {} -- server slot id -> version / since when it is awaited
+COOP_VerRefused = COOP_VerRefused or {} -- server slot id -> 1 while it is being disconnected for its version
+-- disconnect a slot for its version; GameRules:OnClientDisconnect then leaves its equipment alone
+function CoopRefuseVersion(slot, reason)
+	COOP_VerRefused[slot:GetId()] = 1;
+	slot:Disconnect(reason);
+end
+function CoopSetVersion(slot, v)
+	local id = slot:GetId();
+	if (v == COOP_VERSION) then
+		COOP_SlotVer[id], COOP_VerSeen[id] = v, nil;
+		slot:SendCommand("COOPVER "..COOP_VERSION);
+		return;
+	end
+	v = strsub(tostring(v), 1, 24); -- the reason has to keep its newline (the stock box shows it as it is)
+	CoopMonEvent("S", format("version: %s has %s, turned away", tostring(slot:GetName()), v));
+	CoopRefuseVersion(slot, format("This game runs FC1 Co-op %s, you have %s. Everyone needs the same version: install the host's.\n", COOP_VERSION, v));
+end
+function CoopCheckVersions()
+	for i, slot in Server:GetServerSlotMap() do
+		local id, P = slot:GetId(), System:GetEntity(slot:GetPlayerId());
+		if (COOP_SlotVer[id] or not P or P == _localplayer) then
+			COOP_VerSeen[id] = nil; -- known, or not in yet (loading a map), or the host's own
+		else
+			local t = COOP_VerSeen[id];
+			if (not t or t > _time) then
+				COOP_VerSeen[id] = _time; -- _time restarts with a map load
+			elseif (_time - t >= COOP_VER_WAIT) then
+				COOP_VerSeen[id] = nil;
+				CoopMonEvent("S", format("version: %s never said it, turned away", tostring(slot:GetName())));
+				CoopRefuseVersion(slot, format("This game runs FC1 Co-op %s, you have an older version. Everyone needs the same version: install the host's.\n", COOP_VERSION));
+			end
+		end
+	end
+end
+
 -- Client-side hits (see COOP ClientStuff): apply the damage a client reports for its own shot.
 function GameRules:OnClientCmd(server_slot, cmd)
 	local tk = tokenize(cmd);
@@ -1747,6 +1796,7 @@ function GameRules:OnClientCmd(server_slot, cmd)
 	elseif (tk[1] == "HUDSYNC") then CoopHudSync(server_slot);
 	elseif (tk[1] == "PREF") then CoopSetPrefs(server_slot, tk);
 	elseif (tk[1] == "COOPID") then CoopSetKey(server_slot, cmd);
+	elseif (tk[1] == "COOPVER") then CoopSetVersion(server_slot, tk[2]);
 	elseif (tk[1] == "SKIPVOTE") then CoopCountSkipVote(server_slot, tonumber(tk[2]));
 	elseif (tk[1] == "SEEN") then CoopWakeSeen(tk); end
 end

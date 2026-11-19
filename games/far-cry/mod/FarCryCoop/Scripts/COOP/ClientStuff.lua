@@ -2,6 +2,7 @@
 Script:LoadScript("scripts/Default/ClientStuff.lua");
 Script:LoadScript("scripts/COOP/Monitor.lua");
 Script:LoadScript("scripts/COOP/LevelEnd.lua");
+Script:LoadScript("scripts/COOP/Version.lua");
 
 -- Campaign missions list only a few weapons in <Weapons><Used>; the server loads the rest on demand,
 -- a remote client never does, so it cannot select, draw or fire them. OnInit runs after the level
@@ -126,12 +127,42 @@ function CoopReportSeen()
 	end
 end
 
+-- The mod's version (COOP Version.lua): say ours, the host answers with its own (COOPVER) or turns us
+-- away with a reason that says both (COOP gamerules CoopSetVersion). A host from before this check
+-- never answers: after COOP_VER_WAIT seconds say so on the HUD, every 30 s. Not by leaving:
+-- Game:Disconnect from here destroys the client inside its own update and the game crashed
+-- (runs/20261119-085845); the SDK console has no deferred command.
+COOP_HostVersion, COOP_VerAsked, COOP_VerOld = nil, nil, nil; -- nothing from an earlier connection
+function CoopSendVersion()
+	if (Game:IsServer()) then COOP_HostVersion = COOP_VERSION; return; end
+	COOP_HostVersion, COOP_VerAsked, COOP_VerOld = nil, _time, nil; -- asked again on every spawn: maybe another host
+	Client:SendCommand("COOPVER "..COOP_VERSION);
+end
+ClientStuff.ServerCommandTable["COOPVER"] = function(String, tk)
+	COOP_HostVersion, COOP_VerAsked, COOP_VerOld = tk[2], nil, nil;
+end
+function CoopCheckHostVersion()
+	local t = COOP_VerOld or COOP_VerAsked;
+	if (not t or COOP_HostVersion) then return; end
+	if (t > _time) then t = _time; end -- _time restarts with a map load
+	if (_time - t < (COOP_VerOld and 30 or COOP_VER_WAIT)) then
+		if (COOP_VerOld) then COOP_VerOld = t; else COOP_VerAsked = t; end
+		return;
+	end
+	if (not COOP_VerOld) then CoopMonEvent("C", "version: the host never said its version"); end
+	COOP_VerAsked, COOP_VerOld = nil, _time;
+	if (Hud and Hud.AddMessage) then
+		Hud:AddMessage(format("The host runs an older FC1 Co-op (yours is %s): everyone needs the same version", COOP_VERSION));
+	end
+end
+
 Coop_DefaultClientOnUpdate = ClientStuff.OnUpdate;
 function ClientStuff:OnUpdate()
 	Coop_DefaultClientOnUpdate(self);
 	-- a use-trigger hint the server sends once a second while we stand in it (MHUD label)
 	if (COOP_LabelUntil and _time < COOP_LabelUntil and _time + 3 > COOP_LabelUntil and Hud) then Hud.label = COOP_Label; end
 	CoopMonitor("C");
+	call(CoopCheckHostVersion, {}, "x", function(msg) System:LogAlways("coop: version check error: "..tostring(msg)); end);
 	call(CoopDrawGates, {}, "x", function(msg) if (not COOP_GateErr) then COOP_GateErr = 1; System:LogAlways("coop: gate ring error: "..tostring(msg)); end end);
 	CoopShowSpawnWeapon();
 	CoopApplyMyItems();
@@ -465,6 +496,7 @@ function ClientStuff:OnSetPlayer()
 	-- (COOP gamerules CoopSetKey): the launcher's COOP_PlayerKey, else the player name we asked
 	-- for (the server renames a second "Jack Carver" to "Jack Carver_")
 	Client:SendCommand("COOPID "..tostring(COOP_PlayerKey or getglobal("p_name") or ""));
+	CoopSendVersion();
 	-- launcher settings (COOP gamerules CoopSetPrefs); the host sends them too, over loopback
 	if (COOP_Color) then Client:SendCommand("PREF "..COOP_Color.." "..tostring(COOP_Weapons or "")); end
 	-- again once connected: asked in OnInit only, the server kept sending the default 20
