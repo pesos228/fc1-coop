@@ -1,0 +1,42 @@
+# A player who respawns takes no damage for 5 s (owner's decision 2026-11-19): the checkpoints of
+# Research and Regulator sit in fights, and a client respawned there died again within 3 s
+# (runs/20261118-222858, -223134). Only the one who respawned: the others are hit as before, and so
+# is that player once the 5 s are over.
+# Run from the repo root: tools/bin/harness.exe test tests/spawn-protection.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 30s
+lua server function T_Hit(t, d) local p=new(t:GetPos()) t:Damage({shooter=t,target=t,weapon=t.cnt.weapon,damage=d,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0}) end
+lua server function T_HP(t) if t.cnt.health == t.cnt.max_health then return "full" end return t.cnt.health.."/"..t.cnt.max_health end
+
+# a player who has been in for a while is hit at once
+lua server _localplayer.cnt.armor=0 T_Hit(_localplayer, 30)
+expect server T_HP(_localplayer) => 225/255
+lua server _localplayer.cnt.health=_localplayer.cnt.max_health
+
+# the client dies and respawns
+lua server T_Hit(Harness:RemotePlayer(), 1000)
+sleep 4s
+expect server Harness:RemotePlayer().cnt.health => 0
+lua server local s=Server:GetServerSlotByEntityId(Harness:RemotePlayer().id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
+sleep 1s
+# within the 5 s: nothing, not even a deadly hit
+lua server Harness:RemotePlayer().cnt.armor=0 T_Hit(Harness:RemotePlayer(), 30)
+expect server T_HP(Harness:RemotePlayer()) => full
+sleep 2s
+lua server T_Hit(Harness:RemotePlayer(), 1000)
+expect server T_HP(Harness:RemotePlayer()) => full
+# the host meanwhile is hit as before
+lua server T_Hit(_localplayer, 30)
+expect server T_HP(_localplayer) => 225/255
+wait client1 me.health>=1 -t 30s
+expect client1 _localplayer.cnt.health == _localplayer.cnt.max_health and 1 or _localplayer.cnt.health => 1
+
+# after the 5 s the client is hit again
+sleep 4s
+lua server Harness:RemotePlayer().cnt.armor=0 T_Hit(Harness:RemotePlayer(), 30)
+expect server T_HP(Harness:RemotePlayer()) => 225/255
+expect-diff max=1 class=^Player$
+expect-no-events
+down
