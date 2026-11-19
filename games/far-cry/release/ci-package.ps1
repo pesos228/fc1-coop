@@ -18,6 +18,12 @@ foreach ($d in $pkg, $tmp) {
 }
 New-Item -ItemType Directory -Force "$stage\Bin32" | Out-Null
 
+# one version: COOP_VERSION (Scripts/COOP/Version.lua, the connect check) and the Mods menu's
+$mod = Join-Path $far 'mod\FarCryCoop'
+$ver = [regex]::Match((Get-Content -Raw "$mod\Scripts\COOP\Version.lua"), 'COOP_VERSION\s*=\s*"([^"]+)"').Groups[1].Value
+$desc = [regex]::Match((Get-Content -Raw "$mod\ModDesc.txt"), '_Version_\s*=\s*"([^"]+)"').Groups[1].Value
+if (-not $ver -or $ver -ne $desc) { throw "COOP_VERSION '$ver' and ModDesc.txt _Version_ '$desc' differ" }
+
 # the mod's scripts as the game reads them (FarCryCoop.pak); deploy.ps1 writes <game>\Mods\FarCryCoop
 $game = Join-Path $tmp 'game'
 & "$far\mod\deploy.ps1" -Game $game | Out-Null
