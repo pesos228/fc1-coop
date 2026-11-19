@@ -428,6 +428,46 @@ function CoopDrawPlayerInfo(hud)
 	Game:WriteHudString(400 - w * 0.5, 320, COOP_InfoLast, 1, 1, 1, a, 16, 16);
 	COOP_InfoText = COOP_InfoLast;
 end
+-- Dead: "Press Mouse 1 to respawn" (owner, 2026-11-19: nothing said how to get back up). The
+-- server respawns a dead player who presses fire (SDK CXServerSlot: ACTION_FIRE0 while not alive ->
+-- GameRules:OnClientRequestRespawn); the host's own click counts once GameRules.TimeRespawn (3 s)
+-- has passed, so the hint shows after that for everyone. The key is the one bound to fire in the
+-- dead player's action map ("player_dead", Options > Controls changes it with the others), named
+-- as the Controls list names it ("@control<key id>", localized by WriteHudString).
+-- COOP_RespawnHint is the text drawn this frame (nil: nothing), read by tests/respawn-hint.txt.
+COOP_RESPAWN_HINT_DELAY = 3
+COOP_RESPAWN_HINT_FADE = 0.5
+function CoopFireKeyLabel()
+	local acts = Game:GetActions() or {};
+	for i, A in acts do
+		if (A.name == "FIRE0") then
+			local b = Input:GetBinding("player_dead", A.id);
+			if (not b or not b[1]) then b = Input:GetBinding((A.actionmaps and A.actionmaps[1]) or "default", A.id); end
+			if (b and b[1] and b[1].key_id) then
+				if (b[1].mod and b[1].mod_id) then return "@control"..b[1].mod_id.." + @control"..b[1].key_id; end
+				return "@control"..b[1].key_id;
+			end
+			break;
+		end
+	end
+	return "@control65536"; -- mouse 1, the default
+end
+function CoopDrawRespawnHint(hud)
+	COOP_RespawnHint = nil;
+	local me = _localplayer;
+	if (not me or me.classname ~= "Player" or not me.cnt or (me.cnt.health or 0) > 0) then COOP_DeadId = nil; return; end
+	if (COOP_DeadId ~= me.id or not COOP_DeadAt or _time < COOP_DeadAt) then -- _time restarts with a map load
+		COOP_DeadId, COOP_DeadAt, COOP_DeadKey = me.id, _time, CoopFireKeyLabel(); -- the key: once per death
+	end
+	local t = _time - COOP_DeadAt - COOP_RESPAWN_HINT_DELAY;
+	if (t < 0 or tonumber(cl_display_hud) == 0 or hud.bHide) then return; end
+	local a = min(1, t / COOP_RESPAWN_HINT_FADE);
+	local s = "Press "..COOP_DeadKey.." to respawn";
+	Game:SetHUDFont("default", "default");
+	local w = Game:GetHudStringSize(s, 18, 18);
+	Game:WriteHudString(400 - w * 0.5, 420, s, 1, 1, 1, a, 18, 18);
+	COOP_RespawnHint = s;
+end
 -- Hud.OnUpdate gets replaced after the COOP Hud script ran (the Hud is reloaded with the level,
 -- the harness agent wraps it too): wrap whatever is there now.
 function CoopHookHud()
@@ -440,6 +480,7 @@ function CoopDrawHud(hud)
 	if (COOP_HudDrawnAt == _time) then return; end -- once a frame: another wrapper of Hud.OnUpdate (the harness) can make ours run twice
 	COOP_HudDrawnAt = _time;
 	CoopDrawPlayerInfo(hud);
+	CoopDrawRespawnHint(hud);
 	CoopDrawExit();
 	CoopDrawVoice(hud);
 end

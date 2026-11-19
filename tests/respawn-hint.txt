@@ -1,0 +1,50 @@
+# A dead player is told how to get back up: "Press Mouse 1 to respawn" (owner, 2026-11-19), 3 s
+# after death (the host's click counts only then, GameRules.TimeRespawn), with the key bound to
+# fire in the dead player's action map. Gone once the player is back. The client and the host.
+# COOP_RespawnHint is the text drawn this frame, before WriteHudString localizes "@control65536".
+# Run from the repo root: tools/bin/harness.exe test tests/respawn-hint.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 120s
+sleep 30s
+lua server function T_Hit(t, d) local p=new(t:GetPos()) t:Damage({shooter=t,target=t,weapon=t.cnt.weapon,damage=d,ipart=-1,damage_type='normal',landed=1,target_material=Materials['mat_flesh'],pos={x=p.x,y=p.y,z=p.z+1},dir={x=1,y=0,z=0},normal={x=-1,y=0,z=0},impact_force_mul=0,impact_force_mul_final=0,impact_force_mul_final_torso=0}) end
+
+# alive: nothing
+expect client1 tostring(COOP_RespawnHint) => nil
+expect server tostring(COOP_RespawnHint) => nil
+
+# the client dies: not at once, then the hint
+lua server T_Hit(Harness:RemotePlayer(), 1000)
+sleep 1s
+expect client1 _localplayer.cnt.health => 0
+expect client1 tostring(COOP_RespawnHint) => nil
+sleep 3s
+expect client1 tostring(COOP_RespawnHint) => Press @control65536 to respawn
+expect server tostring(COOP_RespawnHint) => nil
+# a key bound in Options > Controls is the one named (mouse 2 here; the real binding is not touched)
+lua client1 COOP_TestGB=Input.GetBinding Input.GetBinding=function(self, m, id) return {{key_id=131072}} end COOP_DeadId=nil
+sleep 1s
+lua client1 Input.GetBinding=COOP_TestGB
+expect client1 COOP_DeadKey => @control131072
+expect client1 tostring(CoopFireKeyLabel()) => @control65536
+
+# back up: gone
+lua server local s=Server:GetServerSlotByEntityId(Harness:RemotePlayer().id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
+wait client1 me.health>=1 -t 30s
+sleep 1s
+expect client1 tostring(COOP_RespawnHint) => nil
+
+# the host dies too
+lua server _localplayer.cnt.armor=0 T_Hit(_localplayer, 1000)
+sleep 1s
+expect server _localplayer.cnt.health => 0
+expect server tostring(COOP_RespawnHint) => nil
+sleep 3s
+expect server tostring(COOP_RespawnHint) => Press @control65536 to respawn
+expect client1 tostring(COOP_RespawnHint) => nil
+lua server local s=Server:GetServerSlotByEntityId(_localplayer.id) GameRules:OnClientRequestRespawn(s,1) GameRules:OnClientRequestRespawn(s,1)
+sleep 2s
+expect server _localplayer.cnt.health > 0 and 1 or 0 => 1
+expect server tostring(COOP_RespawnHint) => nil
+expect-no-events
+down
