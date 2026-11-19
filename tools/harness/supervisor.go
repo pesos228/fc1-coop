@@ -17,7 +17,9 @@ import (
 // cfgFiles are written by the game on quit or touched by the harness; restored after the run.
 // Mods/FarCryCoop/prefs.lua: the menu's player settings (tests/menu-player.txt writes it).
 // Mods/FarCryCoop/view.lua: field of view and view distance from Options > Game (tests/fov.txt).
-var cfgFiles = []string{"system.cfg", "game.cfg", "SystemCfgOverride.cfg", "Mods/FarCryCoop/prefs.lua", "Mods/FarCryCoop/view.lua"}
+// Mods/FarCryCoop/bans.lua, votekeys.lua: the host's bans and the vote keys (tests/votes.txt).
+var cfgFiles = []string{"system.cfg", "game.cfg", "SystemCfgOverride.cfg", "Mods/FarCryCoop/prefs.lua", "Mods/FarCryCoop/view.lua",
+	"Mods/FarCryCoop/bans.lua", "Mods/FarCryCoop/votekeys.lua"}
 
 type supervisor struct {
 	run    *Run
