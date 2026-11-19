@@ -942,9 +942,14 @@ function CoopSendItems(slot, P)
 end
 -- A respawn gets them back at once: a second later a save or a leave in between had lost them. The
 -- stock respawn calls this before the slot points to the new entity.
+-- It also starts the spawn protection (owner's decision 2026-11-19): no damage for COOP_SPAWN_SAFE
+-- seconds (GameRules:OnDamage), as the checkpoints of Research and Regulator sit in fights and a
+-- player respawned there died again within 3 s. A first spawn (a join, a new map) is one too.
+COOP_SPAWN_SAFE = 5
 COOP_DefaultRespawnPlayer = GameRules.RespawnPlayer; -- the single-player rules, loaded above
 function GameRules:RespawnPlayer(server_slot, player)
 	local r = COOP_DefaultRespawnPlayer(self, server_slot, player);
+	if (player) then player.COOP_SafeUntil = _time + COOP_SPAWN_SAFE; end
 	call(function(slot, P)
 		for i, t in COOP_ITEM_TABLES do P[t] = P[t] or {}; end
 		local c = COOP_Items[slot:GetId()];
@@ -1767,12 +1772,20 @@ function CoopClientHit(server_slot, tk)
 	target:Damage(hit);
 end
 
+-- just respawned (GameRules:RespawnPlayer)? _time restarts with a map load: a mark more than
+-- COOP_SPAWN_SAFE ahead is from before it
+function CoopSpawnSafe(P)
+	local u = P and P.COOP_SafeUntil;
+	return u and _time < u and u - _time <= COOP_SPAWN_SAFE;
+end
+
 -- Server-side bullets of remote players would double the client-reported damage: drop them.
 -- The host of a listen server (its _localplayer) keeps server-side hits.
 if (not COOP_OldOnDamage) then COOP_OldOnDamage = GameRules.OnDamage; end -- once: this file reloads on coop_restart
 function GameRules:OnDamage(hit)
 	local s, t = hit.shooter, hit.target;
 	if (CoopExitHeld(t) or CoopExitHeld(s)) then return end -- waiting at the exit (COOP LevelEnd)
+	if (CoopSpawnSafe(t)) then return end -- just respawned (GameRules:RespawnPlayer)
 	if (s and not s.ai and s ~= _localplayer and t and t.ai and not hit.COOP_ClientHit) then return end
 	if (t and t.ai and not t.COOP_Awake and t.Enemy_Hidden ~= 1) then
 		call(CoopWake, {t}, "x", CoopWakeError); -- a sleeper that gets shot wakes up
