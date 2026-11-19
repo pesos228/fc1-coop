@@ -5,6 +5,9 @@
 -- change) are set in Options > Controls, in the Co-op rows (MenuScreens/CoopVoice.lua adds the
 -- section), and kept in Mods/FarCryCoop/votekeys.lua.
 
+-- keys the game leaves free (F1 view, F6/F7 co-op saves, F12 screenshot, F9/F10 developer
+-- positions are taken; letters and the space would also fire while typing or skip cutscenes)
+COOP_VOTE_KEYS_OK = {f2 = 1, f3 = 1, f4 = 1, f5 = 1, f8 = 1, f11 = 1, insert = 1, home = 1, delete = 1, ["end"] = 1}
 COOP_VoteYesKey = COOP_VoteYesKey or "f3"
 COOP_VoteNoKey = COOP_VoteNoKey or "f4"
 function CoopVoteKeysLoad()
@@ -12,6 +15,8 @@ function CoopVoteKeysLoad()
 	if (f) then closefile(f); dofile("Mods/FarCryCoop/votekeys.lua"); end
 end
 CoopVoteKeysLoad();
+if (not COOP_VOTE_KEYS_OK[strlower(tostring(COOP_VoteYesKey))]) then COOP_VoteYesKey = "f3"; end -- a hand-edited file
+if (not COOP_VOTE_KEYS_OK[strlower(tostring(COOP_VoteNoKey))] or COOP_VoteNoKey == COOP_VoteYesKey) then COOP_VoteNoKey = (COOP_VoteYesKey == "f4") and "f3" or "f4"; end
 function CoopVoteKeysSave()
 	local f = openfile("Mods/FarCryCoop/votekeys.lua", "w");
 	if (not f) then System:LogAlways("coop: cannot write Mods/FarCryCoop/votekeys.lua"); return; end
@@ -21,6 +26,7 @@ end
 -- a key chosen for "yes" or "no": the old one is free again
 function CoopVoteSetKey(which, key)
 	key = strlower(tostring(key));
+	if (not COOP_VOTE_KEYS_OK[key]) then return; end
 	local old;
 	if (which == "yes") then
 		old = COOP_VoteYesKey;
@@ -37,6 +43,7 @@ function CoopVoteSetKey(which, key)
 		Input:BindCommandToKey("#CoopVoteNo()", strlower(tostring(COOP_VoteNoKey)), 1);
 	end
 	CoopVoteKeysSave();
+	return 1;
 end
 
 COOP_VOTE_ACTIONS = {
@@ -148,7 +155,10 @@ UI.PageCoopVote =
 		local P = UI.PageCoopVote;
 		local kind = P.KindCmd[tonumber(P.GUI.KindCombo:GetSelectionIndex()) or 0];
 		local target = P.Targets[tonumber(P.GUI.TargetCombo:GetSelectionIndex()) or 0];
-		if (not kind or not target or not Client) then return; end
+		if (not kind or not target or not Client) then
+			if (P.GUI.HelpText) then P.GUI.HelpText:SetText((kind == "map") and "Choose a map." or "Nobody else is here."); end
+			return;
+		end
 		Client:SendCommand(format("CALLVOTE %s %s", kind, tostring(target)));
 		return 1;
 	end,
@@ -180,7 +190,8 @@ UI.PageCoopBindVote =
 		},
 		OnActivate = function(Sender)
 			local a = UI.PageCoopBindVote.Action or COOP_VOTE_ACTIONS[1];
-			UI.PageCoopBindVote.GUI.commandtext:SetText(Localize("PressAKeyToBind").." "..a.desc);
+			UI.PageCoopBindVote.GUI.commandtext:SetText(Localize("PressAKeyToBind").." "..a.desc..
+				"\n(F2-F5, F8, F11, Insert, Delete, Home, End)");
 		end,
 		OnUpdate = function(self)
 			local key = Input:GetXKeyPressedName();
@@ -188,7 +199,7 @@ UI.PageCoopBindVote =
 			key = strlower(tostring(key));
 			if (key == "esc" or key == "pause" or key == strlower(tostring(System:GetConsoleKeyName()))) then return; end
 			local a = UI.PageCoopBindVote.Action or COOP_VOTE_ACTIONS[1];
-			CoopVoteSetKey(a.coop_vote, key);
+			if (not CoopVoteSetKey(a.coop_vote, key)) then return; end -- not one of those: wait for another
 			UI.PageOptionsControl:FillBindList();
 			UI:DeactivateScreen(self);
 		end,

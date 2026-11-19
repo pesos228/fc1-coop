@@ -239,6 +239,11 @@ function CoopConnect(addr)
 	Game:Connect(addr, 1);
 end
 Game:AddCommand("coop_connect", "CoopConnect(%%)", "coop_connect <address>[:port]: join a co-op game");
+-- the host kicks or bans without a vote (COOP gamerules CoopAdminKick)
+Game:AddCommand("coop_kick", "CoopAdminKick(%%)", "coop_kick <player name>: the host kicks a player");
+Game:AddCommand("coop_ban", "CoopAdminKick(%%, 1)", "coop_ban <player name>: the host bans a player (Mods/FarCryCoop/bans.lua)");
+Game:AddCommand("coop_unban", "CoopAdminUnban(%%)", "coop_unban <name, key or all>: lift a ban");
+Game:AddCommand("coop_bans", "CoopAdminBans()", "coop_bans: list the banned players");
 Game:AddCommand("coop_restart", "if (COOP_Map) then CoopMap(COOP_Map) end", "coop_restart: reload the current co-op map, clients stay connected");
 
 -- Co-op saves (written by CoopSave, COOP gamerules): Mods\FarCryCoop\save_<name>.lua. Loading

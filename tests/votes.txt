@@ -2,8 +2,8 @@
 # COOP gamerules CoopCallVote, ClientStuff CoopDrawVote, MenuScreens/CoopVote.lua). Three players:
 # a map vote two say no to fails and its caller waits; the host cannot be kicked; a ban the host
 # calls and client1 backs turns client2 away, now and when it comes back; a map vote that passes
-# changes the map. The harness cannot press F3/F4: the scenario calls what the keys run, and the
-# vote is called through the menu screen's own functions. The harness keeps the host's bans.lua
+# changes the map; the host kicks and bans in the console too. The harness cannot press F3/F4: the
+# scenario calls what the keys run, and the vote is called through the menu screen's own functions. The harness keeps the host's bans.lua
 # and votekeys.lua and puts them back at down (tools/harness cfgFiles).
 # Run from the repo root: tools/bin/harness.exe test tests/votes.txt
 up -mode host -map training -clients 2 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=3;#CoopMap("training")
@@ -23,6 +23,8 @@ lua client1 CoopVoteSetKey("yes", "f4")
 expect client1 COOP_VoteYesKey.." "..COOP_VoteNoKey => f4 f3
 lua client1 CoopVoteSetKey("yes", "f3")
 expect client1 COOP_VoteYesKey.." "..COOP_VoteNoKey => f3 f4
+# only keys the game leaves free (the space skips cutscenes, a letter would fire in the chat)
+expect client1 (CoopVoteSetKey("yes", "spacebar") or "nil").." "..COOP_VoteYesKey => nil f3
 
 # a map vote: client1 calls it (yes), everyone sees it
 expect client1 T_Call(3, "Pier") => 1
@@ -41,8 +43,10 @@ expect client1 T_Call(3, "Pier") => 1
 expect-log client1 vote.message:.You.can.call.a.vote.again 10s
 expect server tostring(COOP_Vote) => nil
 
-# the host cannot be kicked
+# the host cannot be kicked; only campaign maps
 lua server COOP_VoteWait = {}
+lua client2 Client:SendCommand("CALLVOTE map mp_dune")
+expect-log client2 vote.message:.No.such.map 10s
 lua client2 local h for i, P in CoopMonPlayers() do if (P:GetName() ~= "client1" and P:GetName() ~= "client2" and not P.ai) then h = P end end Client:SendCommand("CALLVOTE kick "..h.id)
 expect-log client2 vote.message:.The.host.cannot.be.kicked 10s
 expect server tostring(COOP_Vote) => nil
@@ -64,6 +68,19 @@ expect-log server banned.client2.*turned.away 120s
 wait server players<=2 -t 30s
 sleep 5s
 expect server getn(CoopPlayers()) => 2
+
+# the host lifts the ban in the console, and kicks without a vote
+cmd server coop_unban client2
+expect server tostring(COOP_Banned[T_K2]) => nil
+join client2 #Game:Connect("127.0.0.1",1,1)
+wait server players>=3 -t 150s
+wait client2 players>=3 -t 150s
+sleep 15s
+lua client2 T_Wrap()
+cmd server coop_kick client2
+expect-log client2 T.disconnect:.*kicked.from.this.game.by.the.host 30s
+wait server players<=2 -t 30s
+expect server tostring(COOP_Banned[T_K2]) => nil
 
 # a map vote that passes: the map changes for both
 sleep 3s
