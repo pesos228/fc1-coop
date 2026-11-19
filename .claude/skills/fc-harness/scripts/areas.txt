@@ -13,5 +13,6 @@ lobby: wait-players announce name-host skip-vote skip-key player-info cooler-sta
 ai: cooler-start sleepers-seen sleepers-pos join-and-progress vehicle-crews player-info danger-meter step-sounds ai-job-pose ai-water-reload
 chapter1: chapter1
 chapter2: chapter2
-steam: steam-loop proxy-install menu-create menu-lobby menu-lobby-private menu-name menu-find
+steam: steam-loop voice-relay proxy-install menu-create menu-lobby menu-lobby-private menu-name menu-find
 menu: menu-create menu-load menu-player menu-relaunch menu-lobby menu-lobby-private menu-name menu-password menu-find menu-find-lan steam-loop wait-players
+voice: voice-relay steam-loop menu-player

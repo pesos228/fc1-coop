@@ -1,0 +1,40 @@
+# Voice chat (asi/voice.c) without Steam: the loop transport (-steamloop), host + 2 clients.
+# client1 sends the test tone (coop_voice test: 20 ms PCM packets, as a held talk key sends
+# Steam voice); the host plays it and sends it on, so client2 hears it too, under client1's name,
+# and the HUD of both lists client1 while it talks. The microphone itself (Steam voice) is not
+# covered: it needs a real Steam account on each side.
+# Speakers are told apart by id; in the loop it is the loop port in hex: client1 joins first, 49022,
+# "00000bf7e" (the high word, 0 here, is printed on its own).
+# Run from the repo root: tools/bin/harness.exe test tests/voice-relay.txt
+up -mode host -map training -clients 2 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -steamloop -start #COOP_ExpectPlayers=3;#CoopMap("training")
+wait server players>=3 -t 90s
+wait client1 players>=3 -t 120s
+wait client2 players>=3 -t 120s
+# three games on one PC: let the loading settle (the first try saw the sender stall in bursts)
+sleep 15s
+cmd client1 coop_voice test 6000
+# past COOP_VOICE_KEEP (1.5 s): the box stays because the ASI keeps saying "talks"
+sleep 2500ms
+# while it talks: listed on the HUD of the host and of the other client, not on its own
+expect server tostring(COOP_VoiceTalk["00000bf7e"] and COOP_VoiceTalk["00000bf7e"].name) => client1
+expect client2 tostring(COOP_VoiceTalk["00000bf7e"] and COOP_VoiceTalk["00000bf7e"].name) => client1
+expect server tostring(CoopVoiceFresh(COOP_VoiceTalk["00000bf7e"].t)) => 1
+expect client1 tostring(CoopVoiceFresh(COOP_VoiceMe)) => 1
+expect client1 tostring(COOP_VoiceTalk["00000bf7e"]) => nil
+expect-netlog server voice:.client1.talks 5s
+expect-netlog client2 voice:.client1.talks 5s
+expect-netlog client1 voice:.test.done,.(29[0-9]|30[0-9]).packets.sent 15s
+sleep 1s
+expect server tostring(COOP_VoiceTalk["00000bf7e"]) => nil
+expect client2 tostring(COOP_VoiceTalk["00000bf7e"]) => nil
+expect client1 tostring(COOP_VoiceMe) => nil
+# 6 s of 20 ms packets: about 300, each played on the host and on client2 (loopback UDP: none lost;
+# the count holds even when they come in bursts), none back on client1
+cmd server coop_voice status
+cmd client2 coop_voice status
+cmd client1 coop_voice status
+expect-netlog server voice.on,.*played.(29[0-9]|30[0-9]) 5s
+expect-netlog client2 voice.on,.*played.(29[0-9]|30[0-9]) 5s
+expect-netlog client1 voice.on,.*sent.(29[0-9]|30[0-9]),.played.0 5s
+expect-no-events
+down
