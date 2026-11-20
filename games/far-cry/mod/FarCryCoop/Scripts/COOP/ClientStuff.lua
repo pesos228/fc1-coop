@@ -945,7 +945,9 @@ end
 -- by default; F1 is the game's view change) are kept by MenuScreens/CoopVote.lua.
 -- COOP_VoteBox is what the box shows, read by tests/votes.txt.
 COOP_VOTE_RESULT_TIME = 4
-COOP_VOTE_X, COOP_VOTE_Y, COOP_VOTE_W, COOP_VOTE_H = 8, 150, 236, 66
+-- the left edge, centred on the screen's height (owner, 2026-11-20)
+COOP_VOTE_X, COOP_VOTE_W, COOP_VOTE_H = 8, 236, 66
+COOP_VOTE_Y = 300 - COOP_VOTE_H / 2
 function CoopVoteYes() CoopCastMyVote(1); end
 function CoopVoteNo() CoopCastMyVote(0); end
 function CoopCastMyVote(v)
@@ -992,7 +994,7 @@ function CoopDrawVote(hud)
 	if (COOP_VoiceBox == 0) then return; end
 	local x, y, w, h = COOP_VOTE_X, COOP_VOTE_Y, COOP_VOTE_W, COOP_VOTE_H;
 	local a = 1;
-	if (b.result) then a = min(1, (b.ends - _time) / 0.5); h = 58; end
+	if (b.result) then a = min(1, (b.ends - _time) / 0.5); h = 58; y = 300 - h / 2; end
 	System:DrawImageColor(COOP_VoiceBox, x, y, w, h, 4, 0, 0, 0, 0.5 * a);
 	CoopVoiceFrame(x, y, w, h, a);
 	Game:SetHUDFont("default", "default");
