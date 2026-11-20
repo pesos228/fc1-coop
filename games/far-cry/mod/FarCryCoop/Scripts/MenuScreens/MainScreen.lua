@@ -81,6 +81,9 @@ UI:CreateScreenFromTable("MainScreenInGame", UI.PageMainScreenInGame.GUI);
 if (not COOP_GotoPage) then COOP_GotoPage = GotoPage; end
 function GotoPage(PageName, Back, HideBackground)
 	if (PageName == "Multiplayer") then PageName = "Coop"; end
+	-- in a co-op game "Main Menu" (Options and the other pages) leads back to the co-op Esc menu
+	-- (MenuScreens/CoopInGame.lua), not to the game's own in-game main screen
+	if (PageName == "$MainScreen$" and ClientStuff and ClientStuff.CoopMenu) then PageName = ClientStuff:GetInGameMenuName(); end
 	return COOP_GotoPage(PageName, Back, HideBackground);
 end
 
@@ -90,3 +93,4 @@ Script:LoadScript("Scripts/MenuScreens/CoopFind.lua", 1);
 Script:LoadScript("Scripts/MenuScreens/CoopVoice.lua", 1);
 Script:LoadScript("Scripts/MenuScreens/CoopView.lua", 1);
 Script:LoadScript("Scripts/MenuScreens/CoopVote.lua", 1);
+Script:LoadScript("Scripts/MenuScreens/CoopInGame.lua", 1);

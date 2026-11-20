@@ -12,6 +12,7 @@ Coop_DefaultClientOnInit = ClientStuff.OnInit;
 function ClientStuff:OnInit()
 	Coop_DefaultClientOnInit(self);
 	COOP_MyItems, COOP_MyItemsOn = nil, nil; -- the last session's or map's (ITEMS)
+	COOP_PList, COOP_PListSerialIn = {}, nil; -- the last map's or host's entity ids (PLIST)
 	-- written by Player settings (MenuScreens/CoopPlayer.lua): COOP_Color, COOP_Weapons, COOP_LoadoutMode
 	-- (used by the host only). A console line (join_<pid>.txt, the harness) sets them first: two games
 	-- on one PC share this file.
@@ -1032,4 +1033,48 @@ function CoopDrawVote(hud)
 	-- the time left
 	local f = max(0, min(1, (b.ends - _time) / (b.len or 30)));
 	System:DrawImageColor(COOP_VoiceBox, x + 8, y + h - 8, (w - 16) * f, 3, 4, COOP_VOICE_LINE[1], COOP_VOICE_LINE[2], COOP_VOICE_LINE[3], 0.9 * a);
+end
+
+-- The in-game menu (Esc) is the co-op one (owner, 2026-11-20; MenuScreens/CoopInGame.lua): the
+-- stock one is single player's, with its own checkpoint to load. The host's has its saves and
+-- the kick and ban icons.
+function ClientStuff:GetInGameMenuName()
+	if (Game:IsServer()) then return "CoopInGameHost"; end
+	return "CoopInGame";
+end
+ClientStuff.CoopMenu = 1 -- MenuScreens/MainScreen.lua: "Main Menu" leads back to it
+-- who is in (COOP gamerules CoopSendPlayerList): COOP_PList[entity id] = {key = Steam ID or nil,
+-- host = 1 or nil}; a new serial starts a new list
+COOP_PList = COOP_PList or {}
+ClientStuff.ServerCommandTable["PLIST"] = function(String, tk)
+	local serial = tk[2];
+	if (serial ~= COOP_PListSerialIn) then COOP_PListSerialIn, COOP_PList = serial, {}; end
+	local i = 3;
+	while (tk[i]) do
+		local s, e, id, key, host = strfind(tk[i], "^(%d+):([%d%-]+):(%d)$");
+		if (s) then
+			COOP_PList[tonumber(id)] = {key = (key ~= "-") and key or nil, host = (host == "1") and 1 or nil};
+		end
+		i = i + 1;
+	end
+end
+-- a SteamID in decimal -> hex, as the ASI names the avatar files (voice.c avHex); Lua's numbers
+-- cannot hold 64 bits: divided by 16 digit by digit
+function CoopDecHex(s)
+	local d, k = {}, 0;
+	for i = 1, strlen(s) do k = k + 1; d[k] = strbyte(s, i) - 48; end
+	local out = "";
+	while (k > 0) do
+		local r, q, n = 0, {}, 0;
+		for i = 1, k do
+			local x = r * 10 + d[i];
+			local v = floor(x / 16);
+			r = x - v * 16;
+			if (n > 0 or v > 0) then n = n + 1; q[n] = v; end
+		end
+		out = strsub("0123456789abcdef", r + 1, r + 1)..out;
+		d, k = q, n;
+	end
+	if (out == "") then out = "0"; end
+	return out;
 end

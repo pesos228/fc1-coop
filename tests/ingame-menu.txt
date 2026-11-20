@@ -1,0 +1,109 @@
+# The co-op Esc menu (owner, 2026-11-20; MenuScreens/CoopInGame.lua) instead of single player's
+# (InGameSingle: its checkpoint list loads single-player saves). The host's and a joined player's
+# menus; the player list from the server's PLIST (names, the host's mark, health); the kick and
+# ban icons only in the host's rows of the others; a joined player's ADMIN line is refused by the
+# server; Load game lists the quick save and loads it for everyone after a yes; a ban answered
+# "No" does nothing; a kick answered "Yes" drops the player. The harness cannot hover or click:
+# the scenario calls what the icons and buttons run. The host's own save_quick.lua is kept aside
+# while it runs (and the test's is let go first: a player leaving writes the progress into the
+# last save, CoopWriteProgress).
+# Run from the repo root: tools/bin/harness.exe test tests/ingame-menu.txt
+up -mode host -map training -clients 1 -mod FarCryCoop -asi tools/bin/FarCryCoopNet.asi -start #COOP_ExpectPlayers=2;#CoopMap("training")
+wait server players>=2 -t 60s
+wait client1 players>=2 -t 150s
+sleep 20s
+lua client1 function T_Wrap() if (ClientOnDisconnect ~= T_Mine) then T_Disc = ClientOnDisconnect; T_Mine = function(r) System:LogAlways("T disconnect: "..tostring(r)); T_Disc(r); end; ClientOnDisconnect = T_Mine; end end T_Wrap()
+lua server function T_Row(G, i) return G["Name"..i]:GetText().."|"..G["Host"..i]:GetText().."|"..G["Health"..i]:GetText() end
+lua server function T_Icons(G, i) return tostring(UI:IsWidgetVisible(G["Kick"..i])).." "..tostring(UI:IsWidgetVisible(G["Ban"..i])) end
+lua client1 function T_Row(G, i) return G["Name"..i]:GetText().."|"..G["Host"..i]:GetText().."|"..G["Health"..i]:GetText() end
+lua server T_Q = openfile("Mods/FarCryCoop/save_quick.lua", "r") if (T_Q) then closefile(T_Q) rename("Mods/FarCryCoop/save_quick.lua", "Mods/FarCryCoop/save_quick.lua.harness") end
+
+# Esc: the host's menu and the joined player's
+expect server ClientStuff:GetInGameMenuName() => CoopInGameHost
+expect client1 ClientStuff:GetInGameMenuName() => CoopInGame
+lua server Game:SendMessage("Switch")
+lua client1 Game:SendMessage("Switch")
+sleep 2s
+expect server UI:IsScreenActive("CoopInGameHost") => 1
+expect client1 UI:IsScreenActive("CoopInGame") => 1
+expect server UI:IsScreenActive("InGameSingle") => 0
+# "Main Menu" on the other pages leads back to it
+# (\36: the harness would read $MainScreen as an environment variable)
+lua client1 GotoPage("\36MainScreen\36")
+sleep 1s
+expect client1 UI:IsScreenActive("CoopInGame") => 1
+
+# who is in: the host first with its mark, then client1 (its own name too), health in percent
+expect server T_Row(UI.PageCoopInGameHost.GUI, 2) => client1||100%
+expect client1 T_Row(UI.PageCoopInGame.GUI, 2) => client1||100%
+expect client1 UI.PageCoopInGame.GUI.Host1:GetText() => Host
+expect server T_Row(UI.PageCoopInGameHost.GUI, 3) => ||
+# the icons: in the host's row of client1 only; the joined player's menu has none
+expect server T_Icons(UI.PageCoopInGameHost.GUI, 1) => nil nil
+expect server T_Icons(UI.PageCoopInGameHost.GUI, 2) => 1 1
+expect client1 tostring(UI.PageCoopInGame.GUI.Kick1) => nil
+# a joined player's game that sends the line anyway: refused, nobody leaves
+lua client1 local h for i, P in CoopMonPlayers() do if (P ~= _localplayer) then h = P end end Client:SendCommand("ADMIN kick "..h.id)
+expect-log server admin.kick.from.client1.refused:.not.the.host 10s
+expect-log client1 vote.message:.Only.the.host.can.do.that 10s
+expect server getn(CoopPlayers()) => 2
+
+# Load game: the quick save (F6, or Save game here), then everyone back to it after a yes
+lua server CoopQuickSave()
+expect-log server saved.quick 10s
+lua server UI:DeactivateAllScreens() GotoPage("CoopLoadGame")
+sleep 1s
+lua server function T_Pick(name) local P = UI.PageCoopLoadGame for i, n in P.Names do if (n == name) then P.GUI.List:ClearSelection() P.GUI.List:SelectIndex(i) return i end end end
+expect server type(T_Pick("quick")) => number
+expect server tostring(UI.PageCoopLoadGame.Names[UI.PageCoopLoadGame.GUI.List:GetSelection(0)]) => quick
+expect server strsub(UI.PageCoopLoadGame.GUI.List:GetItem(UI.PageCoopLoadGame.GUI.List:GetSelection(0)), 1, 22) => Quick save - Training,
+lua server UI.PageCoopLoadGame.Ask()
+expect server UI:IsScreenActive("ConfirmationDialog") => 1
+lua server UI.PageConfirmation.GUI.Yes.OnCommand(UI.PageConfirmation.GUI.Yes)
+expect-log server loading.quick 10s
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 150s
+sleep 15s
+
+# a ban answered "No": nothing happens (a level loaded in multiplayer leaves the game in its menu,
+# docs/findings.md: closed first)
+lua server Game:HideMenu()
+sleep 1s
+lua server Game:SendMessage("Switch")
+sleep 2s
+expect server UI:IsScreenActive("CoopInGameHost") => 1
+lua server CoopMenuAsk("ban", 2)
+expect server UI:IsScreenActive("ConfirmationDialog") => 1
+lua server UI.PageConfirmation.GUI.No.OnCommand(UI.PageConfirmation.GUI.No)
+sleep 2s
+expect server getn(CoopPlayers()) => 2
+# a box answered after the player it was about left: nothing is sent
+lua server CoopMenuAsk("kick", 2) COOP_MenuAdmin.name = "someone else"
+lua server UI.PageConfirmation.GUI.Yes.OnCommand(UI.PageConfirmation.GUI.Yes)
+sleep 2s
+expect server getn(CoopPlayers()) => 2
+# a kick answered "Yes": client1 is out
+lua server CoopMenuAsk("kick", 2)
+lua server UI.PageConfirmation.GUI.Yes.OnCommand(UI.PageConfirmation.GUI.Yes)
+expect-log client1 T.disconnect:.*kicked.from.this.game.by.the.host 30s
+expect-log server client1.kicked.by.the.host 10s
+wait server players<=1 -t 30s
+# back, then banned from the menu (the host's bans.lua comes back at down, tools/harness cfgFiles)
+join client1 #Game:Connect("127.0.0.1",1,1)
+wait server players>=2 -t 120s
+wait client1 players>=2 -t 150s
+sleep 15s
+lua client1 T_Wrap()
+lua server Game:HideMenu()
+sleep 1s
+lua server Game:SendMessage("Switch")
+sleep 2s
+expect server UI.PageCoopInGameHost.GUI.Name2:GetText() => client1
+lua server CoopMenuAsk("ban", 2)
+lua server UI.PageConfirmation.GUI.Yes.OnCommand(UI.PageConfirmation.GUI.Yes)
+expect-log client1 T.disconnect:.*banned.from.this.game.by.the.host 30s
+expect-log server client1.banned.by.the.host 10s
+wait server players<=1 -t 30s
+expect server tostring(COOP_Banned["client1"]) => client1
+lua server COOP_LastSave = nil remove("Mods/FarCryCoop/save_quick.lua") T_Q = openfile("Mods/FarCryCoop/save_quick.lua.harness", "r") if (T_Q) then closefile(T_Q) rename("Mods/FarCryCoop/save_quick.lua.harness", "Mods/FarCryCoop/save_quick.lua") end
+down
