@@ -1517,6 +1517,10 @@ function GameRules:OnUpdate(DeltaTime)
 	end
 	CoopRun("level end", CoopExitTick)
 	CoopRun("votes", CoopVoteCheck) -- the time runs out, a player leaves
+	if (not COOP_PListTick or _time > COOP_PListTick + 1 or _time < COOP_PListTick) then
+		COOP_PListTick = _time;
+		CoopRun("player list", CoopSendPlayerList)
+	end
 	CoopRun("preload weapons", CoopPreloadWeapons)
 	if next(COOP_HPDirty) then
 		CoopRun("ai health", function() CoopSyncAIHealth(COOP_HPDirty) end)
@@ -1812,6 +1816,7 @@ function GameRules:OnClientCmd(server_slot, cmd)
 	elseif (tk[1] == "SKIPVOTE") then CoopCountSkipVote(server_slot, tonumber(tk[2]));
 	elseif (tk[1] == "CALLVOTE") then CoopCallVote(server_slot, tk);
 	elseif (tk[1] == "CASTVOTE") then CoopCastVote(server_slot, tonumber(tk[2]));
+	elseif (tk[1] == "ADMIN") then CoopAdminCmd(server_slot, tk);
 	elseif (tk[1] == "SEEN") then CoopWakeSeen(tk); end
 end
 
@@ -2390,17 +2395,62 @@ end
 function CoopAdminKick(name, ban)
 	if (not Server or not Game:IsServer()) then return; end
 	local slot = CoopAdminSlot(name);
-	if (not slot) then return; end
+	if (slot) then CoopAdminKickSlot(slot, ban); end
+end
+function CoopAdminKickSlot(slot, ban)
 	if (CoopIsHostSlot(slot)) then System:LogAlways("coop: the host stays"); return; end
 	local who = tostring(slot:GetName());
 	if (ban) then
 		local key = COOP_SlotKeys[slot:GetId()];
-		if (key) then COOP_Banned[key] = who; CoopSaveBans(); end
+		if (key) then
+			COOP_Banned[key] = who; CoopSaveBans();
+			COOP_VerRefused[slot:GetId()] = 1; -- out of the game's records, as a vote ban (CoopVoteEnd)
+		else
+			ban = nil; -- no key yet (still joining): nothing to keep out, a kick
+		end
 	end
 	CoopMonEvent("S", format("%s %s by the host", who, ban and "banned" or "kicked"));
 	slot:Disconnect(ban and "You were banned from this game by the host.\n" or "You were kicked from this game by the host.\n");
 	Server:BroadcastCommand(format("VOTEMSG %s was %s by the host.", who, ban and "banned" or "kicked"));
 end
+-- The same from the host's in-game menu (MenuScreens/CoopInGame.lua: the icons in the player
+-- list), "ADMIN kick|ban <player entity id>". Only the host's own slot may: a joined player's game
+-- has no such icons, and a changed one that sends the line anyway is refused.
+function CoopAdminCmd(slot, tk)
+	if (not CoopIsHostSlot(slot)) then
+		CoopMonEvent("S", format("admin %s from %s refused: not the host", tostring(tk[2]), tostring(slot:GetName())));
+		CoopVoteTell(slot, "Only the host can do that.");
+		return;
+	end
+	local t = Server:GetServerSlotByEntityId(tonumber(tk[3]) or 0);
+	if (not t or (tk[2] ~= "kick" and tk[2] ~= "ban")) then return; end
+	CoopAdminKickSlot(t, tk[2] == "ban");
+end
+
+-- Who is in, for the player list of the in-game menu: "PLIST <serial> <entity id>:<Steam ID or
+-- ->:<1 the host, else 0> ..." (packed, COOP_CMD_MAX), sent again when it changes; a new serial
+-- starts a new list. The Steam ID (a key of digits, CoopSetKey) gets the player's avatar.
+COOP_PListSerial = COOP_PListSerial or 0
+function CoopSendPlayerList()
+	local list, k = {}, 0;
+	for i, slot in Server:GetServerSlotMap() do
+		local id = slot:GetPlayerId();
+		if (id ~= 0 and System:GetEntity(id)) then
+			local key = COOP_SlotKeys[slot:GetId()];
+			if (not key or strfind(key, "[^%d]")) then key = "-"; end
+			k = k + 1;
+			list[k] = format("%d:%s:%d", id, key, CoopIsHostSlot(slot) and 1 or 0);
+		end
+	end
+	local all = "";
+	for i = 1, k do all = all..list[i].." "; end
+	if (all == COOP_PListSent and _time > (COOP_PListAt or 0) and _time < (COOP_PListAt or 0) + 10) then return; end
+	COOP_PListSent, COOP_PListAt = all, _time; -- and every 10 s for a list lost on the way
+	COOP_PListSerial = mod(COOP_PListSerial + 1, 1000);
+	if (k == 0) then Server:BroadcastCommand("PLIST "..COOP_PListSerial); return; end
+	CoopSendPacked("PLIST "..COOP_PListSerial, list);
+end
+
 function CoopAdminUnban(who)
 	who = strlower(tostring(who or ""));
 	local n = 0;
