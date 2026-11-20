@@ -30,12 +30,16 @@ expect client1 (CoopVoteSetKey("yes", "spacebar") or "nil").." "..COOP_VoteYesKe
 expect client1 T_Call(3, "Pier") => 1
 sleep 2s
 expect client2 tostring(COOP_VoteBox and COOP_VoteBox.text) => Change the map to Pier?
+# with the game's own sounds: a beep at the start, a click for our answer
+expect client2 tostring(COOP_VoteSound) => start
 expect server COOP_VoteBox.yes.." "..COOP_VoteBox.no.." "..COOP_VoteBox.need => 1 0 2
 # two say no: it fails, the map stays
-lua server CoopVoteNo()
 lua client2 CoopVoteNo()
+expect client2 tostring(COOP_VoteSound) => cast
+lua server CoopVoteNo()
 sleep 2s
 expect client1 tostring(COOP_VoteBox and COOP_VoteBox.result) => 0
+expect client1 tostring(COOP_VoteSound) => failed
 expect server tostring(COOP_Vote) => nil
 expect server strlower(COOP_Map) => training
 # its caller has to wait for the next one
@@ -63,6 +67,7 @@ expect-log client2 T.disconnect:.*banned.from.this.game.by.vote 30s
 wait server players<=2 -t 30s
 expect server COOP_Banned[T_K2] => client2
 expect client1 tostring(COOP_VoteBox and COOP_VoteBox.result) => 1
+expect client1 tostring(COOP_VoteSound) => passed
 join client2 #Game:Connect("127.0.0.1",1,1)
 expect-log server banned.client2.*turned.away 120s
 wait server players<=2 -t 30s

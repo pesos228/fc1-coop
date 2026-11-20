@@ -945,9 +945,21 @@ end
 -- by default; F1 is the game's view change) are kept by MenuScreens/CoopVote.lua.
 -- COOP_VoteBox is what the box shows, read by tests/votes.txt.
 COOP_VOTE_RESULT_TIME = 4
--- the left edge, centred on the screen's height (owner, 2026-11-20)
-COOP_VOTE_X, COOP_VOTE_W, COOP_VOTE_H = 8, 236, 66
-COOP_VOTE_Y = 300 - COOP_VOTE_H / 2
+-- the left edge, a little above the middle of the screen (owner, 2026-11-20)
+COOP_VOTE_X, COOP_VOTE_W, COOP_VOTE_H, COOP_VOTE_MID = 8, 236, 66, 250
+COOP_VOTE_Y = COOP_VOTE_MID - COOP_VOTE_H / 2
+-- the game's own sounds (owner, 2026-11-20): the motion tracker's beep when a vote starts, the menu
+-- click for our yes or no and a failed vote, the menu "dong" when it passes.
+-- COOP_VoteSound is the last one played, for tests/votes.txt.
+COOP_VOTE_SOUNDS = {start = "Sounds/Items/MoTrackTarget.wav", cast = "Sounds/Menu/Click.wav",
+	passed = "Sounds/MENU/Dong.wav", failed = "Sounds/Menu/Click.wav"}
+COOP_VoteSnd = COOP_VoteSnd or {}
+function CoopVoteSound(what)
+	COOP_VoteSound = what;
+	if (not Sound or not COOP_VOTE_SOUNDS[what]) then return; end
+	if (not COOP_VoteSnd[what]) then COOP_VoteSnd[what] = Sound:LoadSound(COOP_VOTE_SOUNDS[what]) or 0; end
+	if (COOP_VoteSnd[what] ~= 0) then Sound:PlaySound(COOP_VoteSnd[what]); end
+end
 function CoopVoteYes() CoopCastMyVote(1); end
 function CoopVoteNo() CoopCastMyVote(0); end
 function CoopCastMyVote(v)
@@ -955,6 +967,7 @@ function CoopCastMyVote(v)
 	if (not Client or not b or b.result) then return; end
 	b.mine = v;
 	Client:SendCommand("CASTVOTE "..v);
+	CoopVoteSound("cast");
 	CoopMonEvent("C", "vote "..v);
 end
 function CoopBindVoteKeys()
@@ -971,12 +984,16 @@ ClientStuff.ServerCommandTable["VOTEUP"] = function(String, tk)
 	COOP_VoteBox = {text = text, yes = tonumber(y), no = tonumber(n), need = tonumber(need),
 		ends = _time + tonumber(secs), len = max(1, tonumber(secs)), mine = mine};
 	if (b and not b.result and b.text == text) then COOP_VoteBox.len = b.len; end
-	if (not (b and b.text == text and not b.result)) then CoopMonEvent("C", "vote on: "..text); end
+	if (not (b and b.text == text and not b.result)) then
+		CoopMonEvent("C", "vote on: "..text);
+		CoopVoteSound("start");
+	end
 end
 ClientStuff.ServerCommandTable["VOTEEND"] = function(String, tk)
 	local s, e, ok, text = strfind(String, "^VOTEEND (%d) (.*)$");
 	if (not s) then return; end
 	COOP_VoteBox = {text = text, result = (ok == "1") and 1 or 0, ends = _time + COOP_VOTE_RESULT_TIME};
+	CoopVoteSound((ok == "1") and "passed" or "failed");
 	CoopMonEvent("C", "vote "..((ok == "1") and "passed" or "failed")..": "..text);
 end
 ClientStuff.ServerCommandTable["VOTEMSG"] = function(String, tk)
@@ -994,7 +1011,7 @@ function CoopDrawVote(hud)
 	if (COOP_VoiceBox == 0) then return; end
 	local x, y, w, h = COOP_VOTE_X, COOP_VOTE_Y, COOP_VOTE_W, COOP_VOTE_H;
 	local a = 1;
-	if (b.result) then a = min(1, (b.ends - _time) / 0.5); h = 58; y = 300 - h / 2; end
+	if (b.result) then a = min(1, (b.ends - _time) / 0.5); h = 58; y = COOP_VOTE_MID - h / 2; end
 	System:DrawImageColor(COOP_VoiceBox, x, y, w, h, 4, 0, 0, 0, 0.5 * a);
 	CoopVoiceFrame(x, y, w, h, a);
 	Game:SetHUDFont("default", "default");
