@@ -21,6 +21,7 @@
 //   Avatar: the speaker's small Steam avatar (32x32 RGBA, ISteamFriends / ISteamUtils), written as
 //   Mods/FarCryCoop/avatars/<SteamID hex>.dds for System:LoadImage; "" while there is none.
 // Console: coop_voice [status] | on | off | key <k|mouse4|...|vk<VK number>> | volume <0-200>
+//   | avatar <SteamID, decimal> (write that player's avatar, as for a speaker)
 //   | name <name> | hold 1|0 | echo (hear yourself: the microphone check) | test [ms] (a tone instead
 //   of the voice)
 
@@ -630,6 +631,21 @@ static int keyCode(const char *s) // a key name (as the game's binds call them) 
 		return s[0];
 	return 0;
 }
+// a SteamID written in decimal (no CRT: no 64-bit multiply, so x10 on the two halves by hand)
+static U64 decU64(const char *s)
+{
+	U64 r = 0;
+	DWORD hi = 0, lo = 0, a, b;
+	for (; *s >= '0' && *s <= '9'; s++) {
+		a = (lo & 0xffff) * 10 + (DWORD)(*s - '0');
+		b = (lo >> 16) * 10 + (a >> 16);
+		lo = (a & 0xffff) | (b << 16);
+		hi = hi * 10 + (b >> 16);
+	}
+	HI(r) = hi;
+	((DWORD *)&r)[0] = lo;
+	return r;
+}
 static void voiceCommand(char *c) // "coop_voice ..." without the "coop_voice"
 {
 	void *a[8];
@@ -663,6 +679,19 @@ static void voiceCommand(char *c) // "coop_voice ..." without the "coop_voice"
 	} else if (starts(c, "hold ")) {
 		g_vHold = c[5] == '1';
 		return; // quietly: the chat line sets it
+	} else if (starts(c, "avatar ")) {
+		// the in-game menu's player list (MenuScreens/CoopInGame.lua) asks for a player's avatar:
+		// CoopVoice_Avatar("<hex>", "<hex>") once it is written, at once if it already is
+		U64 id = decU64(c + 7);
+		const char *av;
+		if (!id)
+			return;
+		if (!g_vInit)
+			voiceInit();
+		av = avatar(id, "");
+		if (av[0])
+			talkLine("CoopVoice_Avatar", id == g_me ? "" : av, -1, av);
+		return; // quietly: the menu asks often
 	} else if (starts(c, "echo")) {
 		g_vEcho = !g_vEcho;
 		if (g_sLoop || !StartVoice)
