@@ -1,7 +1,8 @@
-# Field of view from Options > Game (owner, 2026-11-19; MenuScreens/CoopView.lua): the player's
-# angle out of zoom, the game's own zoom steps for the sights and the binoculars, back to the
-# player's angle after them (a narrow angle still zooms in: angle / step), after a respawn (a new
-# entity starts at 90); another angle a script asks for is scaled by the same ratio. The mouse turns the view by angle / 90 (SDK CXClient): out of zoom it is
+# Field of view from Options > Video > Advanced Options > More Options (owner, 2026-11-19/20;
+# MenuScreens/CoopView.lua): the player's angle out of zoom, the game's own zoom steps for the
+# sights and the binoculars, back to the player's angle after them (a narrow angle still zooms in:
+# angle / step), after a respawn (a new entity starts at 90); another angle a script asks for is
+# scaled by the same ratio. The mouse turns the view by angle / 90 (SDK CXClient): out of zoom it is
 # scaled by 90 / angle, while zoomed ZoomView's own 0.3. Kept in Mods/FarCryCoop/view.lua (the
 # harness keeps the player's own and puts it back at down, tools/harness cfgFiles).
 # Run from the repo root: tools/bin/harness.exe test tests/fov.txt
@@ -82,15 +83,19 @@ wait client1 me.health>=1 -t 30s
 sleep 1s
 expect client1 T_Deg() => 110
 
-# Options > Game shows the angle as it is now; the slider sets it (60..120)
-lua client1 Game:SendMessage("Switch") GotoPage("Options")
+# the advanced video options lead to the page ("More Options"), which shows the angle as it is
+# now; the slider sets it (60..120)
+lua client1 Game:SendMessage("Switch") UI:DeactivateAllScreens() GotoPage("VideoAdvOptions")
 sleep 2s
-expect client1 UI.PageOptionsGame.GUI.coopfovvalue:GetText() => 110
-expect client1 floor(UI.PageOptionsGame.GUI.coopfov:GetValue() * 60 + 0.5) => 50
-lua client1 local w=UI.PageOptionsGame.GUI.coopfov w:SetValue(1) w.OnChanged(w)
+expect client1 UI.PageOptionsVideoAdv.GUI.coop_more:GetText() => More Options
+lua client1 UI.PageOptionsVideoAdv.GUI.coop_more.OnCommand(UI.PageOptionsVideoAdv.GUI.coop_more)
+sleep 2s
+expect client1 UI.PageCoopVideoMore.GUI.widget_FovValue:GetText() => 110
+expect client1 floor(UI.PageCoopVideoMore.GUI.widget_Fov:GetValue() * 60 + 0.5) => 50
+lua client1 local w=UI.PageCoopVideoMore.GUI.widget_Fov w:SetValue(1) w.OnChanged(w)
 expect client1 COOP_Fov => 120
-expect client1 UI.PageOptionsGame.GUI.coopfovvalue:GetText() => 120
-lua client1 local w=UI.PageOptionsGame.GUI.coopfov w:SetValue(50/60) w.OnChanged(w)
+expect client1 UI.PageCoopVideoMore.GUI.widget_FovValue:GetText() => 120
+lua client1 local w=UI.PageCoopVideoMore.GUI.widget_Fov w:SetValue(50/60) w.OnChanged(w)
 expect client1 COOP_Fov => 110
 lua client1 Game:SendMessage("Switch")
 sleep 2s

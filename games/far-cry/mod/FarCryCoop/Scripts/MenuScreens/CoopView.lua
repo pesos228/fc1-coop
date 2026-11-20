@@ -1,5 +1,5 @@
--- Field of view and view distance in Options > Game (owner, 2026-11-19). Each player's own, kept
--- in Mods/FarCryCoop/view.lua; nothing goes to the server.
+-- Field of view and view distance in Options > Video > Advanced Options > More Options (owner,
+-- 2026-11-19/20). Each player's own, kept in Mods/FarCryCoop/view.lua; nothing goes to the server.
 --
 -- The game's view is 90 degrees everywhere: a new player entity starts with it (SDK CPlayer), and
 -- ZoomView (scripts/Default/Hud/ZoomView.lua) zooms from NoZoom = 90 degrees to NoZoom / step for
@@ -186,60 +186,96 @@ function CoopFovSet(d)
 	end
 end
 
--- Options > Game: below the game's own options in the left column (system spec ends at y 282)
-function CoopViewPatchMenus()
-	local P = UI and UI.PageOptionsGame;
-	if (not P or not P.GUI or P.GUI.coopfov) then return; end
-	P.GUI.coopfovtext = UI:CreateObjectFromTable("coopfovtext", {
-		skin = UI.skins.Label, left = 200, top = 289, width = 112, text = "Field of view",
-	}, "GameOptions");
-	P.GUI.coopfovvalue = UI:CreateObjectFromTable("coopfovvalue", {
-		skin = UI.skins.Label, left = 440, top = 289, width = 42, text = tostring(COOP_Fov),
-	}, "GameOptions");
-	P.GUI.coopfov = UI:CreateObjectFromTable("coopfov", {
-		skin = UI.skins.HScrollBar, left = 320, top = 291, width = 116, height = 24, tabstop = 9,
-		OnChanged = function(Sender)
-			local v = tonumber(Sender:GetValue()) or 0;
-			CoopFovSet(COOP_FOV_MIN + floor(v * (COOP_FOV_MAX - COOP_FOV_MIN) + 0.5));
-			if (UI.PageOptionsGame.GUI.coopfovvalue) then UI.PageOptionsGame.GUI.coopfovvalue:SetText(tostring(COOP_Fov)); end
-			CoopViewSave();
-		end,
-	}, "GameOptions");
-	P.GUI.coopviewtext = UI:CreateObjectFromTable("coopviewtext", {
-		skin = UI.skins.Label, left = 200, top = 324, width = 112, text = "View distance",
-	}, "GameOptions");
-	P.GUI.coopviewvalue = UI:CreateObjectFromTable("coopviewvalue", {
-		skin = UI.skins.Label, left = 440, top = 324, width = 42, text = COOP_ViewDist.."%",
-	}, "GameOptions");
-	P.GUI.coopview = UI:CreateObjectFromTable("coopview", {
-		skin = UI.skins.HScrollBar, left = 320, top = 326, width = 116, height = 24, tabstop = 10,
-		OnChanged = function(Sender)
-			local v = tonumber(Sender:GetValue()) or 0;
-			-- in steps of 10 percent
-			CoopViewDistSet(COOP_VIEW_MIN + floor(v * (COOP_VIEW_MAX - COOP_VIEW_MIN) / 10 + 0.5) * 10);
-			if (UI.PageOptionsGame.GUI.coopviewvalue) then UI.PageOptionsGame.GUI.coopviewvalue:SetText(COOP_ViewDist.."%"); end
-		end,
-	}, "GameOptions");
-	CoopViewMenuShow();
-	-- the angle may have changed since (the console, a harness): shown as it is now. The screen
-	-- keeps the OnActivate it was made with (SDK CUIScreen), which calls Update3dModel by name.
-	local upd = P.Update3dModel;
-	if (upd) then
-		P.Update3dModel = function(a, b, c)
-			local r = %upd(a, b, c);
+-- Options > Video > Advanced Options > "More Options" (owner, 2026-11-20: a second page of the
+-- advanced video options, "next page" at the bottom right; its "Back" at the bottom left where the
+-- first page has "Basic Options"). Applied at once, as the sliders of Options > Video are.
+COOP_VIEW_STEPS = {{100, "Normal"}, {150, "Far"}, {200, "Very Far"}, {300, "Extreme"}}
+UI.PageCoopVideoMore =
+{
+	GUI =
+	{
+		widget_title =
+		{
+			skin = UI.skins.TopMenuButton,
+			left = 200, width = 580,
+			text = "More Options",
+		},
+		widget_Fov_Text = { skin = UI.skins.Label, left = 200, top = 175, width = 160, text = "Field of View", },
+		widget_Fov =
+		{
+			skin = UI.skins.HScrollBar,
+			left = 370, top = 178, width = 120, height = 24,
+			tabstop = 1,
+			OnChanged = function(Sender)
+				local v = tonumber(Sender:GetValue()) or 0;
+				CoopFovSet(COOP_FOV_MIN + floor(v * (COOP_FOV_MAX - COOP_FOV_MIN) + 0.5));
+				UI.PageCoopVideoMore.GUI.widget_FovValue:SetText(tostring(COOP_Fov));
+				CoopViewSave();
+			end,
+		},
+		widget_FovValue = { skin = UI.skins.Label, left = 495, top = 175, width = 40, halign = UIALIGN_LEFT, text = "90", },
+		widget_ViewDist_Text = { skin = UI.skins.Label, left = 200, top = 225, width = 160, text = "View Distance", },
+		widget_ViewDist =
+		{
+			skin = UI.skins.ComboBox,
+			left = 370, top = 225, width = 120,
+			tabstop = 2,
+			vscrollbar = { skin = UI.skins.VScrollBar, },
+			OnChanged = function(Sender)
+				local s = COOP_VIEW_STEPS[tonumber(Sender:GetSelectionIndex()) or 1];
+				if (s) then CoopViewDistSet(s[1]); end
+			end,
+		},
+		widget_back =
+		{
+			left = 208, top = 142 + 318 - 34,
+			width = 160,
+			skin = UI.skins.BottomMenuButton,
+			bordersides = "lrtb",
+			text = "Back",
+			tabstop = 3,
+			OnCommand = function(Sender)
+				GotoPage("VideoAdvOptions");
+			end,
+		},
+		OnActivate = function(Sender)
 			CoopViewMenuShow();
-			return r;
-		end
-	end
+		end,
+	},
+}
+AddUISideMenu(UI.PageCoopVideoMore.GUI,
+{
+	{ "MainMenu", Localize("MainMenu"), "$MainScreen$", 0 },
+});
+UI:CreateScreenFromTable("CoopVideoMore", UI.PageCoopVideoMore.GUI);
+
+-- the advanced page is made after this file: its "More Options" button is added once the main
+-- menu shows (MenuScreens/MainScreen.lua) or a map starts (COOP ClientStuff OnSetPlayer)
+function CoopViewPatchMenus()
+	local P = UI and UI.PageOptionsVideoAdv;
+	if (not P or not P.GUI or P.GUI.coop_more) then return; end
+	P.GUI.coop_more = UI:CreateObjectFromTable("coop_more", {
+		skin = UI.skins.BottomMenuButton,
+		left = 780 - 180 - 178.5,
+		tabstop = 27,
+		text = "More Options",
+		OnCommand = function(Sender)
+			GotoPage("CoopVideoMore");
+		end,
+	}, "VideoAdvOptions");
 end
+-- the page shows the settings as they are now (they may change in the console or a harness)
 function CoopViewMenuShow()
-	local G = UI.PageOptionsGame and UI.PageOptionsGame.GUI;
-	if (not G or not G.coopfov) then return; end
-	G.coopfov:SetValue((COOP_Fov - COOP_FOV_MIN) / (COOP_FOV_MAX - COOP_FOV_MIN));
-	G.coopfovvalue:SetText(tostring(COOP_Fov));
-	if (G.coopview) then
-		G.coopview:SetValue((COOP_ViewDist - COOP_VIEW_MIN) / (COOP_VIEW_MAX - COOP_VIEW_MIN));
-		G.coopviewvalue:SetText(COOP_ViewDist.."%");
+	local G = UI.PageCoopVideoMore.GUI;
+	G.widget_Fov:SetValue((COOP_Fov - COOP_FOV_MIN) / (COOP_FOV_MAX - COOP_FOV_MIN));
+	G.widget_FovValue:SetText(tostring(COOP_Fov));
+	G.widget_ViewDist:Clear();
+	local sel, best = 1, nil;
+	for i, s in COOP_VIEW_STEPS do
+		G.widget_ViewDist:AddItem(s[2]);
+		local d = abs(s[1] - COOP_ViewDist);
+		if (not best or d < best) then sel, best = i, d; end -- the nearest (an older file may have another value)
 	end
+	G.widget_ViewDist:SelectIndex(sel);
 end
 CoopViewApply();
