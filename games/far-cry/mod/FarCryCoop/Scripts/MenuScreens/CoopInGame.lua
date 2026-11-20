@@ -5,7 +5,8 @@
 -- game, Quit. Right: who is in, with the Steam avatar, the name, the health and the host's mark
 -- (the server's "PLIST", COOP ClientStuff COOP_PList). The host's rows of the others have a kick
 -- and a ban icon; the server takes them from the host's own slot only (COOP gamerules
--- CoopAdminCmd).
+-- CoopAdminCmd). A game holds up to 16 players: 8 rows show, the rest scroll (the bar on the
+-- right, its arrows, or the mouse wheel over the list).
 
 COOP_MENU_ROWS = 8
 COOP_MENU_ROW_H = 36
@@ -13,6 +14,7 @@ COOP_MENU_TOP = 147
 COOP_MenuAvatarAsked = COOP_MenuAvatarAsked or {} -- SteamID -> when asked (the ASI writes the file)
 -- one request per refresh: the ASI's queue to its Steam thread holds a few lines only (steam.c)
 COOP_MENU_AVATAR_RETRY = 10
+COOP_MenuFirst = 0 -- the players above the first row (scrolled past)
 
 function CoopMenuIcon(name) return System:LoadImage("Scripts/COOP/Icons/"..name..".dds"); end
 
@@ -24,12 +26,14 @@ function CoopMenuRows(GUI, host)
 			skin = UI.skins.MenuBorder,
 			left = 210, top = top, width = 32, height = 32,
 			color = "0 0 0 64",
+			OnKeyPressed = CoopMenuWheel,
 		};
 		GUI["Name"..i] = {
 			skin = UI.skins.Label,
 			left = 250, top = top + 2, width = 300,
 			halign = UIALIGN_LEFT,
 			text = "",
+			OnKeyPressed = CoopMenuWheel,
 		};
 		GUI["Host"..i] = {
 			skin = UI.skins.Label,
@@ -37,17 +41,19 @@ function CoopMenuRows(GUI, host)
 			halign = UIALIGN_LEFT,
 			fontcolor = "158 204 128 255",
 			text = "",
+			OnKeyPressed = CoopMenuWheel,
 		};
 		GUI["Health"..i] = {
 			skin = UI.skins.Label,
 			left = 620, top = top + 2, width = 60,
 			halign = UIALIGN_RIGHT,
 			text = "",
+			OnKeyPressed = CoopMenuWheel,
 		};
 		if (host) then
 			GUI["Kick"..i] = {
 				classname = "button",
-				left = 700, top = top + 2, width = 28, height = 28,
+				left = 686, top = top + 2, width = 28, height = 28,
 				texture = CoopMenuIcon("kick"), overtexture = CoopMenuIcon("kick_over"), downtexture = CoopMenuIcon("kick_over"),
 				texrect = "0 0 32 32",
 				color = "255 255 255 255",
@@ -55,10 +61,11 @@ function CoopMenuRows(GUI, host)
 				tooltip = "Kick",
 				user = {row = i},
 				OnCommand = function(Sender) CoopMenuAsk("kick", Sender.user.row); end,
+				OnKeyPressed = CoopMenuWheel,
 			};
 			GUI["Ban"..i] = {
 				classname = "button",
-				left = 738, top = top + 2, width = 28, height = 28,
+				left = 722, top = top + 2, width = 28, height = 28,
 				texture = CoopMenuIcon("ban"), overtexture = CoopMenuIcon("ban_over"), downtexture = CoopMenuIcon("ban_over"),
 				texrect = "0 0 32 32",
 				color = "255 255 255 255",
@@ -66,6 +73,7 @@ function CoopMenuRows(GUI, host)
 				tooltip = "Ban",
 				user = {row = i},
 				OnCommand = function(Sender) CoopMenuAsk("ban", Sender.user.row); end,
+				OnKeyPressed = CoopMenuWheel,
 			};
 		end
 	end
@@ -80,9 +88,22 @@ function CoopMenuRows(GUI, host)
 		left = 200, top = 141,
 		width = 580, height = COOP_MENU_ROWS * COOP_MENU_ROW_H + 10,
 		zorder = -50,
+		OnKeyPressed = CoopMenuWheel,
+	};
+	GUI.Scroll = {
+		skin = UI.skins.VScrollBar,
+		left = 756, top = COOP_MENU_TOP, width = 20, height = COOP_MENU_ROWS * COOP_MENU_ROW_H - 4,
+		value = 0,
+		OnChanged = function(Sender)
+			local n = getn(CoopMenuPlayers()) - COOP_MENU_ROWS;
+			if (n > 0) then COOP_MenuFirst = floor(Sender:GetValue() * n + 0.5); end
+			if (COOP_MenuGUI) then CoopMenuFill(COOP_MenuGUI); end
+		end,
+		OnKeyPressed = CoopMenuWheel,
 	};
 	GUI.OnActivate = function(self)
 		self.fActivateTime = System:GetCurrAsyncTime();
+		COOP_MenuGUI, COOP_MenuFirst = self, 0; -- the top of the list again
 		CoopMenuFill(self);
 	end;
 	GUI.OnUpdate = function(self)
@@ -93,6 +114,20 @@ function CoopMenuRows(GUI, host)
 		local t = System:GetCurrAsyncTime();
 		if (not self.fFillTime or t - self.fFillTime > 0.5 or t < self.fFillTime) then CoopMenuFill(self); end
 	end;
+end
+
+-- the mouse wheel over the list: one row (XKEY_MWHEEL_UP / _DOWN, SDK IInput.h; the menu sends
+-- it to the widget under the mouse, CUISystem)
+COOP_KEY_WHEEL_UP = 589824
+COOP_KEY_WHEEL_DOWN = 655360
+function CoopMenuWheel(Sender, key)
+	if (key == COOP_KEY_WHEEL_UP) then CoopMenuScroll(-1);
+	elseif (key == COOP_KEY_WHEEL_DOWN) then CoopMenuScroll(1); end
+	return 1;
+end
+function CoopMenuScroll(d)
+	COOP_MenuFirst = COOP_MenuFirst + d;
+	if (COOP_MenuGUI) then CoopMenuFill(COOP_MenuGUI); end
 end
 
 -- the players in the list's order: the host first, then by entity id
@@ -147,8 +182,19 @@ function CoopMenuFill(GUI)
 	local list = CoopMenuPlayers();
 	COOP_MenuAvatarSent = nil;
 	COOP_MenuRowIds = {}; -- the screen is the engine's object, not this table: kept here
+	local more = getn(list) - COOP_MENU_ROWS; -- players past the rows
+	COOP_MenuFirst = max(0, min(COOP_MenuFirst, more));
+	if (GUI.Scroll) then
+		if (more > 0) then
+			GUI.Scroll:SetStep(1 / more);
+			GUI.Scroll:SetValue(COOP_MenuFirst / more); -- from a script: no OnChanged (SDK)
+			UI:ShowWidget(GUI.Scroll);
+		else
+			UI:HideWidget(GUI.Scroll);
+		end
+	end
 	for i = 1, COOP_MENU_ROWS do
-		local e = list[i];
+		local e = list[COOP_MenuFirst + i];
 		local avatar, name = GUI["Avatar"..i], GUI["Name"..i];
 		if (e) then
 			COOP_MenuRowIds[i] = e.id;

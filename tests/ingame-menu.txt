@@ -42,6 +42,30 @@ expect server T_Row(UI.PageCoopInGameHost.GUI, 3) => ||
 expect server T_Icons(UI.PageCoopInGameHost.GUI, 1) => nil nil
 expect server T_Icons(UI.PageCoopInGameHost.GUI, 2) => 1 1
 expect client1 tostring(UI.PageCoopInGame.GUI.Kick1) => nil
+# more players than rows (a game holds up to 16): the list scrolls. The harness has two players:
+# the list repeats them six times (12 rows, 4 past the 8 shown)
+lua server T_Real = CoopMenuPlayers CoopMenuPlayers = function() local t, k = {}, 0 for r = 1, 6 do for i, e in T_Real() do k = k + 1 t[k] = e end end return t end
+lua server function T_Names() local G, s = UI.PageCoopInGameHost.GUI, "" for i = 1, 8 do s = s..strsub(G["Name"..i]:GetText(), 1, 1) end return s end
+lua server CoopMenuFill(COOP_MenuGUI)
+expect server tostring(UI:IsWidgetVisible(UI.PageCoopInGameHost.GUI.Scroll)) => 1
+expect server COOP_MenuFirst.." "..T_Names() => 0 JcJcJcJc
+# the mouse wheel over the list: one row each, not past the end or the top
+lua server CoopMenuWheel(UI.PageCoopInGameHost.GUI.Name3, COOP_KEY_WHEEL_DOWN)
+expect server COOP_MenuFirst.." "..T_Names().." "..UI.PageCoopInGameHost.GUI.Scroll:GetValue() => 1 cJcJcJcJ 0.25
+# the icons and the kick target follow the rows: row 1 is now client1's, row 2 the host's
+expect server T_Icons(UI.PageCoopInGameHost.GUI, 1).." "..T_Icons(UI.PageCoopInGameHost.GUI, 2) => 1 1 nil nil
+expect server (COOP_MenuRowIds[2] == _localplayer.id) and 1 or 0 => 1
+lua server for i = 1, 10 do CoopMenuWheel(UI.PageCoopInGameHost.GUI.PlayersBorder, COOP_KEY_WHEEL_DOWN) end
+expect server COOP_MenuFirst.." "..UI.PageCoopInGameHost.GUI.Scroll:GetValue() => 4 1
+lua server CoopMenuWheel(UI.PageCoopInGameHost.GUI.Ban1, COOP_KEY_WHEEL_UP)
+lua server for i = 1, 10 do CoopMenuWheel(UI.PageCoopInGameHost.GUI.Avatar1, COOP_KEY_WHEEL_UP) end
+expect server COOP_MenuFirst => 0
+# the bar: dragged half way, the list follows
+lua server local w = UI.PageCoopInGameHost.GUI.Scroll w:SetValue(0.5) w.OnChanged(w)
+expect server COOP_MenuFirst.." "..T_Names() => 2 JcJcJcJc
+# back to two players: no bar, from the top
+lua server CoopMenuPlayers = T_Real CoopMenuFill(COOP_MenuGUI)
+expect server COOP_MenuFirst.." "..tostring(UI:IsWidgetVisible(UI.PageCoopInGameHost.GUI.Scroll)) => 0 nil
 # a joined player's game that sends the line anyway: refused, nobody leaves
 lua client1 local h for i, P in CoopMonPlayers() do if (P ~= _localplayer) then h = P end end Client:SendCommand("ADMIN kick "..h.id)
 expect-log server admin.kick.from.client1.refused:.not.the.host 10s
